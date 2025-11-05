@@ -1,11 +1,11 @@
-baseURL = getenv("HUGO_BASEURL", "https://arcanecodex.dev/")
+baseURL = "https://arcanecodex.dev/"
 languageCode = 'en-us'
 title = 'Arcane Codex'
 theme = 'PaperMod'
-enableRobotsTXT = getenv("HUGO_ENABLE_ROBOTS", "true") | eq "true"
+enableRobotsTXT = true
 
 [params]
-  env = getenv("HUGO_ENV", "production")
+  env = "production"
   defaultTheme = "dark" 
   ShowReadingTime = true
   ShowShareButtons = true
