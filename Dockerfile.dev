@@ -1,0 +1,18 @@
+FROM hugomods/hugo:latest AS builder
+WORKDIR /src
+
+# Copy package files first for better layer caching
+COPY . .
+
+# Set development environment variables
+ENV HUGO_ENV=development
+ENV HUGO_BASEURL=http://localhost:1313/
+ENV HUGO_ENABLE_ROBOTS=false
+
+# Initialize git submodules (themes)
+RUN git submodule update --init --recursive
+
+# Run Hugo development server with watch
+EXPOSE 1313
+
+CMD ["hugo", "server", "--bind", "0.0.0.0", "--port", "1313", "--watch", "--buildDrafts", "--buildFuture"]
