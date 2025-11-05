@@ -1,0 +1,28 @@
+name: Sync to Aether
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get current commit hash
+        id: get_hash
+        run: echo "hash=${{ github.sha }}" >> $GITHUB_OUTPUT
+        
+      - name: Checkout aether repo
+        uses: actions/checkout@v4
+        with:
+          repository: kungfusaini/aether
+          token: ${{ secrets.AETHER_SYNC_TOKEN }}
+          
+      - name: Update arcanecodex submodule
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git submodule update --remote --merge services/arcanecodex
+          git add services/arcanecodex
+          git commit -m "Auto-update arcanecodex submodule to ${{ steps.get_hash.outputs.hash }}" || exit 0
+          git push
