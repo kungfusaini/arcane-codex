@@ -20,6 +20,7 @@
 
 .logo {
     flex-wrap: inherit;
+    align-items: center;
 }
 
 .logo a {

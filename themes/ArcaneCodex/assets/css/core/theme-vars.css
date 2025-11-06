@@ -7,26 +7,12 @@
 }
 
 @font-face {
-    font-family: 'Cormorant Unicase';
-    src: url('/fonts/CormorantUnicase-Light.ttf') format('truetype');
-    font-weight: 300;
-    font-style: normal;
-    font-display: swap;
-}
-
-
-
-
-
-@font-face {
     font-family: 'Eagle Lake';
     src: url('/fonts/EagleLake-Regular.ttf') format('truetype');
     font-weight: normal;
     font-style: normal;
     font-display: swap;
 }
-
-
 
 :root {
     --gap: 24px;
@@ -89,8 +75,25 @@
 }
 
 /* Header title styling */
+.logo-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+	margin: 0.5rem 0 0;
+}
+
 .site-title {
     font-size: inherit;
+    margin: 0;
+    padding: 0;
+    line-height: 1;
+}
+
+.site-tagline {
+    font-family: var(--font-family);
+    color: var(--secondary);
+    font-size: 0.5em;
+    line-height: 1;
 }
 
 .arcane {
@@ -101,6 +104,7 @@
 .codex {
     font-family: var(--font-family);
     color: var(--primary);
-    transform: scaleX(1.23);
+    transform: scaleX(1.27);
     display: inline-block;
 }
+

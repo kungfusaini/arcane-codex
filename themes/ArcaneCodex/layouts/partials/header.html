@@ -15,7 +15,7 @@
                     {{- if and (in $processableFormats $img.MediaType.SubType) (eq $prod true)}}
                         {{- if site.Params.label.iconHeight }}
                             {{- $img = $img.Resize (printf "x%d" site.Params.label.iconHeight) }}
-                        {{ else }}
+                        {{- else }}
                             {{- $img = $img.Resize "x30" }}
                         {{- end }}
                     {{- end }}
@@ -28,10 +28,13 @@
                 {{- else if hasPrefix site.Params.label.iconSVG "<svg" }}
                     {{ site.Params.label.iconSVG | safeHTML }}
                 {{- end -}}
-                <span class="site-title">
-                    <span class="arcane">ARCANE</span>
-                    <span class="codex"> CODEX</span>
-                </span>
+                <div class="logo-content">
+                    <div class="site-title">
+                        <span class="arcane">ARCANE</span>
+                        <span class="codex"> CODEX</span>
+                    </div>
+                    <div class="site-tagline">Compiled Texts for the Modern Mage</div>
+                </div>
             </a>
             {{- end }}
             <div class="logo-switches">
@@ -83,7 +86,7 @@
                 {{- end }}
             </div>
         </div>
-        {{- $currentPage := . }}
+        <!-- {{- $currentPage := . }}
         <ul id="menu">
             {{- range site.Menus.main }}
             {{- $menu_item_url := (cond (strings.HasSuffix .URL "/") .URL (printf "%s/" .URL) ) | absLangURL }}
@@ -91,7 +94,7 @@
             {{- $is_search := eq (site.GetPage .KeyName).Layout `search` }}
             <li>
                 <a href="{{ .URL | absLangURL }}" title="{{ .Title | default .Name }} {{- cond $is_search (" (Alt + /)" | safeHTMLAttr) ("" | safeHTMLAttr ) }}"
-                {{- cond $is_search (" accesskey=/" | safeHTMLAttr) ("" | safeHTMLAttr ) }}>
+                {{- cond $is_search (" accesskey=/" | safeHTMLAttr) ("" | safeHTMLAttr ) }}">
                     <span {{- if eq $menu_item_url $page_url }} class="active" {{- end }}>
                         {{- .Pre }}
                         {{- .Name -}}
@@ -108,6 +111,6 @@
                 </a>
             </li>
             {{- end }}
-        </ul>
+        </ul> -->
     </nav>
 </header>
