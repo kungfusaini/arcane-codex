@@ -64,3 +64,25 @@ div.highlight:hover .copy-code,
 pre:hover .copy-code {
     display: block;
 }
+
+.post-tags-container {
+    display: inline-flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.post-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    background: var(--code-bg);
+    border-radius: 4px;
+    font-size: 11px;
+    color: var(--secondary);
+    text-decoration: none;
+    transition: background 0.2s, color 0.2s;
+}
+
+.post-tag:hover {
+    background: var(--primary);
+    color: var(--theme);
+}
