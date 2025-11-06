@@ -38,12 +38,11 @@
 
 .post-entry {
     position: relative;
-    margin-bottom: var(--gap);
-    padding: var(--gap);
-    background: var(--entry);
+    margin-bottom: var(--gap) / 2;
+    padding: calc(var(--gap) / 3);
+    background: var(--theme);
     border-radius: var(--radius);
     transition: transform 0.1s;
-    border: 1px solid var(--border);
 }
 
 .post-entry:active {
