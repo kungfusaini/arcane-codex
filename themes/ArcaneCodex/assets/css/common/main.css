@@ -86,3 +86,7 @@ pre:hover .copy-code {
     background: var(--primary);
     color: var(--theme);
 }
+
+.post-tag {
+    pointer-events: auto;
+}
