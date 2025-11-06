@@ -32,3 +32,14 @@ hugo new posts/post-title.md
 ## Theme Customization
 
 Custom styles are in `assets/css/extended/custom-overrides.css`.
+
+## Fonts 
+
+### Currently Active:
+- **ProFontIIxNerdFontMono**: Body text
+- **Eagle Lake**: Headings
+
+### Previously Considered :
+- **CormorantUnicase**
+- **Jacquard 12**
+- **Jacquard 24**
