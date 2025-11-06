@@ -9,6 +9,7 @@ enableRobotsTXT = true
   defaultTheme = "dark" 
   ShowReadingTime = true
   ShowShareButtons = true
+  disableThemeToggle = true
 
 [menu]
   [[menu.main]]
