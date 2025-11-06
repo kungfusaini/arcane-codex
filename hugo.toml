@@ -17,3 +17,8 @@ enableRobotsTXT = true
     name = "Posts"
     url = "/posts/"
     weight = 10
+  [[menu.main]]
+    identifier = "tags"
+    name = "Tags"
+    url = "/tags/"
+    weight = 20
