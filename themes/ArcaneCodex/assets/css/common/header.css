@@ -24,7 +24,7 @@
 }
 
 .logo a {
-    font-size: 24px;
+    font-size: 32px;
     font-weight: 700;
 }
 
@@ -62,7 +62,7 @@ button#theme-toggle {
 }
 
 #menu a {
-    font-size: 16px;
+    font-size: 20px;
 }
 
 #menu .active {
