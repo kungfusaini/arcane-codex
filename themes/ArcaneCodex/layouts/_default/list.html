@@ -57,6 +57,7 @@
   {{- with index . 0 }}
   <section class="hero-post">
     <article class="first-entry">
+      <div class="hero-label">Latest Post</div>
       {{- $isHidden := (.Param "cover.hiddenInList") | default (.Param "cover.hidden") | default false }}
       {{- partial "cover.html" (dict "cxt" . "IsSingle" false "isHidden" $isHidden) }}
       <header class="entry-header">

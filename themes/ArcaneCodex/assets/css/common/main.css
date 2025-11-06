@@ -87,6 +87,17 @@ pre:hover .copy-code {
     transform: translateY(-5px);
 }
 
+.hero-label {
+    text-align: center;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: var(--content-gap);
+    font-family: var(--font-family);
+}
+
 .hero-post .first-entry .entry-header h1 {
     font-size: 52px;
     line-height: 1.2;
