@@ -4,6 +4,10 @@ title = 'Arcane Codex'
 theme = 'ArcaneCodex'
 enableRobotsTXT = true
 
+[taxonomies]
+  category = "categories"
+  tag = "tags"
+
 [params]
   env = "production"
   defaultTheme = "dark" 
@@ -18,7 +22,12 @@ enableRobotsTXT = true
     url = "/posts/"
     weight = 10
   [[menu.main]]
+    identifier = "categories"
+    name = "Categories"
+    url = "/categories/"
+    weight = 20
+  [[menu.main]]
     identifier = "tags"
     name = "Tags"
     url = "/tags/"
-    weight = 20
+    weight = 30

@@ -90,3 +90,21 @@ pre:hover .copy-code {
 .post-tag {
     pointer-events: auto;
 }
+
+.post-category {
+    display: inline-block;
+    padding: 4px 12px;
+    background: var(--primary);
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--theme);
+    text-decoration: none;
+    transition: transform 0.2s, background 0.2s;
+    pointer-events: auto;
+}
+
+.post-category:hover {
+    background: var(--light-red);
+    transform: scale(1.05);
+}

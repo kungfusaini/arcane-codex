@@ -18,6 +18,10 @@
 {{- end }}
 {{- end }}
 
+{{- with .Params.categories }}
+{{- $scratch.Add "meta" (slice (printf "<a href='/categories/%s/' class='post-category'>%s</a>" . (. | title))) }}
+{{- end }}
+
 {{- with .Params.tags }}
 {{- $tags := slice }}
 {{- range . }}
