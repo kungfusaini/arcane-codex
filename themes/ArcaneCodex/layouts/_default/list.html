@@ -90,6 +90,18 @@
 {{- end }}
 {{- end }}
 
+<!-- Category Filter Bar -->
+{{- if .IsHome }}
+<section class="category-filter">
+  <nav class="category-nav">
+    <a href="/posts/" class="category-item active">ALL</a>
+    {{- range $key, $taxonomy := site.Taxonomies.categories }}
+    <a href="/categories/{{ $key | urlize }}/" class="category-item">{{ $key | title }}</a>
+    {{- end }}
+  </nav>
+</section>
+{{- end }}
+
 {{- $term := .Data.Term }}
 {{- range $index, $page := $paginator.Pages }}
 
