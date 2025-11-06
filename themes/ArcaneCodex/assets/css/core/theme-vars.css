@@ -104,7 +104,8 @@
 .codex {
     font-family: var(--font-family);
     color: var(--primary);
-    transform: scaleX(1.27);
+    transform: scaleX(1.35);
     display: inline-block;
+	margin-left: 12px;
 }
 
