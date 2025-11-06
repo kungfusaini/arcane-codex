@@ -4,8 +4,7 @@ WORKDIR /src
 # Copy package files first for better layer caching
 COPY . .
 
-# Initialize git submodules (themes)
-RUN git submodule update --init --recursive
+# Theme is now a regular directory, no submodules needed
 
 # Run Hugo development server with watch
 EXPOSE 1313

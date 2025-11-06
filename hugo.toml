@@ -1,7 +1,7 @@
 baseURL = "https://arcanecodex.dev/"
 languageCode = 'en-us'
 title = 'Arcane Codex'
-theme = 'PaperMod'
+theme = 'ArcaneCodex'
 enableRobotsTXT = true
 
 [params]

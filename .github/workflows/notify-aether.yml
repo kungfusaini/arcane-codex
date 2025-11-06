@@ -1,0 +1,16 @@
+name: Notify Aether
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger aether update
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          repository: kungfusaini/aether
+          token: ${{ secrets.AETHER_SYNC_TOKEN }}
+          event-type: arcanecodex-updated

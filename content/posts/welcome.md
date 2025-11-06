@@ -4,4 +4,6 @@ draft = false
 title = 'Welcome'
 +++
 
-Hey dude this is my first blog post!!
+# Hey !
+Hey dude this is my first blog post!! 
+Just trying some things out!
