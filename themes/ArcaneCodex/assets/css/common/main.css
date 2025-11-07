@@ -100,7 +100,6 @@ pre:hover .copy-code {
 .hero-post .first-entry .entry-header h1 {
     font-size: 52px;
     line-height: 1.2;
-    margin-bottom: var(--content-gap);
     color: var(--primary);
 }
 
@@ -108,16 +107,13 @@ pre:hover .copy-code {
     font-size: 18px;
     line-height: 1.6;
     color: var(--content);
-    margin: var(--content-gap) 0;
 }
 
-.hero-post .first-entry .entry-footer {
-    margin-top: var(--content-gap);
-}
+
 
 /* Tighten spacing after hero post */
 .hero-post {
-    margin-bottom: 0;
+    margin-bottom: calc(var(--gap) * 0.5);
 }
 
 /* Tighten spacing for posts section */
