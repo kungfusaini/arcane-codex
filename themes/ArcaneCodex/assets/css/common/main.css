@@ -183,6 +183,16 @@ pre:hover .copy-code {
     pointer-events: none;
 }
 
+/* Page Load Fade-in Transitions */
+body > *:not(header):not(footer) {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+body.loaded > *:not(header):not(footer) {
+    opacity: 1;
+}
+
 /* Responsive Hero Styles */
 @media (max-width: 768px) {
     .hero-post .first-entry {
