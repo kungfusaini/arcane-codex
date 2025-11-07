@@ -48,7 +48,14 @@
     {{- partial "post_nav_links.html" . }}
     {{- end }}
     {{- if (and site.Params.ShowShareButtons (ne .Params.disableShare true)) }}
-    {{- partial "share_icons.html" . -}}
+    <div class="share-container">
+      <button class="share-toggle" onclick="toggleShare()">
+        Share
+      </button>
+      <div class="share-icons">
+        {{- partial "share_icons.html" . -}}
+      </div>
+    </div>
     {{- end }}
   </footer>
 
