@@ -94,9 +94,9 @@
 {{- if .IsHome }}
 <section class="category-filter">
   <nav class="category-nav">
-    <a href="/posts/" class="category-item active">ALL</a>
+    <a href="/posts/" class="category-item active" data-category="all">ALL</a>
     {{- range $key, $taxonomy := site.Taxonomies.categories }}
-    <a href="/categories/{{ $key | urlize }}/" class="category-item">{{ $key | title }}</a>
+    <a href="/categories/{{ $key | urlize }}/" class="category-item" data-category="{{ $key | lower }}">{{ $key | title }}</a>
     {{- end }}
   </nav>
 </section>
@@ -121,7 +121,11 @@
 {{- end }}
 
 {{- if ne (and $.IsHome (eq $paginator.PageNumber 1) (eq $index 0) (not $user_preferred)) true }}
-<article class="{{ $class }}">
+{{- $categoryString := .Params.categories | default "" }}
+{{- if $categoryString }}
+{{- $categoryString = lower $categoryString }}
+{{- end }}
+<article class="{{ $class }}" data-categories="{{ $categoryString }}">
   {{- $isHidden := (.Param "cover.hiddenInList") | default (.Param "cover.hidden") | default false }}
   {{- partial "cover.html" (dict "cxt" . "IsSingle" false "isHidden" $isHidden) }}
   <header class="entry-header">
@@ -179,5 +183,43 @@
 {{- end }}
 
 {{- end }}{{/* end profileMode */}}
+
+{{- if .IsHome }}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const categoryItems = document.querySelectorAll('.category-item');
+    const posts = document.querySelectorAll('.filtered-posts .post-entry');
+    
+    categoryItems.forEach(item => {
+        item.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            // Remove active class from all items
+            categoryItems.forEach(cat => cat.classList.remove('active'));
+            
+            // Add active class to clicked item
+            this.classList.add('active');
+            
+            const selectedCategory = this.dataset.category;
+            
+            // Filter posts
+            posts.forEach(post => {
+                if (selectedCategory === 'all') {
+                    post.style.display = 'block';
+                } else {
+                    // Check if post has the selected category
+                    const postCategories = post.dataset.categories || '';
+                    if (postCategories.includes(selectedCategory)) {
+                        post.style.display = 'block';
+                    } else {
+                        post.style.display = 'none';
+                    }
+                }
+            });
+        });
+    });
+});
+</script>
+{{- end }}
 
 {{- end }}{{- /* end main */ -}}
