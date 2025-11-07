@@ -23,6 +23,14 @@
 {{- end }}
     {{ partialCached "header.html" . .Page -}}
     <main class="main">
+        <div class="main-top-back">
+            <button class="back-button" onclick="goBack()" aria-label="go back">
+                <svg version="1.1" viewBox="0 0 24 24" xml:space="preserve" height="18px" width="18px" fill="currentColor">
+                    <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
+                </svg>
+                Back
+            </button>
+        </div>
         {{- block "main" . }}{{ end }}
     </main>
     {{ partialCached "footer.html" . .Layout .Kind (.Param "hideFooter") (.Param "ShowCodeCopyButtons") -}}
@@ -31,6 +39,16 @@ document.addEventListener('DOMContentLoaded', function() {
     // Trigger page load fade-in
     document.body.classList.add('loaded');
 });
+
+function goBack() {
+    // Check if previous page was on the same site
+    if (document.referrer && document.referrer.includes(window.location.hostname)) {
+        window.history.back();
+    } else {
+        // Fallback to home if previous page was external or no referrer
+        window.location.href = '/';
+    }
+}
 
 function toggleShare() {
     const shareIcons = document.querySelector('.share-icons');

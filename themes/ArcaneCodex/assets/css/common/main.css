@@ -213,6 +213,35 @@ body.loaded > *:not(header):not(footer) {
     color: var(--light-red);
 }
 
+.back-button {
+    background: none;
+    border: none;
+    color: var(--primary);
+    font-size: 18px;
+    cursor: pointer;
+    padding: 4px 8px;
+    transition: color 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.back-button:hover {
+    color: var(--light-red);
+}
+
+.back-button svg {
+    transition: transform 0.2s ease;
+}
+
+.back-button:hover svg {
+    transform: translateX(-2px);
+}
+
+.main-top-back {
+    margin-bottom: 16px;
+}
+
 .share-icons {
     position: absolute;
     bottom: 100%;
