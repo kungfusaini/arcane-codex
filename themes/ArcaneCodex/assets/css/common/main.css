@@ -227,6 +227,8 @@ pre:hover .copy-code {
 
 .post-tag {
     pointer-events: auto;
+    position: relative;
+    z-index: 3;
 }
 
 .post-category {

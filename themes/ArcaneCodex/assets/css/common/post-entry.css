@@ -75,6 +75,9 @@
 .entry-footer {
     color: var(--secondary);
     font-size: 13px;
+    position: relative;
+    z-index: 2;
+    pointer-events: auto;
 }
 
 .entry-link {
@@ -82,8 +85,17 @@
     left: 0;
     right: 0;
     top: 0;
-    bottom: 0;
-    pointer-events: none;
+    bottom: 60px;
+    pointer-events: auto;
+    z-index: 1;
+}
+
+.hero-post .first-entry .entry-link {
+    bottom: 40px;
+}
+
+.filtered-posts .post-entry .entry-link {
+    bottom: 45px;
 }
 
 .entry-hint {
