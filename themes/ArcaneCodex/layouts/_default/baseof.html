@@ -47,6 +47,69 @@ function hideShare() {
     }
 }
 
+function copyLink() {
+    const url = window.location.href;
+    const helpText = document.getElementById('shareHelpText');
+    
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(url).then(() => {
+            showCopySuccess();
+        }).catch(() => {
+            fallbackCopyTextToClipboard(url);
+        });
+    } else {
+        fallbackCopyTextToClipboard(url);
+    }
+}
+
+function fallbackCopyTextToClipboard(text) {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.top = "0";
+    textArea.style.left = "0";
+    textArea.style.position = "fixed";
+    
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    
+    try {
+        document.execCommand('copy');
+        showCopySuccess();
+    } catch (err) {
+        console.error('Failed to copy text: ', err);
+    }
+    
+    document.body.removeChild(textArea);
+}
+
+function showCopySuccess() {
+    const helpText = document.getElementById('shareHelpText');
+    const originalText = helpText.textContent;
+    
+    // Fade out
+    helpText.style.opacity = '0';
+    
+    setTimeout(() => {
+        helpText.textContent = 'Link copied.';
+        helpText.style.color = 'var(--light-red)';
+        // Fade in
+        helpText.style.opacity = '1';
+    }, 300);
+    
+    setTimeout(() => {
+        // Fade out again
+        helpText.style.opacity = '0';
+        
+        setTimeout(() => {
+            helpText.textContent = originalText;
+            helpText.style.color = '';
+            // Fade in back to original
+            helpText.style.opacity = '1';
+        }, 300);
+    }, 2000);
+}
+
 // Close share when clicking outside
 document.addEventListener('click', function(e) {
     const shareContainer = document.querySelector('.share-container');
