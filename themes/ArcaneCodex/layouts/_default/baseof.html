@@ -34,14 +34,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function toggleShare() {
     const shareIcons = document.querySelector('.share-icons');
-    shareIcons.classList.toggle('show');
-    
-    // Auto-hide after 3 seconds if not interacted with
-    if (shareIcons.classList.contains('show')) {
-        clearTimeout(window.shareTimeout);
-        window.shareTimeout = setTimeout(() => {
-            shareIcons.classList.remove('show');
-        }, 3000);
+    shareIcons.classList.add('show');
+}
+
+function hideShare() {
+    const shareIcons = document.querySelector('.share-icons');
+    if (shareIcons && shareIcons.classList.contains('show')) {
+        shareIcons.classList.add('hiding');
+        setTimeout(() => {
+            shareIcons.classList.remove('show', 'hiding');
+        }, 300);
     }
 }
 
@@ -51,30 +53,8 @@ document.addEventListener('click', function(e) {
     if (shareContainer && !shareContainer.contains(e.target)) {
         const shareIcons = document.querySelector('.share-icons');
         if (shareIcons) {
-            shareIcons.classList.remove('show');
-            clearTimeout(window.shareTimeout);
+            hideShare();
         }
-    }
-});
-
-// Close share when mouse leaves the window
-document.addEventListener('mouseout', function(e) {
-    if (e.target.closest('.share-icons') && !e.relatedTarget?.closest('.share-icons')) {
-        const shareIcons = document.querySelector('.share-icons');
-        if (shareIcons && shareIcons.classList.contains('show')) {
-            shareIcons.classList.add('hiding');
-            clearTimeout(window.shareTimeout);
-            setTimeout(() => {
-                shareIcons.classList.remove('show', 'hiding');
-            }, 300);
-        }
-    }
-});
-
-// Keep share open when hovering over it
-document.addEventListener('mouseover', function(e) {
-    if (e.target.closest('.share-icons')) {
-        clearTimeout(window.shareTimeout);
     }
 });
 </script>
