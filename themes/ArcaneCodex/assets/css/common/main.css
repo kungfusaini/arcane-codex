@@ -208,17 +208,18 @@ pre:hover .copy-code {
 .post-tag {
     display: inline-block;
     padding: 2px 8px;
-    background: var(--code-bg);
+    background: transparent;
+    border: 1px solid var(--tertiary);
     border-radius: 4px;
     font-size: 11px;
     color: var(--secondary);
     text-decoration: none;
-    transition: background 0.2s, color 0.2s;
+    transition: border-color 0.2s, color 0.2s;
 }
 
 .post-tag:hover {
-    background: var(--primary);
-    color: var(--theme);
+    border-color: var(--primary);
+    color: var(--secondary);
 }
 
 .post-tag {
@@ -230,17 +231,16 @@ pre:hover .copy-code {
 .post-category {
     display: inline-block;
     padding: 4px 12px;
-    background: var(--primary);
-    border-radius: 6px;
+    background: var(--code-bg);
+    border-radius: 4px;
     font-size: 13px;
     font-weight: 600;
-    color: var(--theme);
+    color: var(--secondary);
     text-decoration: none;
-    transition: transform 0.2s, background 0.2s;
-    pointer-events: auto;
+    transition: background 0.2s, color 0.2s;
 }
 
 .post-category:hover {
-    background: var(--light-red);
-    transform: scale(1.05);
+    background: var(--primary);
+    color: var(--theme);
 }
