@@ -166,6 +166,11 @@ pre:hover .copy-code {
     opacity: 0.3;
 }
 
+/* Filtered Posts Container */
+.filtered-posts {
+    width: 100%;
+}
+
 /* Responsive Hero Styles */
 @media (max-width: 768px) {
     .hero-post .first-entry {
