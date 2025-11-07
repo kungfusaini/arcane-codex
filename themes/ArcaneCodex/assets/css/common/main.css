@@ -173,7 +173,12 @@ pre:hover .copy-code {
 
 /* Fade transition properties */
 .filtered-posts .post-entry {
-    transition: opacity 0.3s ease;
+    transition: opacity 0.3s ease, transform 0.5s ease;
+}
+
+/* Hover movement for preview posts */
+.filtered-posts .post-entry:hover {
+    transform: translateY(-5px);
 }
 
 /* Hidden state for posts */
