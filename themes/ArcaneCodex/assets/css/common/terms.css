@@ -5,14 +5,22 @@
 }
 
 .terms-tags a {
-    display: block;
-    padding: 3px 10px;
-    background: var(--tertiary);
-    border-radius: 6px;
-    transition: transform 0.1s;
+    display: inline-block;
+    padding: 2px 8px;
+    background: transparent;
+    border: 1px solid var(--tertiary);
+    border-radius: 4px;
+    color: var(--secondary);
+    text-decoration: none;
+    transition: border-color 0.2s, color 0.2s;
+}
+
+.terms-tags a:hover {
+    border-color: var(--primary);
+    color: var(--primary);
 }
 
 .terms-tags a:active {
-    background: var(--tertiary);
+    border-color: var(--primary);
     transform: scale(0.96);
 }
