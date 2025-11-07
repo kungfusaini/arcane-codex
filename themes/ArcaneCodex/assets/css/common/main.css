@@ -222,13 +222,23 @@ body.loaded > *:not(header):not(footer) {
     background: var(--theme);
     border: 1px solid var(--tertiary);
     border-radius: var(--radius);
-    padding: calc(var(--gap) * 2);
+    padding: var(--gap);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
     z-index: 1000;
     display: none;
     min-width: 200px;
     text-align: center;
     margin-bottom: 4px;
+}
+
+.share-icons ul {
+    background: transparent;
+    margin: 0;
+    padding: 0;
+}
+
+.share-icons svg {
+    fill: var(--secondary);
 }
 
 .share-icons.show {
