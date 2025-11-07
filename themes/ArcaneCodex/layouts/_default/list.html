@@ -205,14 +205,20 @@ document.addEventListener('DOMContentLoaded', function() {
             // Filter posts
             posts.forEach(post => {
                 if (selectedCategory === 'all') {
+                    // Show post with fade in
                     post.style.display = 'block';
+                    setTimeout(() => post.classList.remove('hidden'), 10);
                 } else {
                     // Check if post has the selected category
                     const postCategories = post.dataset.categories || '';
                     if (postCategories.includes(selectedCategory)) {
+                        // Show post with fade in
                         post.style.display = 'block';
+                        setTimeout(() => post.classList.remove('hidden'), 10);
                     } else {
-                        post.style.display = 'none';
+                        // Hide post with fade out
+                        post.classList.add('hidden');
+                        setTimeout(() => post.style.display = 'none', 300);
                     }
                 }
             });

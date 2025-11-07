@@ -171,6 +171,17 @@ pre:hover .copy-code {
     width: 100%;
 }
 
+/* Fade transition properties */
+.filtered-posts .post-entry {
+    transition: opacity 0.3s ease;
+}
+
+/* Hidden state for posts */
+.filtered-posts .post-entry.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
 /* Responsive Hero Styles */
 @media (max-width: 768px) {
     .hero-post .first-entry {
