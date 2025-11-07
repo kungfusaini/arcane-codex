@@ -203,11 +203,9 @@ body.loaded > *:not(header):not(footer) {
     background: none;
     border: none;
     color: var(--primary);
-    font-size: 14px;
+    font-size: 18px;
     cursor: pointer;
     padding: 4px 8px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
     transition: color 0.2s ease;
 }
 
@@ -218,7 +216,7 @@ body.loaded > *:not(header):not(footer) {
 .share-icons {
     position: absolute;
     bottom: 100%;
-    left: 0;
+    right: 0;
     background: var(--theme);
     border: 1px solid var(--tertiary);
     border-radius: var(--radius);

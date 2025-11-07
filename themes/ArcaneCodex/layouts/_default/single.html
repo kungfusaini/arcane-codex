@@ -43,21 +43,24 @@
   {{- end }}
 
   <footer class="post-footer">
-    
-    {{- if (.Param "ShowPostNavLinks") }}
-    {{- partial "post_nav_links.html" . }}
-    {{- end }}
-    {{- if (and site.Params.ShowShareButtons (ne .Params.disableShare true)) }}
-    <div class="share-container">
-      <button class="share-toggle" onclick="toggleShare()">
-        Share
-      </button>
-      <div class="share-icons">
-        <button class="share-close" onclick="hideShare()">×</button>
-        {{- partial "share_icons.html" . -}}
+    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+      <div>
+        {{- if (.Param "ShowPostNavLinks") }}
+        {{- partial "post_nav_links.html" . }}
+        {{- end }}
       </div>
+      {{- if (and site.Params.ShowShareButtons (ne .Params.disableShare true)) }}
+      <div class="share-container">
+        <button class="share-toggle" onclick="toggleShare()">
+          Share
+        </button>
+        <div class="share-icons">
+          <button class="share-close" onclick="hideShare()">×</button>
+          {{- partial "share_icons.html" . -}}
+        </div>
+      </div>
+      {{- end }}
     </div>
-    {{- end }}
   </footer>
 
   {{- if (.Param "comments") }}
