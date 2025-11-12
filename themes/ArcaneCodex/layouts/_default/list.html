@@ -90,19 +90,8 @@
 {{- end }}
 {{- end }}
 
-<!-- Category Filter Bar -->
 {{- if .IsHome }}
-<section class="category-filter">
-  <nav class="category-nav">
-    <a href="/posts/" class="category-item active" data-category="all">ALL</a>
-    {{- range $key, $taxonomy := site.Taxonomies.categories }}
-    <a href="/categories/{{ $key | urlize }}/" class="category-item" data-category="{{ $key | lower }}">{{ $key | title }}</a>
-    {{- end }}
-  </nav>
-</section>
-
-<!-- Separator Line -->
-<div class="category-separator"></div>
+{{- partial "category_filter.html" (dict "context" "homepage") }}
 {{- end }}
 
 {{- $term := .Data.Term }}

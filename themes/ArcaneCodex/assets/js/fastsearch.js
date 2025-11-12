@@ -1,19 +1,52 @@
-import * as params from '@params';
-
 let fuse; // holds our search engine
-let resList = document.getElementById('searchResults');
-let sInput = document.getElementById('searchInput');
-let first, last, current_elem = null
+let searchData = []; // holds the original search data
+let resList, catList, tagList, sInput;
 let resultsAvailable = false;
+let currentFilter = 'posts'; // current filter state: 'posts', 'categories', 'tags'
+let allCategories = [];
+let allTags = [];
+
+// Function to strip HTML tags (like Hugo's plainify)
+function stripHtml(html) {
+    const temp = document.createElement('div');
+    temp.innerHTML = html;
+    return temp.textContent || temp.innerText || '';
+}
 
 // load our search index
 window.onload = function () {
+    // Initialize DOM element references
+    resList = document.getElementById('searchResults');
+    catList = document.getElementById('categoriesResults');
+    tagList = document.getElementById('tagsResults');
+    sInput = document.getElementById('searchInput');
+    
+    initializeFilterToggles();
+    updateContentDisplay();
+    
     let xhr = new XMLHttpRequest();
     xhr.onreadystatechange = function () {
         if (xhr.readyState === 4) {
             if (xhr.status === 200) {
                 let data = JSON.parse(xhr.responseText);
                 if (data) {
+                    searchData = data;
+                    // Extract all unique categories and tags from the data
+                    let categorySet = new Set();
+                    let tagSet = new Set();
+                    
+                    data.forEach(item => {
+                        if (item.categories) {
+                            item.categories.forEach(cat => categorySet.add(cat));
+                        }
+                        if (item.tags) {
+                            item.tags.forEach(tag => tagSet.add(tag));
+                        }
+                    });
+                    
+                    allCategories = Array.from(categorySet).sort();
+                    allTags = Array.from(tagSet).sort();
+                    
                     // fuse.js options; check fuse.js website for details
                     let options = {
                         distance: 100,
@@ -23,28 +56,22 @@ window.onload = function () {
                             'title',
                             'permalink',
                             'summary',
-                            'content'
+                            'content',
+                            'categories',
+                            'tags'
                         ]
                     };
-                    if (params.fuseOpts) {
-                        options = {
-                            isCaseSensitive: params.fuseOpts.iscasesensitive ?? false,
-                            includeScore: params.fuseOpts.includescore ?? false,
-                            includeMatches: params.fuseOpts.includematches ?? false,
-                            minMatchCharLength: params.fuseOpts.minmatchcharlength ?? 1,
-                            shouldSort: params.fuseOpts.shouldsort ?? true,
-                            findAllMatches: params.fuseOpts.findallmatches ?? false,
-                            keys: params.fuseOpts.keys ?? ['title', 'permalink', 'summary', 'content'],
-                            location: params.fuseOpts.location ?? 0,
-                            threshold: params.fuseOpts.threshold ?? 0.4,
-                            distance: params.fuseOpts.distance ?? 100,
-                            ignoreLocation: params.fuseOpts.ignorelocation ?? true
-                        }
-                    }
+                    
                     fuse = new Fuse(data, options); // build the index from the json file
+                    
+                    // Setup search input event listeners after DOM elements are ready
+                    setupSearchInput();
+                    
+                    // Trigger initial search to show all posts
+                    if (currentFilter === 'posts') {
+                        performSearch();
+                    }
                 }
-            } else {
-                console.log(xhr.responseText);
             }
         }
     };
@@ -52,101 +79,267 @@ window.onload = function () {
     xhr.send();
 }
 
-function activeToggle(ae) {
-    document.querySelectorAll('.focus').forEach(function (element) {
-        // rm focus class
-        element.classList.remove("focus")
+// Filter toggle functionality
+function initializeFilterToggles() {
+    const filterButtons = document.querySelectorAll('[data-filter]');
+    
+    filterButtons.forEach(button => {
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            // Update active state
+            filterButtons.forEach(btn => btn.classList.remove('active'));
+            this.classList.add('active');
+            
+            // Update current filter
+            currentFilter = this.getAttribute('data-filter');
+            
+            // Show/hide appropriate content
+            updateContentDisplay();
+        });
     });
-    if (ae) {
-        ae.focus()
-        document.activeElement = current_elem = ae;
-        ae.parentElement.classList.add("focus")
-    } else {
-        document.activeElement.parentElement.classList.add("focus")
+}
+
+// Update which content section is visible
+function updateContentDisplay() {
+    const searchbox = document.getElementById('searchbox');
+    const categoriesDisplay = document.getElementById('categoriesDisplay');
+    const tagsDisplay = document.getElementById('tagsDisplay');
+    const searchResults = document.getElementById('searchResults');
+    
+    // Always show searchbox
+    if (searchbox) searchbox.style.display = 'block';
+    
+    // Hide results sections first
+    if (searchResults) searchResults.style.display = 'none';
+    if (categoriesDisplay) categoriesDisplay.style.display = 'none';
+    if (tagsDisplay) tagsDisplay.style.display = 'none';
+    
+    // Clear any existing content to remove event listeners
+    if (resList) resList.innerHTML = '';
+    if (catList) catList.innerHTML = '';
+    if (tagList) tagList.innerHTML = '';
+    
+    // Show the appropriate results section
+    switch (currentFilter) {
+        case 'posts':
+            if (searchResults) searchResults.style.display = 'block';
+            // Always trigger search for posts (shows all if no query)
+            performSearch();
+            break;
+        case 'categories':
+            if (categoriesDisplay) categoriesDisplay.style.display = 'block';
+            // Always trigger search for categories (shows all if no query)
+            performCategoriesSearch(sInput ? sInput.value.trim().toLowerCase() : '');
+            break;
+        case 'tags':
+            if (tagsDisplay) tagsDisplay.style.display = 'block';
+            // Always trigger search for tags (shows all if no query)
+            performTagsSearch(sInput ? sInput.value.trim().toLowerCase() : '');
+            break;
     }
 }
 
-function reset() {
-    resultsAvailable = false;
-    resList.innerHTML = sInput.value = ''; // clear inputbox and searchResults
-    sInput.focus(); // shift focus to input box
+function shouldShowResult(item) {
+    switch (currentFilter) {
+        case 'posts':
+            return true; // All search results are posts
+        case 'categories':
+            return item.categories && item.categories.length > 0;
+        case 'tags':
+            return item.tags && item.tags.length > 0;
+        default:
+            return true;
+    }
 }
 
-// execute search as each character is typed
-sInput.onkeyup = function (e) {
-    // run a search query (for "term") every time a letter is typed
-    // in the search box
-    if (fuse) {
+function formatCategories(categories) {
+    if (!categories || categories.length === 0) return '';
+    return categories.map(cat => 
+        `<a href="/categories/${cat.toLowerCase()}/" class="post-category">${cat}</a>`
+    ).join(' ');
+}
+
+function formatTags(tags) {
+    if (!tags || tags.length === 0) return '';
+    return tags.map(tag => 
+        `<a href="/tags/${tag.toLowerCase()}/" class="post-tag">${tag}</a>`
+    ).join(' ');
+}
+
+function performSearch() {
+    if (!sInput || !resList) return;
+    
+    const query = sInput.value.trim().toLowerCase();
+    
+    if (currentFilter === 'posts') {
+        if (!fuse) return;
+        
         let results;
-        if (params.fuseOpts) {
-            results = fuse.search(this.value.trim(), {limit: params.fuseOpts.limit}); // the actual query being run using fuse.js along with options
+        if (query) {
+            // Search with query
+            results = fuse.search(query);
         } else {
-            results = fuse.search(this.value.trim()); // the actual query being run using fuse.js
+            // Show all posts when no query
+            results = searchData.map((doc, index) => ({item: doc, refIndex: index}));
         }
+        
         if (results.length !== 0) {
-            // build our html if result exists
-            let resultSet = ''; // our results bucket
-
+            let resultSet = '';
+            
             for (let item in results) {
-                resultSet += `<li class="post-entry"><header class="entry-header">${results[item].item.title}&nbsp;»</header>` +
-                    `<a href="${results[item].item.permalink}" aria-label="${results[item].item.title}"></a></li>`
+                const result = results[item].item;
+                
+                if (shouldShowResult(result)) {
+                    let metaParts = [];
+                    
+                    // Add date if present
+                    if (result.date) {
+                        const date = new Date(result.date);
+                        const formattedDate = date.toLocaleDateString('en-US', { 
+                            year: 'numeric', 
+                            month: 'long', 
+                            day: 'numeric' 
+                        });
+                        metaParts.push(`<span title="${result.date}">${formattedDate}</span>`);
+                    }
+                    
+                    // Add reading time if present
+                    if (result.readingTime) {
+                        metaParts.push(`<span>${result.readingTime} min</span>`);
+                    }
+                    
+                    // Add categories if present
+                    if (result.categories && result.categories.length > 0) {
+                        const categories = result.categories.map(cat => 
+                            `<a href="/categories/${cat.toLowerCase()}/" class="post-category">${cat}</a>`
+                        ).join(' ');
+                        metaParts.push(categories);
+                    }
+                    
+                    // Add tags if present
+                    if (result.tags && result.tags.length > 0) {
+                        const tags = result.tags.map(tag => 
+                            `<a href="/tags/${tag.toLowerCase()}/" class="post-tag">${tag}</a>`
+                        ).join(' ');
+                        metaParts.push(`<span class="post-tags-container">${tags}</span>`);
+                    }
+                    
+                    const metaContent = metaParts.join('&nbsp;·&nbsp;');
+                    
+                    resultSet += `<article class="post-entry">
+                        <header class="entry-header">
+                            <h2>${result.title}</h2>
+                        </header>
+                        ${result.summary ? `<div class="entry-content">
+                            <p>${stripHtml(result.summary)}${result.summary.endsWith('...') ? '' : '...'}</p>
+                        </div>` : ''}
+                        <a href="${result.permalink}" aria-label="${result.title}" class="entry-link"></a>
+                        ${metaContent ? `<footer class="entry-footer">${metaContent}</footer>` : ''}
+                    </article>`;
+                }
             }
-
+            
             resList.innerHTML = resultSet;
             resultsAvailable = true;
-            first = resList.firstChild;
-            last = resList.lastChild;
         } else {
             resultsAvailable = false;
             resList.innerHTML = '';
         }
+    } else if (currentFilter === 'categories') {
+        performCategoriesSearch(query);
+    } else if (currentFilter === 'tags') {
+        performTagsSearch(query);
     }
 }
 
-sInput.addEventListener('search', function (e) {
-    // clicked on x
-    if (!this.value) reset()
-})
+function performCategoriesSearch(query) {
+    if (!catList) return;
+    
+    const matchingCategories = query ? 
+        allCategories.filter(cat => cat.toLowerCase().includes(query)) : 
+        allCategories;
+    
+    if (matchingCategories.length > 0) {
+        let resultSet = '';
+        matchingCategories.forEach(category => {
+            const count = getCategoryPostCount(category);
+            resultSet += `<li>
+                <a href="/categories/${category.toLowerCase()}/">${category} <sup><strong><sup>${count}</sup></strong></sup></a>
+            </li>`;
+        });
+        catList.innerHTML = resultSet;
+    } else {
+        catList.innerHTML = '';
+    }
+}
 
-// kb bindings
-document.onkeydown = function (e) {
-    let key = e.key;
-    let ae = document.activeElement;
+function performTagsSearch(query) {
+    if (!tagList) return;
+    
+    const matchingTags = query ? 
+        allTags.filter(tag => tag.toLowerCase().includes(query)) : 
+        allTags;
+    
+    if (matchingTags.length > 0) {
+        let resultSet = '';
+        matchingTags.forEach(tag => {
+            const count = getTagPostCount(tag);
+            resultSet += `<li>
+                <a href="/tags/${tag.toLowerCase()}/">${tag} <sup><strong><sup>${count}</sup></strong></sup></a>
+            </li>`;
+        });
+        tagList.innerHTML = resultSet;
+    } else {
+        tagList.innerHTML = '';
+    }
+}
 
-    let inbox = document.getElementById("searchbox").contains(ae)
+function getCategoryPostCount(category) {
+    // Count posts that have this category
+    let count = 0;
+    if (fuse) {
+        const allPosts = fuse._docs || [];
+        allPosts.forEach(post => {
+            if (post.categories && post.categories.includes(category)) {
+                count++;
+            }
+        });
+    }
+    return count;
+}
 
-    if (ae === sInput) {
-        let elements = document.getElementsByClassName('focus');
-        while (elements.length > 0) {
-            elements[0].classList.remove('focus');
+function getTagPostCount(tag) {
+    // Count posts that have this tag
+    let count = 0;
+    if (fuse) {
+        const allPosts = fuse._docs || [];
+        allPosts.forEach(post => {
+            if (post.tags && post.tags.includes(tag)) {
+                count++;
+            }
+        });
+    }
+    return count;
+}
+
+function reset() {
+    resultsAvailable = false;
+    if (resList) resList.innerHTML = '';
+    if (sInput) sInput.value = ''; // clear inputbox and searchResults
+    if (sInput) sInput.focus(); // shift focus to input box
+}
+
+// execute search as each character is typed
+function setupSearchInput() {
+    if (sInput) {
+        sInput.onkeyup = function (e) {
+            performSearch();
         }
-    } else if (current_elem) ae = current_elem;
 
-    if (key === "Escape") {
-        reset()
-    } else if (!resultsAvailable || !inbox) {
-        return
-    } else if (key === "ArrowDown") {
-        e.preventDefault();
-        if (ae == sInput) {
-            // if the currently focused element is the search input, focus the <a> of first <li>
-            activeToggle(resList.firstChild.lastChild);
-        } else if (ae.parentElement != last) {
-            // if the currently focused element's parent is last, do nothing
-            // otherwise select the next search result
-            activeToggle(ae.parentElement.nextSibling.lastChild);
-        }
-    } else if (key === "ArrowUp") {
-        e.preventDefault();
-        if (ae.parentElement == first) {
-            // if the currently focused element is first item, go to input box
-            activeToggle(sInput);
-        } else if (ae != sInput) {
-            // if the currently focused element is input box, do nothing
-            // otherwise select the previous search result
-            activeToggle(ae.parentElement.previousSibling.lastChild);
-        }
-    } else if (key === "ArrowRight") {
-        ae.click(); // click on active link
+        sInput.addEventListener('search', function (e) {
+            // clicked on x
+            if (!this.value) reset()
+        })
     }
 }

@@ -2,8 +2,8 @@
 date = '2025-11-05T13:32:06Z'
 draft = false
 title = 'Welcome'
-categories = "Tech"
-tags = ['yo','test']
+categories = "Art"
+tags = ['hello','test']
 +++
 
 # Hey !

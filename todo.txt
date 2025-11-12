@@ -1,0 +1,136 @@
+# ArcaneCodex Homepage Redesign - TODO List
+
+## ✅ COMPLETED MILESTONES
+
+### Milestone 1: Hero Section Foundation
+- [x] Modified `themes/ArcaneCodex/layouts/_default/list.html` to detect homepage
+- [x] Extracted latest post separately from regular post list
+- [x] Wrapped latest post in `<section class="hero-post">`
+- [x] Ensured latest post doesn't appear in regular posts section
+
+### Milestone 2: Hero Styling
+- [x] Added full-width hero card styling in `themes/ArcaneCodex/assets/css/common/main.css`
+- [x] Implemented centered content layout with max-width removal
+- [x] Applied larger typography (52px title, 18px content)
+- [x] Added "Latest Post" label (14px) above title
+- [x] Created gentle hover effect (5px lift, no shadow)
+
+### Milestone 3: Category Filter Bar
+- [x] Added horizontal category navigation in `themes/ArcaneCodex/layouts/_default/list.html`
+- [x] Implemented "ALL" (active) + dynamic categories from Hugo taxonomy
+- [x] Added proper HTML structure with `<nav class="category-nav">`
+- [x] Result: Navigation bar with "ALL", "Art", "Tech" categories
+
+### Milestone 4: Category Filter Styling & Spacing
+- [x] Implemented centered horizontal layout in `themes/ArcaneCodex/assets/css/common/main.css`
+- [x] Applied full-width positioning with negative margins
+- [x] Created clean text links (gray normal, red active/hover)
+- [x] Fixed spacing issues between hero post and category filter
+- [x] Removed excessive padding from `.hero-post` and `.hero-post .first-entry`
+- [x] Adjusted `.first-entry` margin in `themes/ArcaneCodex/assets/css/common/post-entry.css`
+- [x] Added proper padding to category filter bar
+- [x] Increased category label font size from 14px to 16px
+
+## 🔄 PENDING MILESTONES
+
+### Milestone 5: Separator Line
+- [ ] Add horizontal separator line between category filter and posts section
+- [ ] Style separator with subtle color and opacity
+- [ ] Position with proper margins for visual separation
+- [ ] File to modify: `themes/ArcaneCodex/layouts/_default/list.html` (HTML)
+- [ ] File to modify: `themes/ArcaneCodex/assets/css/common/main.css` (CSS)
+
+### Milestone 6: Filtered Posts Container
+- [ ] Wrap posts section in proper container for styling
+- [ ] Add `.filtered-posts` container class around posts loop
+- [ ] Ensure container works with existing Hugo pagination
+- [ ] File to modify: `themes/ArcaneCodex/layouts/_default/list.html`
+- [ ] File to modify: `themes/ArcaneCodex/assets/css/common/main.css`
+
+### Milestone 7: Filtered Posts Grid Layout
+- [ ] Implement responsive grid layout for magazine-style appearance
+- [ ] Mobile: Single column (default)
+- [ ] Tablet (768px+): 2-column grid
+- [ ] Desktop (1200px+): 3-column grid
+- [ ] Add card styling with borders, padding, hover effects
+- [ ] Ensure proper gap spacing between grid items
+- [ ] File to modify: `themes/ArcaneCodex/assets/css/common/main.css`
+
+### Milestone 8: Active Category Detection
+- [ ] Add JavaScript for category filtering functionality
+- [ ] Implement click handlers for category items
+- [ ] Add data attributes to posts for category identification
+- [ ] Create show/hide logic for filtered posts
+- [ ] Add active state styling for selected category
+- [ ] Handle "ALL" category to show all posts
+- [ ] File to modify: `themes/ArcaneCodex/layouts/_default/list.html`
+- [ ] File to modify: `themes/ArcaneCodex/assets/css/common/main.css`
+
+### Milestone 9: Final Polish & Testing
+- [ ] Test responsive behavior across all screen sizes
+- [ ] Verify category filtering works correctly
+- [ ] Check hover states and transitions
+- [ ] Ensure proper spacing and alignment
+- [ ] Test with different numbers of posts
+- [ ] Validate HTML structure and CSS organization
+- [ ] Performance optimization if needed
+- [ ] Cross-browser compatibility check
+
+## 📁 FILES BEING MODIFIED
+
+### Primary Files:
+1. **`themes/ArcaneCodex/layouts/_default/list.html`**
+   - Homepage structure and template logic
+   - Hero section implementation
+   - Category filter HTML
+   - Posts container structure
+   - JavaScript integration
+
+2. **`themes/ArcaneCodex/assets/css/common/main.css`**
+   - Hero section styling
+   - Category filter styling
+   - Separator line styling
+   - Posts container styling
+   - Grid layout implementation
+   - Active category states
+
+3. **`themes/ArcaneCodex/assets/css/common/post-entry.css`**
+   - First-entry margin adjustments
+   - Post entry styling modifications
+
+## 🎯 CURRENT STATE SUMMARY
+
+**What's Working:**
+- Hero post displays prominently at top with "Latest Post" label
+- Category filter bar displays with proper styling and spacing
+- Clean typography and color scheme consistent with theme
+- Responsive behavior for hero and filter sections
+- Proper spacing between elements
+
+**What's Next:**
+- Add visual separation with separator line
+- Transform posts from list to magazine grid layout
+- Implement interactive category filtering
+- Final polish and testing
+
+## 🚀 NEXT IMMEDIATE TASK
+
+**Priority: HIGH** - Start with Milestone 5 (Separator Line)
+- Add `<div class="category-separator"></div>` to HTML
+- Style with CSS for subtle visual separation
+- Test positioning and spacing
+
+---
+
+*Last Updated: 2025-11-06*
+*Phase: Homepage Magazine Redesign*
+*Progress: 4/9 Milestones Complete (44%)*
+
+
+
+OKAY THEN AFTERWARDS
+
+FIX MOBILE SCALING
+ADD A ABOUT PAGE THAT LINKS TO MY WEBSITE
+SIMPLE CONTACT PAGE
+MAIL HOSTING ARCANE CODEX DOMAIN (JUST DOMAIN ALIAS I GUESS AND AS LONG AS I CAN SEND WITH IT!)

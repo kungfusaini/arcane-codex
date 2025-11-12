@@ -14,6 +14,13 @@ enableRobotsTXT = true
   ShowReadingTime = true
   ShowShareButtons = true
   disableThemeToggle = true
+  disableFingerprinting = true
+[outputs]
+  home = ["HTML", "RSS", "JSON"]
+  page = ["HTML"]
+  section = ["HTML"]
+  taxonomy = ["HTML"]
+  term = ["HTML"]
 
 [menu]
   [[menu.main]]
@@ -31,3 +38,8 @@ enableRobotsTXT = true
     name = "Tags"
     url = "/tags/"
     weight = 30
+  [[menu.main]]
+    identifier = "search"
+    name = "Seek"
+    url = "/search/"
+    weight = 40

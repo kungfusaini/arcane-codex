@@ -1,0 +1,20 @@
+{{- $context := .context | default "homepage" }}
+
+<!-- Category/Tag Filter Bar -->
+<section class="category-filter">
+  <nav class="category-nav">
+    {{- if eq $context "search" }}
+    <a href="#" class="category-item search-filter active" data-filter="posts">POSTS</a>
+    <a href="#" class="category-item search-filter" data-filter="categories">CATEGORIES</a>
+    <a href="#" class="category-item search-filter" data-filter="tags">TAGS</a>
+    {{- else }}
+    <a href="/posts/" class="category-item active" data-category="all">ALL</a>
+    {{- range $key, $taxonomy := site.Taxonomies.categories }}
+    <a href="/categories/{{ $key | urlize }}/" class="category-item" data-category="{{ $key | lower }}">{{ $key | title }}</a>
+    {{- end }}
+    {{- end }}
+  </nav>
+</section>
+
+<!-- Separator Line -->
+<div class="category-separator"></div>

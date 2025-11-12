@@ -136,26 +136,19 @@ pre:hover .copy-code {
 }
 
 .category-item {
-    display: inline-block;
-    padding: 2px 8px;
-    background: transparent;
-    border: 1px solid var(--tertiary);
-    border-radius: 4px;
     color: var(--secondary);
     text-decoration: none;
     font-size: 16px;
     text-transform: uppercase;
     letter-spacing: 1px;
-    transition: border-color 0.2s, color 0.2s;
+    transition: color 0.2s ease;
 }
 
 .category-item:hover {
-    border-color: var(--primary);
     color: var(--primary);
 }
 
 .category-item.active {
-    border-color: var(--primary);
     color: var(--primary);
     font-weight: bold;
 }
