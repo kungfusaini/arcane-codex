@@ -14,6 +14,49 @@
         min-height: 260px;
     }
 
+    .hero-post .first-entry .entry-header h1 {
+        font-size: 32px;
+    }
+    
+    .hero-post .first-entry .entry-content {
+        font-size: 16px;
+    }
+
+    /* Regular post headings - maintain 4:3 ratio with hero */
+    .post-entry .entry-header h2 {
+        font-size: 24px;
+    }
+
+    /* Page headers (POSTS, CATEGORIES, TAGS, etc.) - same as hero title */
+    .page-header h1 {
+        font-size: 32px;
+    }
+
+    /* archive */
+    .archive-month {
+        flex-direction: column;
+    }
+
+    .archive-year {
+        margin-top: 20px;
+    }
+
+    /* footer */
+    .footer {
+        padding: calc((var(--footer-height) - var(--gap) - 10px) / 2) var(--gap);
+    }
+}
+
+    /* profile-mode */
+    .profile img {
+        transform: scale(0.85);
+    }
+
+    /* post-entry */
+    .first-entry {
+        min-height: 260px;
+    }
+
     /* archive */
     .archive-month {
         flex-direction: column;
