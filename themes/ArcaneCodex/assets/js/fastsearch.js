@@ -110,32 +110,38 @@ function updateContentDisplay() {
     // Always show searchbox
     if (searchbox) searchbox.style.display = 'block';
     
-    // Hide results sections first
-    if (postsResults) postsResults.style.display = 'none';
-    if (categoriesDisplay) categoriesDisplay.style.display = 'none';
-    if (tagsDisplay) tagsDisplay.style.display = 'none';
+    // Hide all results sections first with fade
+    if (postsResults) postsResults.classList.add('fade-hidden');
+    if (categoriesDisplay) categoriesDisplay.classList.add('fade-hidden');
+    if (tagsDisplay) tagsDisplay.classList.add('fade-hidden');
     
     // Clear any existing content to remove event listeners
     if (resList) resList.innerHTML = '';
     if (catList) catList.innerHTML = '';
     if (tagList) tagList.innerHTML = '';
     
-    // Show the appropriate results section
+    // Show the appropriate results section with fade
     switch (currentFilter) {
         case 'posts':
-            if (postsResults) postsResults.style.display = 'block';
-            // Always trigger search for posts (shows all if no query)
-            performSearch();
+            if (postsResults) {
+                setTimeout(() => postsResults.classList.remove('fade-hidden'), 10);
+                // Always trigger search for posts (shows all if no query)
+                performSearch();
+            }
             break;
         case 'categories':
-            if (categoriesDisplay) categoriesDisplay.style.display = 'block';
-            // Always trigger search for categories (shows all if no query)
-            performCategoriesSearch(sInput ? sInput.value.trim().toLowerCase() : '');
+            if (categoriesDisplay) {
+                setTimeout(() => categoriesDisplay.classList.remove('fade-hidden'), 10);
+                // Always trigger search for categories (shows all if no query)
+                performCategoriesSearch(sInput ? sInput.value.trim().toLowerCase() : '');
+            }
             break;
         case 'tags':
-            if (tagsDisplay) tagsDisplay.style.display = 'block';
-            // Always trigger search for tags (shows all if no query)
-            performTagsSearch(sInput ? sInput.value.trim().toLowerCase() : '');
+            if (tagsDisplay) {
+                setTimeout(() => tagsDisplay.classList.remove('fade-hidden'), 10);
+                // Always trigger search for tags (shows all if no query)
+                performTagsSearch(sInput ? sInput.value.trim().toLowerCase() : '');
+            }
             break;
     }
 }

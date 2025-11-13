@@ -183,6 +183,17 @@ pre:hover .copy-code {
     pointer-events: none;
 }
 
+/* Base fade transition class */
+.fade-container {
+    transition: opacity 0.3s ease;
+}
+
+/* Hidden state for fade containers */
+.fade-hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
 /* Page Load Fade-in Transitions */
 body > *:not(header):not(footer) {
     opacity: 0;
