@@ -20,7 +20,7 @@
 {{- end }}
 
 {{- with .Params.categories }}
-{{- $scratch.Add "meta" (slice (printf "<a href='/categories/%s/' class='post-category'>%s</a>" . (. | title))) }}
+{{- $scratch.Add "meta" (slice (printf "<a href='/categories/%s/' class='post-category'>%s</a>" (urlize .) (. | title))) }}
 {{- end }}
 
 {{- with .Params.tags }}
