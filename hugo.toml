@@ -15,6 +15,7 @@ enableRobotsTXT = true
   ShowShareButtons = true
   disableThemeToggle = true
   disableFingerprinting = true
+  disableScrollToTop = true
 [outputs]
   home = ["HTML", "RSS", "JSON"]
   page = ["HTML"]
