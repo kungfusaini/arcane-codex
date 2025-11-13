@@ -36,15 +36,15 @@ enableRobotsTXT = true
     url = "/"
     weight = 7
   [[menu.main]]
+    identifier = "about"
+    name = "About"
+    url = "/about/"
+    weight = 8
+  [[menu.main]]
     identifier = "posts"
     name = "Posts"
     url = "/posts/"
     weight = 10
-  [[menu.main]]
-    identifier = "about"
-    name = "About"
-    url = "/about/"
-    weight = 15
   [[menu.main]]
     identifier = "categories"
     name = "Categories"
