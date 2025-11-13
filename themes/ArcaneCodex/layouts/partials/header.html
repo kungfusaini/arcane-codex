@@ -86,7 +86,57 @@
                 {{- end }}
             </div>
         </div>
-        {{- $currentPage := . }}
+        
+        <!-- Mobile Burger Menu Button -->
+        <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-label="toggle navigation menu">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+        </button>
+        
+        <!-- Mobile Navigation Menu -->
+        <div id="mobile-menu" class="mobile-menu">
+            <!-- Close Button - positioned at true corner of page -->
+            <button id="mobile-menu-close" class="mobile-menu-close" aria-label="close navigation menu">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+            
+            <div class="mobile-menu-content">
+                {{- $currentPage := . }}
+                <ul id="mobile-menu-items">
+                    {{- range site.Menus.main }}
+                    {{- $menu_item_url := (cond (strings.HasSuffix .URL "/") .URL (printf "%s/" .URL) ) | absLangURL }}
+                    {{- $page_url:= $currentPage.Permalink | absLangURL }}
+                    {{- $is_search := eq (site.GetPage .KeyName).Layout `search` }}
+                    <li>
+                        <a href="{{ .URL | absLangURL }}" title="{{ .Title | default .Name }} {{- cond $is_search (" (Alt + /)" | safeHTMLAttr) ("" | safeHTMLAttr ) }}"
+                        {{- cond $is_search (" accesskey=/" | safeHTMLAttr) ("" | safeHTMLAttr ) }}>
+                            <span {{- if eq $menu_item_url $page_url }} class="active" {{- end }}>
+                                {{- .Pre }}
+                                {{- .Name -}}
+                                {{ .Post -}}
+                            </span>
+                            {{- if (findRE "://" .URL) }}&nbsp;
+                            <svg fill="none" shape-rendering="geometricPrecision" stroke="currentColor" stroke-linecap="round"
+                                stroke-linejoin="round" stroke-width="2.5" viewBox="0 0 24 24" height="12" width="12">
+                                <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"></path>
+                                <path d="M15 3h6v6"></path>
+                                <path d="M10 14L21 3"></path>
+                            </svg>
+                            {{- end }}
+                        </a>
+                    </li>
+                    {{- end }}
+                </ul>
+            </div>
+        </div>
+        
+        <!-- Desktop Navigation Menu -->
         <ul id="menu">
             {{- range site.Menus.main }}
             {{- $menu_item_url := (cond (strings.HasSuffix .URL "/") .URL (printf "%s/" .URL) ) | absLangURL }}
