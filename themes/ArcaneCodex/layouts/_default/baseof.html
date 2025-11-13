@@ -63,11 +63,14 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
         
-        // Close menu when clicking on menu items
+        // Close menu when clicking on menu items (with delay for smooth transition)
         mobileMenuItems.forEach(item => {
             item.addEventListener('click', function() {
-                mobileMenu.classList.remove('active');
-                document.body.style.overflow = '';
+                // Delay menu close to allow page navigation to start
+                setTimeout(() => {
+                    mobileMenu.classList.remove('active');
+                    document.body.style.overflow = '';
+                }, 200);
             });
         });
         
