@@ -128,6 +128,14 @@ pre:hover .copy-code {
     padding: calc(var(--gap) * 0.5) 0;
 }
 
+/* Mobile Category Filter Fix */
+@media (max-width: 768px) {
+    .category-filter {
+        margin-left: 0;
+        margin-right: 0;
+    }
+}
+
 .category-nav {
     display: flex;
     justify-content: center;
@@ -372,9 +380,14 @@ body.loaded > *:not(header):not(footer) {
 
 /* Responsive Hero Styles */
 @media (max-width: 768px) {
+    .hero-post {
+        margin-left: 0;
+        margin-right: 0;
+    }
+    
     .hero-post .first-entry {
         padding: var(--gap);
-        margin: 0 var(--gap);
+        margin: 0;
     }
     
     .hero-post .first-entry .entry-header h1 {
