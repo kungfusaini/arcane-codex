@@ -1,4 +1,5 @@
 {{- $scratch := newScratch }}
+{{- $tagsContainer := "" }}
 
 {{- if not .Date.IsZero -}}
 {{- $scratch.Add "meta" (slice (printf "<span title='%s'>%s</span>" (.Date) (.Date | time.Format (default ":date_long" site.Params.DateFormat)))) }}
@@ -27,9 +28,13 @@
 {{- range . }}
 {{- $tags = $tags | append (printf "<a href='/tags/%s/' class='post-tag'>%s</a>" . (. | title)) }}
 {{- end }}
-{{- $scratch.Add "meta" (slice (printf "<span class='post-tags-container'>%s</span>" (delimit $tags " "))) }}
+{{- $tagsContainer = printf "<span class='post-tags-container'>%s</span>" (delimit $tags " ") }}
 {{- end }}
 
-{{- with ($scratch.Get "meta") }}
-{{- delimit . "&nbsp;·&nbsp;" | safeHTML -}}
-{{- end -}}
+{{- $metaElements := $scratch.Get "meta" }}
+{{- if $metaElements }}
+{{- delimit $metaElements "&nbsp;·&nbsp;" | safeHTML -}}
+{{- end }}
+{{- if $tagsContainer }}
+{{- $tagsContainer | safeHTML }}
+{{- end }}

@@ -397,6 +397,25 @@ body.loaded > *:not(header):not(footer) {
     .hero-post .first-entry .entry-content {
         font-size: 16px;
     }
+    
+    /* Mobile Post Footer Layout */
+    .entry-footer {
+        text-align: center;
+    }
+    
+    .entry-footer .post-tags-container {
+        display: block;
+        margin-top: 8px;
+        text-align: center;
+    }
+    
+    /* Desktop: Add separator dot before tags */
+    @media (min-width: 769px) {
+        .entry-footer .post-tags-container::before {
+            content: " · ";
+            color: var(--secondary);
+        }
+    }
 }
 
 .post-tags-container {
