@@ -23,6 +23,7 @@
 {{- end }}
     {{ partialCached "header.html" . .Page -}}
     <main class="main">
+        {{- if not .IsHome }}
         <div class="main-top-back">
             <button class="back-button" onclick="goBack()" aria-label="go back">
                 <svg version="1.1" viewBox="0 0 24 24" xml:space="preserve" height="18px" width="18px" fill="currentColor">
@@ -31,6 +32,7 @@
                 Back
             </button>
         </div>
+        {{- end }}
         {{- block "main" . }}{{ end }}
     </main>
     {{ partialCached "footer.html" . .Layout .Kind (.Param "hideFooter") (.Param "ShowCodeCopyButtons") -}}
