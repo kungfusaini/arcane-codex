@@ -408,20 +408,22 @@ body.loaded > *:not(header):not(footer) {
         margin-top: 8px;
         text-align: center;
     }
-    
-    /* Desktop: Add separator dot before tags */
-    @media (min-width: 769px) {
-        .entry-footer .post-tags-container::before {
-            content: " · ";
-            color: var(--secondary);
-        }
-    }
 }
 
 .post-tags-container {
     display: inline-flex;
     gap: 6px;
     flex-wrap: wrap;
+}
+
+/* Desktop: Add separator dot before tags */
+@media (min-width: 769px) {
+    .entry-footer .post-tags-container::before {
+        content: " · ";
+        color: var(--secondary);
+        margin-left: 6px;
+        margin-right: 4px;
+    }
 }
 
 .post-tag {
