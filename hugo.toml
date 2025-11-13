@@ -30,6 +30,11 @@ enableRobotsTXT = true
     url = "/search/"
     weight = 5
   [[menu.main]]
+    identifier = "home"
+    name = "Home"
+    url = "/"
+    weight = 7
+  [[menu.main]]
     identifier = "posts"
     name = "Posts"
     url = "/posts/"

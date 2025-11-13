@@ -189,18 +189,18 @@ button#theme-toggle {
     padding: 15px 20px;
     font-size: 24px;
     font-weight: 500;
-    color: var(--primary);
+    color: var(--secondary);
     text-decoration: none;
     border-radius: var(--radius);
     transition: color 0.2s ease;
 }
 
 #mobile-menu-items a:hover {
-    color: var(--secondary);
+    color: var(--primary);
 }
 
 #mobile-menu-items a .active {
-    color: var(--secondary);
+    color: var(--primary);
 }
 
 /* Mobile menu animations */
