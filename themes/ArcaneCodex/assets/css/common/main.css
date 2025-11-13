@@ -465,3 +465,103 @@ body.loaded > *:not(header):not(footer) {
     background: var(--primary);
     color: var(--theme);
 }
+
+/* Page Layout Styles (for About, etc.) */
+.page-content {
+    max-width: var(--main-width);
+    margin: 0 auto;
+    padding: var(--gap);
+}
+
+.page-header {
+    text-align: center;
+    margin-bottom: calc(var(--gap) * 2);
+}
+
+.page-title {
+    font-size: 48px;
+    color: var(--primary);
+    margin-bottom: var(--gap);
+    font-family: var(--heading-font-family);
+    font-weight: var(--heading-font-weight);
+}
+
+.page-description {
+    font-size: 18px;
+    color: var(--secondary);
+    line-height: 1.6;
+}
+
+.page-content-inner {
+    font-size: 16px;
+    line-height: 1.7;
+    color: var(--content);
+}
+
+.page-content-inner h1,
+.page-content-inner h2,
+.page-content-inner h3,
+.page-content-inner h4,
+.page-content-inner h5,
+.page-content-inner h6 {
+    color: var(--primary);
+    margin-top: calc(var(--gap) * 1.5);
+    margin-bottom: var(--gap);
+}
+
+.page-content-inner h1 {
+    font-size: 36px;
+}
+
+.page-content-inner h2 {
+    font-size: 30px;
+}
+
+.page-content-inner h3 {
+    font-size: 24px;
+}
+
+.page-content-inner p {
+    margin-bottom: var(--gap);
+}
+
+.page-content-inner ul,
+.page-content-inner ol {
+    margin-bottom: var(--gap);
+    padding-left: var(--gap);
+}
+
+.page-content-inner li {
+    margin-bottom: calc(var(--gap) / 2);
+}
+
+.page-content-inner blockquote {
+    border-left: 4px solid var(--primary);
+    padding-left: var(--gap);
+    margin: var(--gap) 0;
+    font-style: italic;
+    color: var(--secondary);
+}
+
+/* Mobile Responsive for Pages */
+@media (max-width: 768px) {
+    .page-title {
+        font-size: 32px;
+    }
+    
+    .page-description {
+        font-size: 16px;
+    }
+    
+    .page-content-inner h1 {
+        font-size: 28px;
+    }
+    
+    .page-content-inner h2 {
+        font-size: 24px;
+    }
+    
+    .page-content-inner h3 {
+        font-size: 20px;
+    }
+}
