@@ -1,6 +1,6 @@
 let fuse; // holds our search engine
 let searchData = []; // holds the original search data
-let resList, catList, tagList, sInput;
+let resList, catList, tagList, sInput, postsResults;
 let resultsAvailable = false;
 let currentFilter = 'posts'; // current filter state: 'posts', 'categories', 'tags'
 let allCategories = [];
@@ -20,6 +20,7 @@ window.onload = function () {
     catList = document.getElementById('categoriesResults');
     tagList = document.getElementById('tagsResults');
     sInput = document.getElementById('searchInput');
+    postsResults = document.getElementById('postsResults');
     
     initializeFilterToggles();
     updateContentDisplay();
@@ -105,13 +106,12 @@ function updateContentDisplay() {
     const searchbox = document.getElementById('searchbox');
     const categoriesDisplay = document.getElementById('categoriesDisplay');
     const tagsDisplay = document.getElementById('tagsDisplay');
-    const searchResults = document.getElementById('searchResults');
     
     // Always show searchbox
     if (searchbox) searchbox.style.display = 'block';
     
     // Hide results sections first
-    if (searchResults) searchResults.style.display = 'none';
+    if (postsResults) postsResults.style.display = 'none';
     if (categoriesDisplay) categoriesDisplay.style.display = 'none';
     if (tagsDisplay) tagsDisplay.style.display = 'none';
     
@@ -123,7 +123,7 @@ function updateContentDisplay() {
     // Show the appropriate results section
     switch (currentFilter) {
         case 'posts':
-            if (searchResults) searchResults.style.display = 'block';
+            if (postsResults) postsResults.style.display = 'block';
             // Always trigger search for posts (shows all if no query)
             performSearch();
             break;
