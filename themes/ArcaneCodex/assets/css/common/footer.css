@@ -24,6 +24,7 @@
 .footer a {
     color: inherit;
     border-bottom: 1px solid var(--secondary);
+    transition: var(--link-transition);
 }
 
 .footer a:hover {

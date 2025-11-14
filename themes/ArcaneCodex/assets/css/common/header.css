@@ -26,6 +26,7 @@
 .logo a {
     font-size: 32px;
     font-weight: 700;
+    text-decoration: none;
 }
 
 .logo a img, .logo a svg {
@@ -63,11 +64,13 @@ button#theme-toggle {
 
 #menu a {
     font-size: 20px;
+    text-decoration: none;
 }
 
 #menu .active {
     font-weight: 500;
-    border-bottom: 2px solid currentColor;
+    color: var(--primary);
+    text-decoration: none;
 }
 
 .lang-switch li,
@@ -86,6 +89,7 @@ button#theme-toggle {
     margin: auto 3px;
     font-size: 16px;
     font-weight: 500;
+    text-decoration: none;
 }
 
 .logo-switches {

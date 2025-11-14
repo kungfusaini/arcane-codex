@@ -77,7 +77,16 @@ ul {
 }
 
 a {
-    text-decoration: none;
+    color: var(--link-color);
+    text-decoration: var(--link-decoration);
+    text-decoration-color: var(--secondary);
+    text-underline-offset: 2px;
+    transition: var(--link-transition);
+}
+
+a:hover {
+    color: var(--link-hover-color);
+    text-decoration-color: var(--link-hover-color);
 }
 
 body,

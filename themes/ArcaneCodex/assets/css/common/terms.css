@@ -11,8 +11,7 @@
     border: 1px solid var(--tertiary);
     border-radius: 4px;
     color: var(--secondary);
-    text-decoration: none;
-    transition: border-color 0.2s, color 0.2s;
+    transition: var(--link-transition);
 }
 
 .terms-tags a:hover {

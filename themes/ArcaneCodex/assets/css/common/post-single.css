@@ -76,8 +76,6 @@
     font-size: 12px;
 }
 
-.post-content a,
-.post-meta .i18n_list li a,
 .toc a:hover {
     box-shadow: 0 1px 0;
     box-decoration-break: clone;
@@ -334,9 +332,17 @@
     font-size: 14px;
     line-height: 34px;
     background: var(--code-bg);
+    text-decoration: var(--link-decoration);
+    text-decoration-color: var(--secondary);
+    text-underline-offset: 2px;
+    transition: var(--link-transition);
 }
 
-.post-tags a:hover,
+.post-tags a:hover {
+    color: var(--primary);
+    text-decoration-color: var(--primary);
+}
+
 .paginav a:hover {
     background: var(--border);
 }
