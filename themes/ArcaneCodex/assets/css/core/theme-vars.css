@@ -34,8 +34,8 @@
     --primary: var(--red);
     --secondary: rgb(108, 108, 108);
     --tertiary: rgb(214, 214, 214);
-    --link-color: var(--content);
-    --link-hover-color: var(--primary);
+    --link-color: var(--primary);
+    --link-hover-color: var(--content);
     --link-decoration: underline;
     --link-transition: color 0.2s ease, text-decoration-color 0.2s ease;
     --content: rgb(31, 31, 31);
@@ -55,8 +55,8 @@
     --secondary: rgb(155, 156, 157);
     --tertiary: rgb(65, 66, 68);
     --content: rgb(196, 196, 197);
-    --link-color: var(--content);
-    --link-hover-color: var(--primary);
+    --link-color: var(--primary);
+    --link-hover-color: var(--content);
     --link-decoration: underline;
     --link-transition: color 0.2s ease, text-decoration-color 0.2s ease;
     --code-block-bg: rgb(46, 46, 51);
