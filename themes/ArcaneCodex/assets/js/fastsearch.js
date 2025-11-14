@@ -223,12 +223,13 @@ function performSearch() {
                         metaParts.push(categories);
                     }
                     
+                    let tagsContainer = '';
                     // Add tags if present
                     if (result.tags && result.tags.length > 0) {
                         const tags = result.tags.map(tag => 
                             `<a href="/tags/${tag.toLowerCase()}/" class="post-tag">${tag}</a>`
                         ).join(' ');
-                        metaParts.push(`<span class="post-tags-container">${tags}</span>`);
+                        tagsContainer = `<span class="post-tags-container">${tags}</span>`;
                     }
                     
                     const metaContent = metaParts.join('&nbsp;·&nbsp;');
@@ -241,7 +242,7 @@ function performSearch() {
                             <p>${stripHtml(result.summary)}${result.summary.endsWith('...') ? '' : '...'}</p>
                         </div>` : ''}
                         <a href="${result.permalink}" aria-label="${result.title}" class="entry-link"></a>
-                        ${metaContent ? `<footer class="entry-footer">${metaContent}</footer>` : ''}
+                        ${(metaContent || tagsContainer) ? `<footer class="entry-footer">${metaContent}${tagsContainer}</footer>` : ''}
                     </article>`;
                 }
             }
