@@ -234,15 +234,17 @@ function performSearch() {
                     
                     const metaContent = metaParts.join('&nbsp;·&nbsp;');
                     
-                    resultSet += `<article class="post-entry">
+                    resultSet += `<article class="post-entry" data-categories="${result.categories ? result.categories.join(',').toLowerCase() : ''}">
                         <header class="entry-header">
-                            <h2>${result.title}</h2>
+                            <h2 class="entry-hint-parent">
+                                ${result.title}
+                            </h2>
                         </header>
                         ${result.summary ? `<div class="entry-content">
                             <p>${stripHtml(result.summary)}${result.summary.endsWith('...') ? '' : '...'}</p>
                         </div>` : ''}
-                        <a href="${result.permalink}" aria-label="${result.title}" class="entry-link"></a>
                         ${(metaContent || tagsContainer) ? `<footer class="entry-footer">${metaContent}${tagsContainer}</footer>` : ''}
+                        <a href="${result.permalink}" aria-label="${result.title}" class="entry-link"></a>
                     </article>`;
                 }
             }
