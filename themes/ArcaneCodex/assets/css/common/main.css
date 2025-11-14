@@ -246,7 +246,7 @@ body.loaded > *:not(header):not(footer) {
 }
 
 .back-button:hover {
-    color: var(--light-red);
+    color: var(--content);
 }
 
 .back-button svg {
