@@ -11,6 +11,7 @@
     border: 1px solid var(--tertiary);
     border-radius: 4px;
     color: var(--secondary);
+    text-decoration: none;
     transition: var(--link-transition);
 }
 
