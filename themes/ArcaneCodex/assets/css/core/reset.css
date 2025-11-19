@@ -79,7 +79,7 @@ ul {
 a {
     color: var(--link-color);
     text-decoration: var(--link-decoration);
-    text-decoration-color: var(--secondary);
+    text-decoration-color: var(--primary);
     text-underline-offset: 2px;
     transition: var(--link-transition);
 }
