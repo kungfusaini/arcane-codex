@@ -69,7 +69,7 @@ button#theme-toggle {
 
 #menu .active {
     font-weight: 500;
-    color: var(--primary);
+    color: var(--secondary);
     text-decoration: none;
 }
 
@@ -204,7 +204,7 @@ button#theme-toggle {
 }
 
 #mobile-menu-items a .active {
-    color: var(--primary);
+    color: var(--secondary);
 }
 
 /* Mobile menu animations */
