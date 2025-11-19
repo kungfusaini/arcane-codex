@@ -26,7 +26,7 @@
 {{- with .Params.tags }}
 {{- $tags := slice }}
 {{- range . }}
-{{- $tags = $tags | append (printf "<a href='/tags/%s/' class='post-tag'>%s</a>" . (. | title)) }}
+{{- $tags = $tags | append (printf "<a href='/tags/%s/' class='post-tag'>%s</a>" (. | urlize) (. | title)) }}
 {{- end }}
 {{- $tagsContainer = printf "<span class='post-tags-container'>%s</span>" (delimit $tags " ") }}
 {{- end }}
