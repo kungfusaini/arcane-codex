@@ -399,10 +399,24 @@ body.loaded > *:not(header):not(footer) {
         font-size: 16px;
     }
     
-    /* Mobile Post Footer Layout */
+/* Mobile Post Footer Layout */
+@media (max-width: 768px) {
     .entry-footer {
         text-align: center;
     }
+    
+    .entry-footer .post-tags-container {
+        display: block;
+        margin-top: 8px;
+        text-align: center;
+    }
+    
+    /* Hide separator on mobile since tags are on separate row */
+    .entry-footer .post-tags-container::before,
+    .post-meta .post-tags-container::before {
+        display: none;
+    }
+}
     
     .entry-footer .post-tags-container {
         display: block;
@@ -419,7 +433,8 @@ body.loaded > *:not(header):not(footer) {
 
 /* Desktop: Add separator dot before tags */
 @media (min-width: 769px) {
-    .entry-footer .post-tags-container::before {
+    .entry-footer .post-tags-container::before,
+    .post-meta .post-tags-container::before {
         content: " · ";
         color: var(--secondary);
         margin-left: 6px;
