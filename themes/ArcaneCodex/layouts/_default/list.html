@@ -99,8 +99,23 @@
 {{- $showFilter = true }}
 {{- $context = "section" }}
 {{- end }}
+
 {{- if $showFilter }}
-{{- partial "category_filter.html" (dict "context" $context) }}
+{{- $availableCategories := slice }}
+{{- $hasFilteredPosts := false }}
+{{- range $index, $page := $paginator.Pages }}
+{{- $user_preferred := or site.Params.disableSpecial1stPost site.Params.homeInfoParams }}
+{{- if not (and $.IsHome (eq $paginator.PageNumber 1) (eq $index 0) (not $user_preferred)) }}
+{{- $hasFilteredPosts = true }}
+{{- with $page.Params.categories }}
+{{- $availableCategories = $availableCategories | append . }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- $uniqueCategories := $availableCategories | uniq }}
+{{- if and $hasFilteredPosts (gt (len $uniqueCategories) 0) }}
+{{- partial "category_filter.html" (dict "context" $context "categories" $uniqueCategories) }}
+{{- end }}
 {{- end }}
 
 {{- $term := .Data.Term }}
@@ -159,26 +174,34 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const selectedCategory = this.dataset.category;
             
-            // Filter posts
+            // First, fade out all posts
             posts.forEach(post => {
-                if (selectedCategory === 'all') {
-                    // Show post with fade in
-                    post.style.display = 'block';
-                    setTimeout(() => post.classList.remove('hidden'), 10);
-                } else {
-                    // Check if post has the selected category
-                    const postCategories = post.dataset.categories || '';
-                    if (postCategories.includes(selectedCategory)) {
-                        // Show post with fade in
+                if (post.style.display !== 'none') {
+                    post.classList.add('hidden');
+                }
+            });
+            
+            // Then, fade in posts that should be visible
+            setTimeout(() => {
+                posts.forEach(post => {
+                    if (selectedCategory === 'all') {
+                        // Show all posts
                         post.style.display = 'block';
                         setTimeout(() => post.classList.remove('hidden'), 10);
                     } else {
-                        // Hide post with fade out
-                        post.classList.add('hidden');
-                        setTimeout(() => post.style.display = 'none', 300);
+                        // Check if post has the selected category
+                        const postCategories = post.dataset.categories || '';
+                        if (postCategories.includes(selectedCategory)) {
+                            // Show post with fade in
+                            post.style.display = 'block';
+                            setTimeout(() => post.classList.remove('hidden'), 10);
+                        } else {
+                            // Keep post hidden
+                            post.style.display = 'none';
+                        }
                     }
-                }
-            });
+                });
+            }, 150); // Small delay for fade out effect
         });
     });
 });

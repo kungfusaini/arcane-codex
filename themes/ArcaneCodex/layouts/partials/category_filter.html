@@ -1,4 +1,5 @@
 {{- $context := .context | default "homepage" }}
+{{- $categories := .categories | default (slice) }}
 
 <!-- Category/Tag Filter Bar -->
 <section class="category-filter">
@@ -9,8 +10,8 @@
     <a href="#" class="category-item search-filter" data-filter="tags">TAGS</a>
     {{- else }}
     <a href="/posts/" class="category-item active" data-category="all">ALL</a>
-    {{- range $key, $taxonomy := site.Taxonomies.categories }}
-    <a href="/categories/{{ $key | urlize }}/" class="category-item" data-category="{{ $key | lower }}">{{ $key | title }}</a>
+    {{- range $categories }}
+    <a href="/categories/{{ . | urlize }}/" class="category-item" data-category="{{ . | lower }}">{{ . | title }}</a>
     {{- end }}
     {{- end }}
   </nav>
