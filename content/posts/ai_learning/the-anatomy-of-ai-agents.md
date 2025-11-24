@@ -1,5 +1,5 @@
 +++
-date = '2025-11-18'
+date = '2025-11-15'
 draft = false
 title = 'The Anatomy of AI Agents'
 categories = "Tech"
