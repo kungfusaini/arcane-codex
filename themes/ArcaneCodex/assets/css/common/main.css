@@ -559,6 +559,16 @@ body.loaded > *:not(header):not(footer) {
     color: var(--secondary);
 }
 
+/* Caption shortcode styles */
+.caption {
+    text-align: center;
+    color: var(--secondary);
+    font-size: 14px;
+    font-style: italic;
+    margin: 8px 0;
+    line-height: 1.4;
+}
+
 /* Mobile Responsive for Pages */
 @media (max-width: 768px) {
     .page-title {
