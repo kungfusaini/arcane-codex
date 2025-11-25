@@ -19,6 +19,7 @@
     font-family: var(--heading-font-family);
     font-weight: var(--heading-font-weight);
     color: var(--primary);
+    text-align: center;
 }
 
 .first-entry .entry-content {
@@ -58,6 +59,7 @@
     font-family: var(--heading-font-family);
     font-weight: var(--heading-font-weight);
     color: var(--primary);
+    text-align: center;
 }
 
 .entry-content {
