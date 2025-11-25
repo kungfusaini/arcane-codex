@@ -38,7 +38,7 @@
 
 .post-entry {
     position: relative;
-    margin-bottom: var(--gap) / 2;
+    margin-bottom: calc(var(--gap) * 0.75);
     padding: calc(var(--gap) / 3);
     background: var(--theme);
     border-radius: var(--radius);
