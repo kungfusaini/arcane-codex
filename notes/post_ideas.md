@@ -217,40 +217,6 @@ How This Differs
 Zero overlap with CI/CD, microservices, or Nginx routing except a single line for context.
 Entirely email-focused.
 
-## Reverse Proxy Wizardry: My Modular Nginx Setup for Multi-Site Deployments
-
-Tone: Technical, “wizardly”
-Audience: Web engineers, sysadmins
-
-Outline
-
-Why Nginx Is the Gatekeeper
-
-Modular Folder Structure (conf.d/)
-
-Shared Security Headers
-
-Routing to Multiple Services
-
-Hugo
-
-Node
-
-Mailcow admin
-
-SSL Strategy
-
-Certbot
-
-Wildcard certificates
-
-Performance Tuning
-
-How This Differs
-
-This is ONLY Nginx.
-No CI/CD, no mail, no philosophy.
-Deep, tactical, config-heavy.
 
 ## Running Multi-Environment Docker Compose (Dev vs Prod)
 
