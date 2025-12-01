@@ -1,7 +1,7 @@
 +++
 date = '2025-11-26'
-draft = false
-title = 'Building Aether: Nginx Reverse Proxy"
+draft = true
+title = 'Building Aether: Nginx Reverse Proxy'
 categories = "Tech"
 tags = ['Docker', 'Hosting', 'Web']
 +++
