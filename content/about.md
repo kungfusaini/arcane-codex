@@ -18,5 +18,5 @@ This Codex is a chronicle — of experiments, thoughts, and experiences. Some en
 Open a page, and read what’s been compiled.  
 The Codex is ever-growing — as all good magic should.
 
-*— [Sumeet Saini](https://sumeetsaini.com)*  
+*— The Arcane Dev, [Sumeet Saini](https://sumeetsaini.com)*  
 *Keeper of the Codex*  

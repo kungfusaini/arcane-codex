@@ -16,10 +16,10 @@ enableRobotsTXT = true
   disableScrollToTop = true
 
 [outputs]
-  home = ["HTML", "RSS", "JSON","SITEMAP"]
-  page = ["HTML"]
+  home = ["HTML", "RSS", "JSON"]
+  page = ["HTML"] 
   section = ["HTML"]
-  taxonomy = ["HTML"]
+  taxonomy = ["HTML"] 
   term = ["HTML"]
 
 [params.assets]
