@@ -59,6 +59,10 @@ Note:
 > Although Nginx does have load-balancing built in, I am unsure if it would be sufficient for the large scale.
 > Food for thought.
 
+Edit:
+> To read more about the Nginx setup, check out [this blog
+> post](https://arcanecodex.dev/posts/aether/nginx-aether/)
+
 ## The Development/Deployment Lifecycle
 
 It was very important to me to have as efficient and automated a deployment cycle as possible. I experimented with various approaches to manually deploying on the VPS, but ran into two main issues. 
