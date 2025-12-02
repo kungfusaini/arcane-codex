@@ -46,6 +46,10 @@
     {{- range . | first 6 }}
       <meta property="og:image" content="{{ .Permalink }}">
     {{- end }}
+  {{- else }}
+    {{- with site.Params.assets.ogImage }}
+      <meta property="og:image" content="{{ . | absURL }}">
+    {{- end }}
   {{- end }}
 {{- end }}
 
