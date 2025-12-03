@@ -1,11 +1,11 @@
 baseURL = "https://arcanecodex.dev/"
 languageCode = 'en-us'
-title = 'Arcane Codex | Compiled Texts for the Modern Mage'
+title = 'Arcane Codex' 
 theme = 'ArcaneCodex'
 enableRobotsTXT = true
 
 [params]
-  description = "Arcane Codex is a chronicle of modern magic — technology, creativity, and personal exploration. Technical guides, thoughts, and experiences for the modern mage."
+  description = "Compiled Texts for the Modern Mage | A chronicle of digital sorcery, technical guides, thoughts, and experiences."
   author = "The Arcane Dev | Sumeet Saini"
   env = "production"
   defaultTheme = "dark" 
@@ -14,6 +14,7 @@ enableRobotsTXT = true
   disableThemeToggle = true
   disableFingerprinting = true
   disableScrollToTop = true
+  hideAuthor = true
 
 [outputs]
   home = ["HTML", "RSS", "JSON"]
