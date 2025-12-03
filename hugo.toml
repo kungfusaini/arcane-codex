@@ -5,9 +5,8 @@ theme = 'ArcaneCodex'
 enableRobotsTXT = true
 
 [params]
-  description = "Compiled Texts for the Modern Mage | A chronicle of digital sorcery, technical guides, thoughts, and experiences."
+  description = "Compiled Texts for Modern Mage | A chronicle of digital sorcery, technical guides, thoughts, and experiences."
   author = "The Arcane Dev | Sumeet Saini"
-  env = "production"
   defaultTheme = "dark" 
   ShowReadingTime = true
   ShowShareButtons = true
