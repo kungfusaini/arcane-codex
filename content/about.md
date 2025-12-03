@@ -1,6 +1,7 @@
 ---
 title: "About"
 draft: false
+date: '2025-11-21'
 ---
 # The Arcane Codex  
 ### *Compiled Texts for the Modern Mage*  

@@ -32,6 +32,11 @@ ogImage = "ogImage.png"
   category = "categories"
   tag = "tags"
 
+[sitemap]
+  changefreq = "monthly"
+  priority = 0.5
+  filename = "sitemap.xml"
+
 [menu]
   [[menu.main]]
     identifier = "search"
