@@ -1,4 +1,8 @@
 {{- define "main" }}
+{{/*  tell Hugo to drop this URL from sitemap.xml  */}}
+{{ if or (eq .Type "tags") (eq .Type "categories") }}
+  {{ .Scratch.Set "sitemap_disable" true }}
+{{ end }}
 
 {{- if (and site.Params.profileMode.enabled .IsHome) }}
 {{- partial "index_profile.html" . }}
