@@ -1,4 +1,11 @@
 {{- /* Head custom content area start */ -}}
 {{- /*     Insert any custom code (web-analytics, resources, etc.) - it will appear in the <head></head> section of every page. */ -}}
 {{- /*     Can be overwritten by partial with the same name in the global layouts. */ -}}
+
+{{- /* Plausible Analytics - Only load in production */ -}}
+{{- if hugo.IsProduction | or (eq site.Params.env "production") }}
+<script defer data-domain="arcanecodex.dev" src="/stats/js/script.outbound-links.pageview-props.tagged-events.js"></script>
+<script>window.plausible = window.plausible || function() { (window.plausible.q = window.plausible.q || []).push(arguments) }</script>
+{{- end }}
+
 {{- /* Head custom content area end */ -}}
