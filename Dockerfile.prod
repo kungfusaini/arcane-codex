@@ -2,6 +2,7 @@ FROM hugomods/hugo:latest AS builder
 WORKDIR /src
 COPY . .
 
+ENV HUGO_ENV=production
 RUN hugo --minify --baseURL "https://arcanecodex.dev/"
 
 FROM nginx:alpine
