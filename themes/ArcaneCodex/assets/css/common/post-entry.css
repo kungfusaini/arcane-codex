@@ -56,10 +56,20 @@
 .entry-header h2 {
     font-size: 32px;
     line-height: 1.3;
-    font-family: var(--heading-font-weight);
+    font-family: var(--heading-font-family);
     font-weight: var(--heading-font-weight);
     color: var(--primary);
     text-align: left;
+}
+
+@media (max-width: 768px) {
+    .entry-header h2 {
+        text-align: center;
+    }
+    
+    .entry-content {
+        text-align: center;
+    }
 }
 
 .entry-content {
