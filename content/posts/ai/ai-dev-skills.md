@@ -4,6 +4,7 @@ draft = false
 title = 'The Missing Skills of Vibe Coders'
 categories = "Tech"
 tags = ['AI','AI Agents', 'DevOps']
+aliases = ["/posts/ai_learning/ai-dev-skills/"]
 +++
 
 AI has democratised writing code. Pretty much anyone can pull up ChatGPT or Claude and build basic apps and

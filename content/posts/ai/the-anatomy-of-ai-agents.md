@@ -4,6 +4,7 @@ draft = false
 title = 'The Anatomy of AI Agents'
 categories = "Tech"
 tags = ['AI','AI Agents', 'LLM']
+aliases = ["/posts/ai_learning/the-anatomy-of-ai-agents/"]
 +++
 
 Although the availability of LLMs has made our lives easier, they are still very limited. They only have the

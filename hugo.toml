@@ -3,6 +3,7 @@ languageCode = 'en-us'
 title = 'Arcane Codex' 
 theme = 'ArcaneCodex'
 enableRobotsTXT = true
+canonifyURLs = true
 
 [params]
   description = "Compiled Texts for Modern Mage | A chronicle of digital sorcery, technical guides, thoughts, and experiences."
