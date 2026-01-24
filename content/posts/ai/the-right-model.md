@@ -6,7 +6,7 @@ categories = "Tech"
 tags = ['AI','Coding Agents', 'LLM']
 +++
 
-There is seemingly and endless stream of AI models to choose from. Not only is the choice overwhelming, but I was constantly left with the thought I'm missing out on some super model that would make me more efficient, but as someone with inertia to change when it comes to certain things, I had put off experimenting. But, I eventually did run some test. I defined 4 of my main coding styles , and tried to find the best models for each.
+There is seemingly and endless stream of AI models to choose from. Not only is the choice overwhelming, but I was constantly left with the thought that I'm missing out on some super model that would make me more efficient, but as someone with inertia to change when it comes to certain things, I had put off experimenting. But, I eventually did run some test. I defined 4 of my main coding styles , and tried to find the best models for each.
 
 The categories are:
 - Daily Driver
@@ -17,7 +17,7 @@ The categories are:
 Let's see which models performed best!
 
 Note:
-| I am using [opencode](opencode.ai) as my AI tool of choice, and all testing has been performed in that enviroment. Your mileage may vary!
+> I am using [opencode](opencode.ai) as my AI tool of choice, and all testing has been performed in that enviroment. Your mileage may vary!
 
 ## Daily Driver - Qwen3Coder/BigPickle
 For something to be a daily driver, it needs to be relatively cheap to run, fast, and capable. It should be able to complete moderately complex tasks in a  more {{< emph >}}vibey{{< /emph >}} style. "Hey make sure that the carousel image doesn't go out of bounds on mobile and that when I click it, it opens the product page" is a good example. It's not too complex of a task but still requires so understanding of the codebase to implement. The model should be able to interpret my vague prompt, so that there is little friction between thought and code. 
