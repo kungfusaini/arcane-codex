@@ -1,5 +1,5 @@
 +++
-date = '2025-01-04'
+date = '2026-01-04'
 draft = false
 title = 'The Right Model'
 categories = "Tech"
