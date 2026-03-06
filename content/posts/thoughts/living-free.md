@@ -6,17 +6,16 @@ categories = 'Thoughts'
 tags = ['Lifestyle','Productivity','Freedom']
 +++
 
-Although working for yourself has a myriad of benefits, there is a large hurdle that one must overcome to avoid wasting such a amazing opportunity: lack of structure. When you work a regular job, you have to show up at the same time everyday. Your routine becomes forced upon you, but nonetheless, you have a routine. 
+Although working for yourself has a myriad of benefits, there is a large hurdle that one must overcome to avoid wasting such an amazing opportunity: lack of structure. When you work a regular job, you have to show up at the same time everyday. Your routine becomes forced upon you, but nonetheless, you have a routine. 
 
 But when you start taking your own path, such restrictions don't exist. You can book client meetings at any time you like, start work at 4am or 4pm, and can work intermittently throughout the day. As long as you are making enough to satisfy your income requirements and goals, you can work 1 hour a day or 20. Here are some difficulties I have had with managing this new lifestyle and some insight into how I manage this.
 
 ## The Issues
 
-One thing that I noticed is initially, and intermittently afterwards, I fell into the exact same routine as when working a corporate job. One of the things I disliked most about corporate life was that after work, everything would be so busy. Activities like bouldering are much less enjoyable to me when you have to wait in line for the route you are projecting. It has to be this way, because the only time most people can enjoy such activities is past 5pm. But even though I had the option to go when it was less busy, I was still doing the stuck in the same routine as everyone else. 
+One thing that I noticed is initially, and intermittently afterwards, I fell into the exact same routine as when working a corporate job. One of the things I disliked most about corporate life was that after work, everything would be so busy. Activities like bouldering are much less enjoyable to me when you have to wait in line for the route you are projecting. It has to be this way, because the only time most people can enjoy such activities is past 5pm. But even though I had the option to go when it was less busy, I was still stuck in the same routine as everyone else. 
 We are creatures of habit, and I realised I had to consciously break this habit.  
 
 Another issue is working too much. Although it is very important to work as hard as you can, it's easy to fall into the trap of just working all the time. When you work for yourself, you care about the work a great deal more, and are more motivated to get things done. When working a corporate job, you can of course work just as hard, but there is a natural wind up and wind down to the day. Your peers arrive and leave, which helps to control the amount you work. When you don't have such a structure to control the amount you work, overwork is a very real possibility.
-
 ## Some Solutions
 So what are some ways we can change this?
 
@@ -32,3 +31,5 @@ Note:
 > For me, to achieve my goals, it's necessary that I am working most of the time but for you, that might not be the case! Set the goals and work hours that help you reach {{< emph >}}your personal goals! {{< /emph >}}
 
 Sometimes the biggest barrier in our lives is the ones that we put for ourselves, and even if our circumstances change, if we don't change ourselves, we risk minimising your potential. You are your own worst enemy but also your biggest ally, utilise the opportunity you have!
+
+flavour 
