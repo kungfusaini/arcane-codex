@@ -12,19 +12,43 @@
 
 .pagination {
     display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
 }
 
-.pagination a {
+.pagination-numbers {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.pagination .page-number {
     color: var(--theme);
     font-size: 13px;
     line-height: 36px;
     background: var(--primary);
     border-radius: calc(36px / 2);
-    padding: 0 16px;
+    padding: 0 14px;
+    text-decoration: none;
+    transition: all 0.2s ease;
 }
 
-.pagination .next {
-    margin-inline-start: auto;
+.pagination .page-number:hover {
+    background: var(--accent);
+    color: var(--content);
+}
+
+.pagination .page-number.active {
+    background: var(--accent);
+    color: var(--content);
+    font-weight: bold;
+}
+
+.pagination .ellipsis {
+    color: var(--theme);
+    font-size: 13px;
+    padding: 0 4px;
 }
 
 

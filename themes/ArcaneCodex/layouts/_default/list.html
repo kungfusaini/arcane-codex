@@ -45,15 +45,19 @@
 {{- $pages = where $pages "Params.hiddenInHomeList" "!=" "true"  }}
 {{- end }}
 
-{{- $paginator := .Paginate $pages }}
+{{- /* Configure pagination: 10 posts per page */ -}}
+{{- $postsPerPage := 10 }}
+{{- $totalPosts := len $pages }}
+{{- $totalPages := div (add $totalPosts (sub $postsPerPage 1)) $postsPerPage }}
+{{- $currentPage := 1 }}
 
-{{- if and .IsHome site.Params.homeInfoParams (eq $paginator.PageNumber 1) }}
+{{- if and .IsHome site.Params.homeInfoParams (eq $currentPage 1) }}
 {{- partial "home_info.html" . }}
 {{- end }}
 
 {{- if .IsHome }}
 <!-- Hero Section - Latest Post -->
-{{- with $paginator.Pages }}
+{{- with first 1 $pages }}
   {{- with index . 0 }}
   <section class="hero-post">
     <article class="first-entry">
@@ -103,9 +107,9 @@
 {{- if $showFilter }}
 {{- $availableCategories := slice }}
 {{- $hasFilteredPosts := false }}
-{{- range $index, $page := $paginator.Pages }}
+{{- range $index, $page := $pages }}
 {{- $user_preferred := or site.Params.disableSpecial1stPost site.Params.homeInfoParams }}
-{{- if not (and $.IsHome (eq $paginator.PageNumber 1) (eq $index 0) (not $user_preferred)) }}
+{{- if not (and $.IsHome (eq $currentPage 1) (eq $index 0) (not $user_preferred)) }}
 {{- $hasFilteredPosts = true }}
 {{- with $page.Params.categories }}
 {{- $availableCategories = $availableCategories | append . }}
@@ -120,37 +124,52 @@
 
 {{- $term := .Data.Term }}
 <section class="filtered-posts">
-{{- range $index, $page := $paginator.Pages }}
+{{- range $index, $page := $pages }}
 
 {{- $user_preferred := or site.Params.disableSpecial1stPost site.Params.homeInfoParams }}
-{{- if (and $.IsHome (eq $paginator.PageNumber 1) (eq $index 0) (not $user_preferred)) }}
+{{- if (and $.IsHome (eq $currentPage 1) (eq $index 0) (not $user_preferred)) }}
 <!-- Skip first post on homepage - it's in hero section -->
 {{- else }}
-{{- partial "post_entry.html" (dict "page" $page "context" "list" "index" $index "term" $term) }}
+{{- $pageNum := add (div $index $postsPerPage) 1 }}
+{{- partial "post_entry.html" (dict "page" $page "context" "list" "index" $index "term" $term "pageNum" $pageNum) }}
 {{- end }}
 
 {{- end }}
 </section>
 
-{{- if gt $paginator.TotalPages 1 }}
+{{- if gt $totalPages 1 }}
 <footer class="page-footer">
-  <nav class="pagination">
-    {{- if $paginator.HasPrev }}
-    <a class="prev" href="{{ $paginator.Prev.URL | absURL }}">
-      «&nbsp;{{ i18n "prev_page" }}&nbsp;
-      {{- if (.Param "ShowPageNums") }}
-      {{- sub $paginator.PageNumber 1 }}/{{ $paginator.TotalPages }}
+  <nav class="pagination" data-posts-per-page="{{ $postsPerPage }}" data-total-posts="{{ $totalPosts }}">
+    <div class="pagination-numbers">
+      {{- $maxVisible := 5 }}
+      {{- $showEllipsisStart := false }}
+      {{- $showEllipsisEnd := false }}
+      
+      {{- if gt $totalPages (add $maxVisible 2) }}
+        {{- $showEllipsisEnd = true }}
       {{- end }}
-    </a>
-    {{- end }}
-    {{- if $paginator.HasNext }}
-    <a class="next" href="{{ $paginator.Next.URL | absURL }}">
-      {{ i18n "next_page" }}&nbsp;
-      {{- if (.Param "ShowPageNums") }}
-      {{- add 1 $paginator.PageNumber }}/{{ $paginator.TotalPages }}
-      {{- end }}&nbsp;»
-    </a>
-    {{- end }}
+      
+      {{- range $i := seq 1 $totalPages }}
+        {{- $showPage := false }}
+        {{- if le $totalPages $maxVisible }}
+          {{- $showPage = true }}
+        {{- else if eq $i 1 }}
+          {{- $showPage = true }}
+        {{- else if eq $i $totalPages }}
+          {{- $showPage = true }}
+        {{- else if and (ge $i (sub $currentPage 2)) (le $i (add $currentPage 2)) }}
+          {{- $showPage = true }}
+        {{- end }}
+        
+        {{- if $showPage }}
+          <a href="#" class="page-number {{- if eq $i $currentPage }} active{{- end }}" data-page="{{ $i }}">{{ $i }}</a>
+        {{- else }}
+          {{- if eq $i 2 }}
+            <span class="ellipsis">...</span>
+          {{- end }}
+        {{- end }}
+      {{- end }}
+    </div>
   </nav>
 </footer>
 {{- end }}
@@ -159,12 +178,94 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // === CATEGORY FILTERING ===
     const categoryItems = document.querySelectorAll('.category-item');
     const posts = document.querySelectorAll('.filtered-posts .post-entry');
+    const paginationNav = document.querySelector('.pagination');
+    const paginationNumbers = document.querySelector('.pagination-numbers');
     
+    // Get pagination config
+    const postsPerPage = parseInt(paginationNav?.dataset.postsPerPage) || 10;
+    const totalPosts = parseInt(paginationNav?.dataset.totalPosts) || posts.length;
+    const totalPages = Math.ceil(totalPosts / postsPerPage);
+    
+    // Helper: Update pagination visibility based on filtered posts
+    function updatePaginationVisibility() {
+        const visiblePosts = Array.from(posts).filter(p => p.style.display !== 'none');
+        const visibleCount = visiblePosts.length;
+        const visiblePages = Math.ceil(visibleCount / postsPerPage);
+        
+        if (!paginationNav || !paginationNumbers) return;
+        
+        if (visiblePages <= 1) {
+            paginationNav.style.display = 'none';
+        } else {
+            paginationNav.style.display = 'flex';
+            
+            let pageNumbersHTML = '';
+            
+            if (visiblePages <= 5) {
+                for (let i = 1; i <= visiblePages; i++) {
+                    pageNumbersHTML += `<a href="#" class="page-number${i === 1 ? ' active' : ''}" data-page="${i}">${i}</a>`;
+                }
+            } else {
+                pageNumbersHTML += `<a href="#" class="page-number active" data-page="1">1</a>`;
+                pageNumbersHTML += `<a href="#" class="page-number" data-page="2">2</a>`;
+                pageNumbersHTML += `<a href="#" class="page-number" data-page="3">3</a>`;
+                pageNumbersHTML += `<span class="ellipsis">...</span>`;
+                pageNumbersHTML += `<a href="#" class="page-number" data-page="${visiblePages}">${visiblePages}</a>`;
+            }
+            
+            paginationNumbers.innerHTML = pageNumbersHTML;
+            attachPageNumberHandlers();
+        }
+    }
+    
+    // Attach click handlers to page numbers
+    function attachPageNumberHandlers() {
+        const pageNumbers = document.querySelectorAll('.page-number');
+        
+        pageNumbers.forEach(pageNum => {
+            pageNum.addEventListener('click', function(e) {
+                e.preventDefault();
+                
+                const targetPage = parseInt(this.dataset.page);
+                const start = (targetPage - 1) * postsPerPage;
+                const end = start + postsPerPage;
+                
+                // Update active state
+                document.querySelectorAll('.page-number').forEach(p => p.classList.remove('active'));
+                this.classList.add('active');
+                
+                // Show/hide posts for this page
+                let postIndex = 0;
+                posts.forEach(post => {
+                    if (post.style.display !== 'none') {
+                        if (postIndex >= start && postIndex < end) {
+                            post.classList.remove('hidden');
+                        } else {
+                            post.classList.add('hidden');
+                            setTimeout(() => {
+                                if (post.classList.contains('hidden')) {
+                                    post.style.display = 'none';
+                                }
+                            }, 150);
+                        }
+                        postIndex++;
+                    }
+                });
+            });
+        });
+    }
+    
+    // Category filter click handler
     categoryItems.forEach(item => {
         item.addEventListener('click', function(e) {
             e.preventDefault();
+            
+            // Prevent double-clicks during animation
+            if (this.classList.contains('animating')) return;
+            this.classList.add('animating');
             
             // Remove active class from all items
             categoryItems.forEach(cat => cat.classList.remove('active'));
@@ -174,36 +275,41 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const selectedCategory = this.dataset.category;
             
-            // First, fade out all posts
+            // Step 1: Fade out ALL posts first
             posts.forEach(post => {
-                if (post.style.display !== 'none') {
-                    post.classList.add('hidden');
-                }
+                post.classList.add('hidden');
             });
             
-            // Then, fade in posts that should be visible
+            // Step 2: After fade-out completes, show filtered posts
             setTimeout(() => {
                 posts.forEach(post => {
-                    if (selectedCategory === 'all') {
-                        // Show all posts
+                    const postCategories = post.dataset.categories || '';
+                    const categoryMatch = selectedCategory === 'all' || postCategories.includes(selectedCategory);
+                    
+                    if (categoryMatch) {
                         post.style.display = 'block';
+                        // Small delay then fade in
                         setTimeout(() => post.classList.remove('hidden'), 10);
                     } else {
-                        // Check if post has the selected category
-                        const postCategories = post.dataset.categories || '';
-                        if (postCategories.includes(selectedCategory)) {
-                            // Show post with fade in
-                            post.style.display = 'block';
-                            setTimeout(() => post.classList.remove('hidden'), 10);
-                        } else {
-                            // Keep post hidden
-                            post.style.display = 'none';
-                        }
+                        post.style.display = 'none';
+                        post.classList.remove('hidden');
                     }
                 });
-            }, 150); // Small delay for fade out effect
+                
+                // Update pagination after filtering
+                updatePaginationVisibility();
+                
+                // Remove animation lock
+                setTimeout(() => {
+                    categoryItems.forEach(cat => cat.classList.remove('animating'));
+                }, 160);
+            }, 150);
         });
     });
+    
+    // === PAGINATION ===
+    attachPageNumberHandlers();
+    updatePaginationVisibility();
 });
 </script>
 

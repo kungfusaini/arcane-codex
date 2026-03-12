@@ -3,6 +3,7 @@
 {{- $index := .index | default -1 }}
 {{- $isFirst := .isFirst | default false }}
 {{- $term := .term | default "" }}
+{{- $pageNum := .pageNum | default 1 }}
 
 {{- $class := "post-entry" }}
 {{- if $term }}
@@ -14,7 +15,7 @@
 {{- $categoryString = lower $categoryString }}
 {{- end }}
 
-<article class="{{ $class }}" data-categories="{{ $categoryString }}">
+<article class="{{ $class }}" data-categories="{{ $categoryString }}" data-page="{{ $pageNum }}">
   {{- $isHidden := ($page.Param "cover.hiddenInList") | default ($page.Param "cover.hidden") | default false }}
   {{- partial "cover.html" (dict "cxt" $page "IsSingle" false "isHidden" $isHidden) }}
   <header class="entry-header">
