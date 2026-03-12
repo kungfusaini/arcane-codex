@@ -37,6 +37,9 @@ ogImage = "ogImage.png"
   priority = 0.5
   filename = "sitemap.xml"
 
+[Pagination]
+  paginate = 10
+
 [menu]
   [[menu.main]]
     identifier = "search"

@@ -15,6 +15,14 @@
     justify-content: center;
     flex-wrap: wrap;
     gap: 8px;
+    opacity: 1;
+    transition: opacity 0.15s ease;
+    visibility: visible;
+}
+
+.pagination.hidden {
+    opacity: 0;
+    visibility: hidden;
 }
 
 .pagination-numbers {
@@ -49,6 +57,34 @@
     color: var(--theme);
     font-size: 13px;
     padding: 0 4px;
+}
+
+/* View all posts - styled like back-button */
+.view-all-link {
+    background: none;
+    border: none;
+    color: var(--primary);
+    font-size: 18px;
+    cursor: pointer;
+    padding: 4px 8px;
+    transition: color 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    line-height: normal;
+    text-decoration: none;
+}
+
+.view-all-link:hover {
+    color: var(--content);
+}
+
+.view-all-link svg {
+    transition: transform 0.2s ease;
+}
+
+.view-all-link:hover svg {
+    transform: translateX(2px);
 }
 
 
