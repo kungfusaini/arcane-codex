@@ -64,7 +64,7 @@
 
 @media (max-width: 768px) {
     .entry-header h2 {
-        text-align: center;
+        text-align: left;
     }
     
     .entry-content {
