@@ -4,7 +4,7 @@
 
 {{- /* Plausible Analytics - Only load in production */ -}}
 {{- if eq (getenv "HUGO_ENV") "production" }}
-<script defer data-domain="arcanecodex.dev" src="/stats/js/script.outbound-links.pageview-props.tagged-events.js"></script>
+<script defer data-domain="arcanecodex.dev" src="/stats/js/script.outbound-links.pageleave.pageview-props.tagged-events.js"></script>
 <script>window.plausible = window.plausible || function() { (window.plausible.q = window.plausible.q || []).push(arguments) }</script>
 {{- end }}
 
