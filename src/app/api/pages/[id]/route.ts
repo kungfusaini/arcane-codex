@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPage, readBacklinks, duplicatePage, trashPage, updatePage } from '@/lib/data/storage';
+import { getAsset, getPage, readBacklinks, duplicatePage, trashPage, updatePage } from '@/lib/data/storage';
 import { RevisionConflictError } from '@/lib/data/types';
 
 type PageUpdatePayload = {
@@ -26,8 +26,35 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   const payload = (await request.json().catch(() => ({}))) as PageUpdatePayload;
 
   const revision = Number(payload.revision);
-  if (!Number.isFinite(revision)) {
-    return NextResponse.json({ error: 'revision required' }, { status: 400 });
+  if (!Number.isInteger(revision) || revision < 0) {
+    return NextResponse.json({ error: 'A non-negative revision number is required.' }, { status: 400 });
+  }
+  if (typeof payload.title === 'string' && payload.title.length > 500) {
+    return NextResponse.json({ error: 'Page titles must be 500 characters or fewer.' }, { status: 400 });
+  }
+  if (payload.icon != null && (typeof payload.icon !== 'string' || payload.icon.length > 32)) {
+    return NextResponse.json({ error: 'Page icons must be a short text or emoji value.' }, { status: 400 });
+  }
+  if (typeof payload.contentJson === 'string') {
+    if (Buffer.byteLength(payload.contentJson, 'utf8') > 5 * 1024 * 1024) {
+      return NextResponse.json({ error: 'Page content is too large to save.' }, { status: 413 });
+    }
+    try {
+      if (!Array.isArray(JSON.parse(payload.contentJson))) {
+        return NextResponse.json({ error: 'Page content must be a JSON block array.' }, { status: 400 });
+      }
+    } catch {
+      return NextResponse.json({ error: 'Page content contains invalid JSON.' }, { status: 400 });
+    }
+  }
+  if (payload.coverAssetId != null) {
+    if (typeof payload.coverAssetId !== 'string') {
+      return NextResponse.json({ error: 'Cover asset id must be a string or null.' }, { status: 400 });
+    }
+    const cover = getAsset(payload.coverAssetId);
+    if (!cover || !cover.mimeType.startsWith('image/')) {
+      return NextResponse.json({ error: 'Cover asset must reference an uploaded image.' }, { status: 400 });
+    }
   }
 
   try {
@@ -55,12 +82,26 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     }
 
     const page = updatePage(params.id, updates);
-    return NextResponse.json({ page });
+    return NextResponse.json({ page, backlinks: readBacklinks(params.id) });
   } catch (error) {
     if (error instanceof RevisionConflictError) {
-      return NextResponse.json({ error: error.message }, { status: 409 });
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: 'REVISION_CONFLICT',
+          current: getPage(params.id),
+          recovery: 'Your draft was not applied. Reload the latest page or explicitly save your draft over it.',
+        },
+        { status: 409 },
+      );
     }
-    return NextResponse.json({ error: 'Update failed' }, { status: 400 });
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : 'Update failed',
+        recovery: 'Reload the page and retry. Your editor draft remains in this browser.',
+      },
+      { status: 400 },
+    );
   }
 }
 

@@ -84,6 +84,10 @@ describe('asset upload endpoint', () => {
     const disallowedResponse = await createAssetRequest('note.bin', 'application/octet-stream', 'binary');
     assert.equal(disallowedResponse.status, 400);
 
+    const spoofedImageResponse = await createAssetRequest('fake.png', 'image/png', 'not a png');
+    assert.equal(spoofedImageResponse.status, 400);
+    assert.match((await spoofedImageResponse.json() as { error: string }).error, /contents do not match/i);
+
     const duplicateResponse = await createAssetRequest('note-two.md', 'text/markdown', '# hello');
     assert.equal(duplicateResponse.status, 200);
     const duplicatePayload = (await duplicateResponse.json()) as { asset: { id: string } };
@@ -108,7 +112,10 @@ it('supports choosing uploaded asset references for page cover', async () => {
   process.env.ARCANE_DATA_DIR = workspace;
 
   const formData = new FormData();
-  formData.append('file', new File(['cover'], 'cover.png', { type: 'image/png' }));
+  formData.append(
+    'file',
+    new File([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], 'cover.png', { type: 'image/png' }),
+  );
   const uploadRequest = new NextRequest('http://localhost/api/assets', {
     method: 'POST',
     body: formData,

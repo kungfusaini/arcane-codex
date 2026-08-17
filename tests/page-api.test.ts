@@ -235,6 +235,16 @@ describe('page API endpoints', () => {
         { params: { id: page.id } },
       );
       assert.equal(second.status, 409);
+      const conflict = (await callJson(second)) as {
+        code: string;
+        current: { id: string; title: string; revision: number };
+        recovery: string;
+      };
+      assert.equal(conflict.code, 'REVISION_CONFLICT');
+      assert.equal(conflict.current.id, page.id);
+      assert.equal(conflict.current.title, 'Updated once');
+      assert.equal(conflict.current.revision, page.revision + 1);
+      assert.match(conflict.recovery, /draft was not applied/i);
     });
   });
 });

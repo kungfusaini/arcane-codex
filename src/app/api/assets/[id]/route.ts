@@ -20,8 +20,11 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
   const stream = createReadStream(filePath);
   return new NextResponse(stream as unknown as BodyInit, {
     headers: {
-      'content-type': asset.mimeType,
-      'content-disposition': `inline; filename="${asset.filename}"`,
+      'Content-Type': asset.mimeType,
+      'Content-Length': String(asset.size),
+      'Content-Disposition': `inline; filename="${asset.filename}"; filename*=UTF-8''${encodeURIComponent(asset.filename)}`,
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'private, max-age=31536000, immutable',
     },
   });
 }

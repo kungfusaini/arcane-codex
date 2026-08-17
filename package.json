@@ -13,10 +13,10 @@
     "start": "next start -H 127.0.0.1",
     "lint": "next lint",
     "test": "tsx --test --test-concurrency=1 tests/*.test.ts",
-    "test:integration": "tsx --test tests/page-api.test.ts tests/collection-api.test.ts",
-    "test:e2e": "tsx --test tests/page-editor-flow.test.ts",
+    "test:integration": "tsx --test --test-concurrency=1 tests/page-api.test.ts tests/collection-api.test.ts",
+    "test:e2e": "tsx --test --test-concurrency=1 tests/page-editor-flow.test.ts",
     "test:ux": "npm run test:integration && npm run test:e2e",
-    "test:unit": "tsx --test tests/storage.test.ts tests/assets.test.ts",
+    "test:unit": "tsx --test --test-concurrency=1 tests/storage.test.ts tests/assets.test.ts tests/export.test.ts tests/recovery.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

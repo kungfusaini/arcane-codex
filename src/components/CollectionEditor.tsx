@@ -1,5 +1,6 @@
 "use client";
 
+import Image from 'next/image';
 import Link from 'next/link';
 import {
   ChangeEvent,
@@ -1077,7 +1078,14 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
               <article key={item.pageId} className="collection-card collection-gallery-item">
                 <Link href={`/page/${item.pageId}`} className="collection-cover-link" style={{ gridArea: 'cover' }}>
                   {image ? (
-                    <img src={image} alt={`Cover for ${item.page.title}`} className="collection-cover" />
+                    <Image
+                      src={image}
+                      alt={`Cover for ${item.page.title}`}
+                      className="collection-cover"
+                      width={640}
+                      height={360}
+                      unoptimized
+                    />
                   ) : (
                     <div className="collection-cover-blank">No image</div>
                   )}

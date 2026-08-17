@@ -1,57 +1,116 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { unlinkSync } from 'node:fs';
+import { unlinkSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { Buffer } from 'node:buffer';
-import { createAsset, AssetCreateResult, listAssets } from '@/lib/data/storage';
+import { createAsset, type AssetCreateResult, listAssets } from '@/lib/data/storage';
 
 const MAX_ASSET_BYTES = 20 * 1024 * 1024;
-const ALLOWED_MIME_PREFIXES = ['image/', 'application/pdf', 'text/plain', 'text/markdown'];
+const MIME_EXTENSIONS: Record<string, string[]> = {
+  'image/png': ['.png'],
+  'image/jpeg': ['.jpg', '.jpeg'],
+  'image/gif': ['.gif'],
+  'image/webp': ['.webp'],
+  'application/pdf': ['.pdf'],
+  'text/plain': ['.txt', '.text'],
+  'text/markdown': ['.md', '.markdown'],
+};
+
+class UploadValidationError extends Error {
+  status: number;
+
+  constructor(message: string, status = 400) {
+    super(message);
+    this.name = 'UploadValidationError';
+    this.status = status;
+  }
+}
 
 function getDataDir(): string | undefined {
   return process.env.ARCANE_DATA_DIR;
 }
 
-function isSupportedMime(type: string): boolean {
-  if (!type) {
-    return false;
-  }
-  return ALLOWED_MIME_PREFIXES.some((prefix) => type === prefix || type.startsWith(`${prefix} `) || type.startsWith(prefix));
-}
-
 function safeFilename(name: string): string {
-  const trimmed = (name || 'upload').trim().slice(0, 120);
-  return trimmed.replace(/[\\/]/g, '-').replace(/\.{2,}/g, '.');
+  const trimmed = name.trim().slice(0, 120);
+  return trimmed.replace(/[\\/]/g, '-').replace(/\.{2,}/g, '.').replace(/[\u0000-\u001f\u007f]/g, '');
 }
 
-function isAllowedPath(p: string): boolean {
-  if (!path.isAbsolute(p)) {
-    return false;
+function isInsideTemp(filePath: string): boolean {
+  const relative = path.relative(tmpdir(), filePath);
+  return relative.length > 0 && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+function startsWith(bytes: Buffer, signature: number[] | string, offset = 0): boolean {
+  const expected = typeof signature === 'string' ? Buffer.from(signature, 'ascii') : Buffer.from(signature);
+  return bytes.subarray(offset, offset + expected.length).equals(expected);
+}
+
+function contentMatchesMime(bytes: Buffer, mimeType: string): boolean {
+  switch (mimeType) {
+    case 'image/png':
+      return startsWith(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    case 'image/jpeg':
+      return startsWith(bytes, [0xff, 0xd8, 0xff]);
+    case 'image/gif':
+      return startsWith(bytes, 'GIF87a') || startsWith(bytes, 'GIF89a');
+    case 'image/webp':
+      return startsWith(bytes, 'RIFF') && startsWith(bytes, 'WEBP', 8);
+    case 'application/pdf':
+      return startsWith(bytes, '%PDF-');
+    case 'text/plain':
+    case 'text/markdown':
+      if (bytes.includes(0)) return false;
+      try {
+        new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+        return true;
+      } catch {
+        return false;
+      }
+    default:
+      return false;
   }
-  return p.startsWith(tmpdir());
 }
 
-async function writeUploadToTemp(file: File): Promise<string> {
-  const safeName = `${Date.now()}-${randomUUID()}-${safeFilename(file.name || 'upload')}`;
-  const tempPath = path.join(tmpdir(), safeName);
+async function validateUpload(file: File): Promise<{ bytes: Buffer; filename: string; mimeType: string }> {
+  const filename = safeFilename(file.name || '');
+  if (!filename || filename === '.' || filename === '..') {
+    throw new UploadValidationError('Choose a file with a valid name.');
+  }
+  if (file.size > MAX_ASSET_BYTES) {
+    throw new UploadValidationError('File is larger than the 20 MB upload limit.', 413);
+  }
+
+  const mimeType = file.type.toLowerCase();
+  const extensions = MIME_EXTENSIONS[mimeType];
+  if (!extensions) {
+    throw new UploadValidationError('Unsupported file type. Use PNG, JPEG, GIF, WebP, PDF, text, or Markdown.');
+  }
+  const extension = path.extname(filename).toLowerCase();
+  if (!extensions.includes(extension)) {
+    throw new UploadValidationError(`The ${extension || 'missing'} extension does not match ${mimeType}.`);
+  }
+
   const bytes = Buffer.from(await file.arrayBuffer());
-
-  if (bytes.byteLength > MAX_ASSET_BYTES) {
-    throw new Error('File too large');
+  if (bytes.byteLength !== file.size || !contentMatchesMime(bytes, mimeType)) {
+    throw new UploadValidationError('File contents do not match the declared file type.');
   }
-
-  const fs = await import('node:fs');
-  fs.writeFileSync(tempPath, bytes);
-  if (!isAllowedPath(tempPath)) {
-    throw new Error('Invalid upload path');
-  }
-  return tempPath;
+  return { bytes, filename, mimeType };
 }
 
 export async function GET() {
-  const assets = listAssets(getDataDir());
-  return NextResponse.json({ assets });
+  try {
+    return NextResponse.json({ assets: listAssets(getDataDir()) });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: 'Media library could not be loaded.',
+        detail: error instanceof Error ? error.message : 'Workspace unavailable',
+        recovery: 'Run the workspace health check and restore missing workspace files before retrying.',
+      },
+      { status: 503 },
+    );
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -60,23 +119,20 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const file = formData.get('file');
     if (!(file instanceof File)) {
-      return NextResponse.json({ error: 'Missing file' }, { status: 400 });
+      throw new UploadValidationError('Choose a file to upload.');
     }
 
-    if (typeof file.name !== 'string' || file.name.length === 0) {
-      return NextResponse.json({ error: 'Invalid filename' }, { status: 400 });
+    const validated = await validateUpload(file);
+    tempPath = path.join(tmpdir(), `arcane-upload-${randomUUID()}`);
+    if (!isInsideTemp(tempPath)) {
+      throw new UploadValidationError('Upload staging path is invalid.');
     }
+    writeFileSync(tempPath, validated.bytes, { flag: 'wx', mode: 0o600 });
 
-    const type = file.type || 'application/octet-stream';
-    if (!isSupportedMime(type)) {
-      return NextResponse.json({ error: 'Unsupported media type' }, { status: 400 });
-    }
-
-    tempPath = await writeUploadToTemp(file);
     const created: AssetCreateResult = createAsset(
       {
-        filename: safeFilename(file.name),
-        mimeType: type,
+        filename: validated.filename,
+        mimeType: validated.mimeType,
         sourcePath: tempPath,
         width: null,
         height: null,
@@ -85,24 +141,27 @@ export async function POST(request: NextRequest) {
     );
 
     return NextResponse.json(
-      {
-        asset: created.asset,
-        created: created.created,
-      },
+      { asset: created.asset, created: created.created },
       { status: created.created ? 201 : 200 },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Upload failed';
-    if (message === 'File too large') {
-      return NextResponse.json({ error: message }, { status: 413 });
+    if (error instanceof UploadValidationError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
     }
-    return NextResponse.json({ error: message }, { status: 400 });
+    return NextResponse.json(
+      {
+        error: 'Upload could not be stored.',
+        detail: error instanceof Error ? error.message : 'Unknown upload error',
+        recovery: 'Your original file was not changed. Check workspace health and retry.',
+      },
+      { status: 500 },
+    );
   } finally {
-    if (tempPath && isAllowedPath(tempPath)) {
+    if (tempPath && isInsideTemp(tempPath)) {
       try {
         unlinkSync(tempPath);
       } catch {
-        // best effort cleanup
+        // Best-effort cleanup; the randomized staging file contains only the uploaded bytes.
       }
     }
   }

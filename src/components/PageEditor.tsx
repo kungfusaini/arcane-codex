@@ -68,16 +68,24 @@ type UploadTask = {
   error?: string;
 };
 
+type RecoveryDraft = {
+  pageId: string;
+  title: string;
+  contentJson: string;
+  baseRevision: number;
+  savedAt: number;
+};
+
 const DOCUMENT_FALLBACK: PartialBlock[] = [{
   type: 'paragraph',
   content: '',
 }];
 
-const ALLOWED_UPLOAD_TYPES = ['image/', 'application/pdf', 'text/plain', 'text/markdown'];
+const ALLOWED_UPLOAD_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf', 'text/plain', 'text/markdown'];
 const EMOJI_OPTIONS = ['📄', '🧾', '📚', '⚡', '✨', '🗂️', '🧠', '✍️', '🗒️', '🎯', '🛠️', '🧪', '📌', '🧭', '🔖', '🧩'];
 
 function isSupportedUpload(file: File): boolean {
-  return file.size <= 20 * 1024 * 1024 && ALLOWED_UPLOAD_TYPES.some((type) => file.type.startsWith(type));
+  return file.size <= 20 * 1024 * 1024 && ALLOWED_UPLOAD_TYPES.includes(file.type.toLowerCase());
 }
 
 const PAGE_LINK_BLOCK = createReactBlockSpec(
@@ -148,6 +156,8 @@ export function PageEditor({ pageId }: { pageId: string }) {
   const [assets, setAssets] = useState<AssetRecord[]>([]);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [uploadTasks, setUploadTasks] = useState<UploadTask[]>([]);
+  const [conflictPage, setConflictPage] = useState<PageRecord | null>(null);
+  const [recoveryDraft, setRecoveryDraft] = useState<RecoveryDraft | null>(null);
 
   const editor = useCreateBlockNote({
     schema: PAGE_GRAPH_SCHEMA,
@@ -159,11 +169,11 @@ export function PageEditor({ pageId }: { pageId: string }) {
   const hasPendingContent = useRef(false);
   const pendingRevision = useRef(0);
   const savedDocRef = useRef('[]');
-  const conflictRecovery = useRef(false);
+  const titleRef = useRef('');
   const bodyUploadRef = useRef<HTMLInputElement>(null);
   const coverUploadRef = useRef<HTMLInputElement>(null);
 
-  const normalizedTitle = useMemo(() => title.trim() || 'Untitled', [title]);
+  const draftKey = `arcane-codex:draft:${pageId}`;
   const isDeleted = Boolean(page?.deletedAt);
 
   const applyInitialContent = useCallback((rawContent: string) => {
@@ -184,14 +194,32 @@ export function PageEditor({ pageId }: { pageId: string }) {
     isApplyingRemoteContent.current = false;
   }, [editor]);
 
-  const refreshRevisionOnly = useCallback(async () => {
-    const response = await fetch(`/api/pages/${pageId}`);
-    if (!response.ok) {
-      return;
+  const readRecoveryDraft = useCallback((remote: PageRecord): RecoveryDraft | null => {
+    try {
+      const raw = window.localStorage.getItem(draftKey);
+      if (!raw) return null;
+      const draft = JSON.parse(raw) as Partial<RecoveryDraft>;
+      if (
+        draft.pageId !== pageId ||
+        typeof draft.title !== 'string' ||
+        typeof draft.contentJson !== 'string' ||
+        typeof draft.baseRevision !== 'number' ||
+        typeof draft.savedAt !== 'number'
+      ) {
+        window.localStorage.removeItem(draftKey);
+        return null;
+      }
+      JSON.parse(draft.contentJson);
+      if (draft.title === remote.title && draft.contentJson === remote.contentJson) {
+        window.localStorage.removeItem(draftKey);
+        return null;
+      }
+      return draft as RecoveryDraft;
+    } catch {
+      window.localStorage.removeItem(draftKey);
+      return null;
     }
-    const payload = (await response.json()) as { page: PageRecord };
-    pendingRevision.current = payload.page.revision;
-  }, [pageId]);
+  }, [draftKey, pageId]);
 
   const loadPage = useCallback(async () => {
     const response = await fetch(`/api/pages/${pageId}`);
@@ -208,14 +236,17 @@ export function PageEditor({ pageId }: { pageId: string }) {
 
     isApplyingRemoteContent.current = true;
     setTitle(payload.page.title);
+    titleRef.current = payload.page.title;
 
     applyInitialContent(payload.page.contentJson);
     isApplyingRemoteContent.current = false;
 
+    setConflictPage(null);
+    setRecoveryDraft(readRecoveryDraft(payload.page));
     setStatus('idle');
     setStatusMessage('');
     setEditorReady(true);
-  }, [applyInitialContent, pageId]);
+  }, [applyInitialContent, pageId, readRecoveryDraft]);
 
   const loadPageList = useCallback(async () => {
     const response = await fetch('/api/pages');
@@ -238,67 +269,55 @@ export function PageEditor({ pageId }: { pageId: string }) {
     const documentJson = savedDocRef.current;
     const editorRevision = pendingRevision.current;
 
-    if (!editorRevision && editorRevision !== 0) {
-      return;
-    }
-
     try {
       const response = await fetch(`/api/pages/${pageId}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
+        keepalive: true,
         body: JSON.stringify({
-          title: normalizedTitle,
+          title: titleRef.current.trim() || 'Untitled',
           contentJson: documentJson,
           revision: editorRevision,
         }),
       });
+      const payload = (await response.json().catch(() => ({}))) as {
+        page?: PageRecord;
+        backlinks?: PageRecord[];
+        current?: PageRecord;
+        error?: string;
+      };
 
-      if (response.status === 409 && !conflictRecovery.current) {
-        conflictRecovery.current = true;
+      if (response.status === 409) {
+        setConflictPage(payload.current ?? null);
         setStatus('conflict');
-        setStatusMessage('Revision conflict detected. Recovering…');
-        await refreshRevisionOnly();
-        setStatus('saving');
-        setStatusMessage('Saving');
-        await savePage();
+        setStatusMessage('A newer page revision exists. Your local draft is preserved.');
         return;
       }
-
-      if (!response.ok) {
-        throw new Error('Save request failed');
+      if (!response.ok || !payload.page) {
+        throw new Error(payload.error || 'Save request failed');
       }
 
-      const payload = (await response.json()) as { page: PageRecord; backlinks: PageRecord[] };
       pendingRevision.current = payload.page.revision;
       setStatus('saved');
       setStatusMessage('Saved');
-      setPage((previous) => {
-        if (!previous) {
-          return previous;
-        }
-        return {
-          ...previous,
-          title: payload.page.title,
-          contentJson: payload.page.contentJson,
-          revision: payload.page.revision,
-          updatedAt: payload.page.updatedAt,
-        };
-      });
+      setPage(payload.page);
       setBacklinks(payload.backlinks ?? []);
+      setConflictPage(null);
+      setRecoveryDraft(null);
       hasPendingContent.current = false;
-      conflictRecovery.current = false;
+      window.localStorage.removeItem(draftKey);
 
       if (saveTimerRef.current !== null) {
         clearTimeout(saveTimerRef.current);
       }
-    } catch {
+    } catch (error) {
       setStatus('error');
-      setStatusMessage('Error saving page');
+      setStatusMessage(error instanceof Error ? `${error.message}. Your draft remains in this browser.` : 'Save failed. Your draft remains in this browser.');
     }
-  }, [normalizedTitle, pageId, refreshRevisionOnly]);
+  }, [draftKey, pageId]);
 
   const requestSave = useCallback(() => {
-    if (!editorReady || !page) {
+    if (!editorReady || !page || page.deletedAt) {
       return;
     }
     if (saveTimerRef.current !== null) {
@@ -306,17 +325,78 @@ export function PageEditor({ pageId }: { pageId: string }) {
     }
 
     hasPendingContent.current = true;
+    window.localStorage.setItem(draftKey, JSON.stringify({
+      pageId,
+      title: titleRef.current,
+      contentJson: savedDocRef.current,
+      baseRevision: pendingRevision.current,
+      savedAt: Date.now(),
+    } satisfies RecoveryDraft));
     setStatus('saving');
     setStatusMessage('Saving');
 
     saveTimerRef.current = window.setTimeout(() => {
       void savePage();
     }, 700);
-  }, [editorReady, page, savePage]);
+  }, [draftKey, editorReady, page, pageId, savePage]);
+
+  const reloadConflict = useCallback(() => {
+    if (!conflictPage) return;
+    pendingRevision.current = conflictPage.revision;
+    titleRef.current = conflictPage.title;
+    setTitle(conflictPage.title);
+    setPage(conflictPage);
+    applyInitialContent(conflictPage.contentJson);
+    setConflictPage(null);
+    setRecoveryDraft(null);
+    hasPendingContent.current = false;
+    window.localStorage.removeItem(draftKey);
+    setStatus('saved');
+    setStatusMessage('Loaded the latest saved revision');
+  }, [applyInitialContent, conflictPage, draftKey]);
+
+  const overwriteConflict = useCallback(async () => {
+    if (!conflictPage) return;
+    pendingRevision.current = conflictPage.revision;
+    setConflictPage(null);
+    setStatus('saving');
+    setStatusMessage('Saving your preserved draft over the latest revision');
+    await savePage();
+  }, [conflictPage, savePage]);
+
+  const restoreLocalDraft = useCallback(() => {
+    if (!recoveryDraft) return;
+    titleRef.current = recoveryDraft.title;
+    setTitle(recoveryDraft.title);
+    applyInitialContent(recoveryDraft.contentJson);
+    pendingRevision.current = page?.revision ?? recoveryDraft.baseRevision;
+    setRecoveryDraft(null);
+    setStatus('saving');
+    setStatusMessage('Recovered draft ready to save');
+    window.setTimeout(requestSave, 0);
+  }, [applyInitialContent, page?.revision, recoveryDraft, requestSave]);
+
+  const discardLocalDraft = useCallback(() => {
+    window.localStorage.removeItem(draftKey);
+    setRecoveryDraft(null);
+    setStatus('idle');
+    setStatusMessage('Discarded browser recovery draft');
+  }, [draftKey]);
 
   const updateMetadata = useCallback(async (updates: { icon?: string | null; coverAssetId?: string | null }) => {
     if (!page || page.deletedAt) {
       return;
+    }
+
+    if (hasPendingContent.current) {
+      if (saveTimerRef.current !== null) {
+        clearTimeout(saveTimerRef.current);
+      }
+      await savePage();
+      if (hasPendingContent.current) {
+        setStatusMessage('Resolve the editor draft before changing page media.');
+        return;
+      }
     }
 
     setStatus('saving');
@@ -326,24 +406,25 @@ export function PageEditor({ pageId }: { pageId: string }) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ revision: pendingRevision.current, ...updates }),
     });
+    const payload = (await response.json().catch(() => ({}))) as { page?: PageRecord; current?: PageRecord; error?: string };
 
     if (response.status === 409) {
+      setConflictPage(payload.current ?? null);
       setStatus('conflict');
-      setStatusMessage('Page details changed elsewhere. Reload before retrying.');
+      setStatusMessage('Page details changed elsewhere. Your editor draft is preserved.');
       return;
     }
-    if (!response.ok) {
+    if (!response.ok || !payload.page) {
       setStatus('error');
-      setStatusMessage('Page details could not be saved');
+      setStatusMessage(payload.error || 'Page details could not be saved');
       return;
     }
 
-    const payload = (await response.json()) as { page: PageRecord };
     pendingRevision.current = payload.page.revision;
     setPage(payload.page);
     setStatus('saved');
     setStatusMessage('Page details saved');
-  }, [page, pageId]);
+  }, [page, pageId, savePage]);
 
   const insertAsset = useCallback((asset: AssetRecord) => {
     const cursor = editor.getTextCursorPosition().block;
@@ -417,18 +498,24 @@ export function PageEditor({ pageId }: { pageId: string }) {
     if (!page) {
       return;
     }
-    const response = await fetch(`/api/pages/${pageId}`, { method: page.deletedAt ? 'PATCH' : 'DELETE' });
-    if (!response.ok) {
-      setStatus('error');
-      setStatusMessage(page.deletedAt ? 'Restore failed' : 'Move to trash failed');
-      return;
-    }
 
     if (page.deletedAt) {
       const restore = await fetch(`/api/pages/${pageId}/restore`, { method: 'POST' });
-      if (restore.ok) {
-        await loadPage();
+      if (!restore.ok) {
+        setStatus('error');
+        setStatusMessage('Restore failed. Run the workspace check and retry.');
+        return;
       }
+      await loadPage();
+      setStatus('saved');
+      setStatusMessage('Page restored');
+      return;
+    }
+
+    const response = await fetch(`/api/pages/${pageId}`, { method: 'DELETE' });
+    if (!response.ok) {
+      setStatus('error');
+      setStatusMessage('Move to trash failed. Your page was not deleted.');
       return;
     }
 
@@ -438,6 +525,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
   };
 
   const onTitleInput = (event: ChangeEvent<HTMLInputElement>) => {
+    titleRef.current = event.target.value;
     setTitle(event.target.value);
     requestSave();
   };
@@ -622,6 +710,28 @@ export function PageEditor({ pageId }: { pageId: string }) {
 
       {showTrashNotice}
 
+      {recoveryDraft ? (
+        <section className="recovery-notice" role="status">
+          <strong>Unsaved browser draft found</strong>
+          <span>Your saved page is intact. Restore this draft to review and save it, or discard the draft.</span>
+          <div className="toolbar">
+            <button type="button" onClick={restoreLocalDraft}>Restore draft</button>
+            <button type="button" onClick={discardLocalDraft}>Discard draft</button>
+          </div>
+        </section>
+      ) : null}
+
+      {conflictPage ? (
+        <section className="recovery-notice error" role="alert">
+          <strong>Newer saved changes detected</strong>
+          <span>Your local draft has not been overwritten. Choose which revision to keep.</span>
+          <div className="toolbar">
+            <button type="button" onClick={reloadConflict}>Load latest saved page</button>
+            <button type="button" onClick={() => void overwriteConflict()}>Save my draft over latest</button>
+          </div>
+        </section>
+      ) : null}
+
       {coverAsset ? (
         <div className="cover-preview">
           <Image
@@ -687,7 +797,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
             ref={coverUploadRef}
             className="visually-hidden"
             type="file"
-            accept="image/*"
+            accept="image/png,image/jpeg,image/gif,image/webp"
             onChange={(event) => chooseUpload(event, 'cover')}
             disabled={isDeleted}
           />
@@ -702,7 +812,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
             ref={bodyUploadRef}
             className="visually-hidden"
             type="file"
-            accept="image/*,application/pdf,text/plain,text/markdown"
+            accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown"
             multiple
             onChange={(event) => chooseUpload(event, 'body')}
             disabled={isDeleted}

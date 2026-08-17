@@ -130,8 +130,11 @@ export type StorageConfig = {
 };
 
 export class RevisionConflictError extends Error {
-  constructor(message = 'Page revision conflict') {
+  currentRevision?: number;
+
+  constructor(message = 'Page revision conflict', currentRevision?: number) {
     super(message);
     this.name = 'RevisionConflictError';
+    this.currentRevision = currentRevision;
   }
 }

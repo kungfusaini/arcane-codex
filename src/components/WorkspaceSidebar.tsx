@@ -17,6 +17,12 @@ type SidebarPayload = {
   pages: SidebarPage[];
 };
 
+type WorkspaceHealth = {
+  status: 'ok' | 'degraded' | 'error';
+  issues: string[];
+  recovery: string[];
+};
+
 type SidebarTreeNode = PageTreeNode & {
   revision?: number;
 };
@@ -105,21 +111,43 @@ export function WorkspaceSidebar({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [health, setHealth] = useState<WorkspaceHealth | null>(null);
 
   const fetchPages = async () => {
     setLoading(true);
     try {
       const response = await fetch('/api/pages');
+      if (!response.ok) {
+        throw new Error('Workspace pages could not be loaded.');
+      }
       const payload = (await response.json()) as SidebarPayload;
       setPages(payload.pages);
       setStatus('');
+    } catch (error) {
+      setPages([]);
+      setStatus(error instanceof Error ? error.message : 'Workspace pages could not be loaded.');
     } finally {
       setLoading(false);
     }
   };
 
+  const fetchHealth = async () => {
+    try {
+      const response = await fetch('/api/health', { cache: 'no-store' });
+      const payload = (await response.json()) as WorkspaceHealth;
+      setHealth(payload);
+    } catch {
+      setHealth({
+        status: 'error',
+        issues: ['Workspace health check could not run.'],
+        recovery: ['Keep the app stopped before copying or repairing workspace files.'],
+      });
+    }
+  };
+
   useEffect(() => {
     void fetchPages();
+    void fetchHealth();
   }, []);
 
   const childrenByParent = useMemo(() => {
@@ -558,7 +586,19 @@ export function WorkspaceSidebar({
       <nav className="sidebar-nav" aria-label="Collections and content">
         <Link href="/">Workspace</Link>
         <Link href="/collections">Collections</Link>
+        <form action="/api/export" method="post">
+          <button type="submit">Export ZIP</button>
+        </form>
       </nav>
+
+      {health && health.status !== 'ok' ? (
+        <section className={`health-notice ${health.status}`} role={health.status === 'error' ? 'alert' : 'status'}>
+          <strong>{health.status === 'error' ? 'Workspace needs recovery' : 'Workspace check found issues'}</strong>
+          <span>{health.issues[0]}</span>
+          {health.recovery[0] ? <span>{health.recovery[0]}</span> : null}
+          <button type="button" onClick={() => void fetchHealth()}>Run check again</button>
+        </section>
+      ) : null}
 
       <div className="sidebar-section">
         <form onSubmit={onSearchSubmit} className="grid" role="search">
@@ -585,11 +625,16 @@ export function WorkspaceSidebar({
         <p className="help">Loading workspace…</p>
       ) : visibleNodes.length ? (
         <ul className="tree-level">{renderRows(visibleNodes)}</ul>
+      ) : status ? (
+        <div className="grid">
+          <p className="help status-note">{status}</p>
+          <button type="button" onClick={() => void fetchPages()}>Retry loading pages</button>
+        </div>
       ) : (
         <p className="help">No pages yet. Create one to begin.</p>
       )}
 
-      {status ? <p className="help status-note">{status}</p> : null}
+      {status && pages.length ? <p className="help status-note">{status}</p> : null}
     </aside>
   );
 }

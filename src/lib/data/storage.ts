@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { copyFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import {
   AssetRecord,
   CollectionItemPayload,
@@ -31,7 +31,36 @@ export type StorageHandle = {
   dataDir: string;
 };
 
+export type WorkspaceHealth = {
+  status: 'ok' | 'degraded' | 'error';
+  checkedAt: string;
+  issues: string[];
+  recovery: string[];
+};
+
+export class WorkspaceIntegrityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'WorkspaceIntegrityError';
+  }
+}
+
 type DbRow = Record<string, unknown>;
+
+function assertDatabaseIntegrity(db: DatabaseSync): void {
+  const quickCheck = db.prepare('PRAGMA quick_check').all() as DbRow[];
+  const failures = quickCheck
+    .map((row) => String(row.quick_check ?? 'unknown integrity error'))
+    .filter((result) => result !== 'ok');
+  if (failures.length) {
+    throw new WorkspaceIntegrityError(`Workspace database integrity check failed: ${failures.join('; ')}`);
+  }
+
+  const foreignKeyFailures = db.prepare('PRAGMA foreign_key_check').all() as DbRow[];
+  if (foreignKeyFailures.length) {
+    throw new WorkspaceIntegrityError(`Workspace database contains ${foreignKeyFailures.length} invalid relationship(s).`);
+  }
+}
 
 export function openWorkspace(options?: { dataDir?: string }): StorageHandle {
   const workspaceDir = getWorkspaceBaseDir(options?.dataDir);
@@ -39,31 +68,33 @@ export function openWorkspace(options?: { dataDir?: string }): StorageHandle {
   const dbPath = getWorkspaceDbPath(options?.dataDir);
   const db = new DatabaseSync(dbPath);
 
-  ensurePragmas(db);
-  runMigrations(db);
+  try {
+    ensurePragmas(db);
+    runMigrations(db);
 
-  const row = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'settings'").get() as
-    | DbRow
-    | undefined;
-  if (!row) {
-    throw new Error('Migration failed to create settings table');
-  }
+    const row = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'settings'").get() as
+      | DbRow
+      | undefined;
+    if (!row) {
+      throw new WorkspaceIntegrityError('Migration failed to create workspace settings.');
+    }
 
-  const settings = db.prepare('SELECT COUNT(*) as count FROM settings').get() as DbRow;
-  if (!(Number(settings.count) > 0)) {
+    const settings = db.prepare('SELECT COUNT(*) as count FROM settings').get() as DbRow;
     const now = Date.now();
-    db.prepare(
-      'INSERT INTO settings (schema_version, workspace_name, created_at, updated_at) VALUES (?, ?, ?, ?)',
-    ).run(CURRENT_SCHEMA_VERSION, 'Arcane Codex', now, now);
-  }
+    if (!(Number(settings.count) > 0)) {
+      db.prepare(
+        'INSERT INTO settings (schema_version, workspace_name, created_at, updated_at) VALUES (?, ?, ?, ?)',
+      ).run(CURRENT_SCHEMA_VERSION, 'Arcane Codex', now, now);
+    } else {
+      db.prepare('UPDATE settings SET schema_version = ?, updated_at = ? WHERE schema_version != ?')
+        .run(CURRENT_SCHEMA_VERSION, now, CURRENT_SCHEMA_VERSION);
+    }
 
-  const integrity = db.prepare('PRAGMA integrity_check').get() as DbRow;
-  if (String(integrity.integrity_check) !== 'ok') {
-    throw new Error(`SQLite integrity check failed: ${integrity.integrity_check}`);
+    assertDatabaseIntegrity(db);
+    return { dbPath, dataDir: workspaceDir };
+  } finally {
+    db.close();
   }
-
-  db.close();
-  return { dbPath, dataDir: workspaceDir };
 }
 
 function ensurePragmas(db: DatabaseSync): void {
@@ -145,7 +176,9 @@ function runMigrations(db: DatabaseSync): void {
   }
 
   if (currentVersion < 2) {
-    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_sha256 ON assets(sha256);');
+    // Older workspaces may already contain duplicate hashes. Keep startup recoverable;
+    // uploads are serialized and deduplicated in createAsset.
+    db.exec('CREATE INDEX IF NOT EXISTS idx_assets_sha256 ON assets(sha256);');
     db.exec('PRAGMA user_version = 2;');
   }
 
@@ -156,7 +189,102 @@ function runMigrations(db: DatabaseSync): void {
 
 export function createStorageConnection(dataDir?: string): DatabaseSync {
   const workspace = openWorkspace({ dataDir });
-  return new DatabaseSync(workspace.dbPath);
+  const db = new DatabaseSync(workspace.dbPath);
+  ensurePragmas(db);
+  return db;
+}
+
+function hasValidJson(value: unknown): boolean {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  try {
+    JSON.parse(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function inspectWorkspaceHealth(dataDir?: string): WorkspaceHealth {
+  const checkedAt = new Date().toISOString();
+  const issues: string[] = [];
+  const recovery = new Set<string>();
+  let workspace: StorageHandle;
+
+  try {
+    workspace = openWorkspace({ dataDir });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Workspace could not be opened.';
+    return {
+      status: 'error',
+      checkedAt,
+      issues: [message],
+      recovery: [
+        'Stop Arcane Codex and copy the workspace directory before attempting repair.',
+        'Restore workspace.sqlite from a known-good backup or export.',
+      ],
+    };
+  }
+
+  const db = new DatabaseSync(workspace.dbPath, { readOnly: true });
+  try {
+    assertDatabaseIntegrity(db);
+
+    const assets = db.prepare('SELECT id, filename FROM assets ORDER BY id').all() as DbRow[];
+    const expectedFiles = new Set<string>();
+    for (const asset of assets) {
+      const filename = `${String(asset.id)}${path.extname(String(asset.filename))}`;
+      expectedFiles.add(filename);
+      if (!existsSync(path.join(getWorkspaceAssetsDir(dataDir), filename))) {
+        issues.push(`Asset file is missing: ${String(asset.filename)} (${String(asset.id)}).`);
+        recovery.add('Re-upload missing assets or restore the assets directory from backup.');
+      }
+    }
+
+    for (const filename of readdirSync(getWorkspaceAssetsDir(dataDir))) {
+      if (!expectedFiles.has(filename)) {
+        issues.push(`Unregistered file is present in the assets directory: ${filename}.`);
+        recovery.add('Keep unregistered files until you confirm they are not needed, then move them out of the workspace.');
+      }
+    }
+
+    const pages = db.prepare('SELECT id, content_json FROM pages ORDER BY id').all() as DbRow[];
+    for (const page of pages) {
+      if (!hasValidJson(page.content_json)) {
+        issues.push(`Page ${String(page.id)} has invalid content JSON.`);
+        recovery.add('Export the workspace to retain raw page content, then repair the affected page from the export warning.');
+      }
+    }
+
+    const collections = db.prepare('SELECT id, schema_json, views_json FROM collections ORDER BY id').all() as DbRow[];
+    for (const collection of collections) {
+      if (!hasValidJson(collection.schema_json) || !hasValidJson(collection.views_json)) {
+        issues.push(`Collection ${String(collection.id)} has invalid schema or view JSON.`);
+        recovery.add('Export collection CSV data before repairing the collection definition.');
+      }
+    }
+
+    const items = db.prepare('SELECT collection_id, page_id, properties_json FROM collection_items ORDER BY collection_id, page_id').all() as DbRow[];
+    for (const item of items) {
+      if (!hasValidJson(item.properties_json)) {
+        issues.push(`Collection item ${String(item.collection_id)}/${String(item.page_id)} has invalid properties JSON.`);
+        recovery.add('Export collection CSV data before repairing item properties.');
+      }
+    }
+  } catch (error) {
+    issues.push(error instanceof Error ? error.message : 'Workspace health check failed.');
+    recovery.add('Stop Arcane Codex and copy the workspace directory before attempting repair.');
+  } finally {
+    db.close();
+  }
+
+  return {
+    status: issues.length ? 'degraded' : 'ok',
+    checkedAt,
+    issues,
+    recovery: [...recovery],
+  };
 }
 
 function rowToPage(row: DbRow): PageRecord {
@@ -382,7 +510,7 @@ export function applyPageMoves(moves: PageMoveInput[], dataDir?: string): PageRe
   const db = createStorageConnection(dataDir);
 
   try {
-    db.exec('BEGIN');
+    db.exec('BEGIN IMMEDIATE');
     const now = Date.now();
     const allRows = db.prepare('SELECT id, parent_id, deleted_at FROM pages').all() as DbRow[];
     const currentStmt = db.prepare('SELECT id, revision, deleted_at FROM pages WHERE id = ?');
@@ -394,7 +522,11 @@ export function applyPageMoves(moves: PageMoveInput[], dataDir?: string): PageRe
            sort_key = ?,
            revision = revision + 1,
            updated_at = ?
-       WHERE id = ?`,
+       WHERE id = ? AND revision = ? AND deleted_at IS NULL`,
+    );
+    const updatedPageStmt = db.prepare(
+      `SELECT id, parent_id, sort_key, title, icon, cover_asset_id, content_json, revision, created_at, updated_at, deleted_at
+       FROM pages WHERE id = ?`,
     );
 
     const updated: PageRecord[] = [];
@@ -423,13 +555,16 @@ export function applyPageMoves(moves: PageMoveInput[], dataDir?: string): PageRe
     }
 
     for (const move of moves) {
-      updateStmt.run(move.parentId, move.sortKey, now, move.id);
+      const result = updateStmt.run(move.parentId, move.sortKey, now, move.id, move.revision);
+      if (Number(result.changes) !== 1) {
+        throw new RevisionConflictError(`Page changed while move was being applied: ${move.id}`);
+      }
     }
 
     for (const move of moves) {
-      const page = getPage(move.id, dataDir);
-      if (page) {
-        updated.push(page);
+      const row = updatedPageStmt.get(move.id) as DbRow | undefined;
+      if (row) {
+        updated.push(rowToPage(row));
       }
     }
 
@@ -445,16 +580,22 @@ export function applyPageMoves(moves: PageMoveInput[], dataDir?: string): PageRe
 
 export function updatePage(id: string, input: PageUpdate, dataDir?: string): PageRecord {
   const db = createStorageConnection(dataDir);
+  let inTransaction = false;
   try {
-    const current = db.prepare('SELECT revision FROM pages WHERE id = ? AND deleted_at IS NULL').get(id) as DbRow | undefined;
+    db.exec('BEGIN IMMEDIATE');
+    inTransaction = true;
+    const current = db.prepare(
+      `SELECT id, parent_id, sort_key, title, icon, cover_asset_id, content_json, revision, created_at, updated_at, deleted_at
+       FROM pages WHERE id = ? AND deleted_at IS NULL`,
+    ).get(id) as DbRow | undefined;
 
     if (!current) {
       throw new Error('Page not found');
     }
 
-    const currentRevision = Number(current.revision);
-    if (currentRevision !== input.revision) {
-      throw new RevisionConflictError('Stale revision supplied');
+    const currentPage = rowToPage(current);
+    if (currentPage.revision !== input.revision) {
+      throw new RevisionConflictError('Stale revision supplied', currentPage.revision);
     }
 
     const allRows = db.prepare('SELECT id, parent_id, deleted_at FROM pages').all() as DbRow[];
@@ -462,7 +603,7 @@ export function updatePage(id: string, input: PageUpdate, dataDir?: string): Pag
       allRows.map((row) => [String(row.id), (row.parent_id as string | null) ?? null]),
     );
 
-    const fields = [] as string[];
+    const fields: string[] = [];
     const values: Array<string | number | null> = [];
 
     if (Object.hasOwn(input, 'parentId')) {
@@ -471,7 +612,7 @@ export function updatePage(id: string, input: PageUpdate, dataDir?: string): Pag
         throw new Error('Target parent not found');
       }
 
-      const candidate: Map<string, string | null> = new Map(allParentMap);
+      const candidate = new Map(allParentMap);
       candidate.set(id, parentId);
       if (wouldIntroduceCycle(id, parentId, candidate)) {
         throw new Error('Update would create a cycle');
@@ -489,14 +630,12 @@ export function updatePage(id: string, input: PageUpdate, dataDir?: string): Pag
       values.push(input.title);
     }
     if (Object.hasOwn(input, 'icon')) {
-      const has = input.icon as string | null | undefined;
       fields.push('icon = ?');
-      values.push(has ?? null);
+      values.push(input.icon ?? null);
     }
     if (Object.hasOwn(input, 'coverAssetId')) {
-      const cover = input.coverAssetId as string | null | undefined;
       fields.push('cover_asset_id = ?');
-      values.push(cover ?? null);
+      values.push(input.coverAssetId ?? null);
     }
     if (input.contentJson !== undefined) {
       fields.push('content_json = ?');
@@ -504,26 +643,38 @@ export function updatePage(id: string, input: PageUpdate, dataDir?: string): Pag
     }
 
     if (!fields.length) {
-      const untouched = getPage(id, dataDir);
-      if (!untouched) {
-        throw new Error('Page not found');
-      }
-      return untouched;
+      db.exec('COMMIT');
+      inTransaction = false;
+      return currentPage;
     }
 
     fields.push('revision = revision + 1', 'updated_at = ?');
-    values.push(Date.now(), id);
+    values.push(Date.now(), id, input.revision);
+    const result = db.prepare(
+      `UPDATE pages SET ${fields.join(', ')} WHERE id = ? AND revision = ? AND deleted_at IS NULL`,
+    ).run(...values);
+    if (Number(result.changes) !== 1) {
+      const latest = db.prepare('SELECT revision FROM pages WHERE id = ?').get(id) as DbRow | undefined;
+      throw new RevisionConflictError('Page changed while the update was being saved', latest ? Number(latest.revision) : undefined);
+    }
 
-    const stmt = db.prepare(`UPDATE pages SET ${fields.join(', ')} WHERE id = ?`);
-    stmt.run(...values);
-
-    const updated = getPage(id, dataDir);
+    rebuildBacklinks(db, id);
+    const updated = db.prepare(
+      `SELECT id, parent_id, sort_key, title, icon, cover_asset_id, content_json, revision, created_at, updated_at, deleted_at
+       FROM pages WHERE id = ?`,
+    ).get(id) as DbRow | undefined;
     if (!updated) {
       throw new Error('Could not load updated page');
     }
 
-    rebuildBacklinks(db, id);
-    return updated;
+    db.exec('COMMIT');
+    inTransaction = false;
+    return rowToPage(updated);
+  } catch (error) {
+    if (inTransaction) {
+      db.exec('ROLLBACK');
+    }
+    throw error;
   } finally {
     db.close();
   }
@@ -533,7 +684,7 @@ export function trashPage(id: string, dataDir?: string): void {
   const db = createStorageConnection(dataDir);
   try {
     const now = Date.now();
-    db.prepare('UPDATE pages SET deleted_at = ?, updated_at = ? WHERE id = ?').run(now, now, id);
+    db.prepare('UPDATE pages SET deleted_at = ?, updated_at = ?, revision = revision + 1 WHERE id = ?').run(now, now, id);
   } finally {
     db.close();
   }
@@ -543,7 +694,7 @@ export function restorePage(id: string, dataDir?: string): PageRecord | null {
   const db = createStorageConnection(dataDir);
   try {
     const now = Date.now();
-    db.prepare('UPDATE pages SET deleted_at = NULL, updated_at = ? WHERE id = ?').run(now, id);
+    db.prepare('UPDATE pages SET deleted_at = NULL, updated_at = ?, revision = revision + 1 WHERE id = ?').run(now, id);
     return getPage(id, dataDir);
   } finally {
     db.close();
@@ -650,7 +801,10 @@ export function createAsset(
   dataDir?: string,
 ): AssetCreateResult {
   const db = createStorageConnection(dataDir);
+  let inTransaction = false;
   try {
+    db.exec('BEGIN IMMEDIATE');
+    inTransaction = true;
     const assetDir = getWorkspaceAssetsDir(dataDir);
     mkdirSync(assetDir, { recursive: true });
 
@@ -658,6 +812,8 @@ export function createAsset(
     const hash = createHash('sha256').update(sourceData).digest('hex');
     const existing = getAssetBySha256(hash, db);
     if (existing) {
+      db.exec('COMMIT');
+      inTransaction = false;
       return { asset: existing, created: false };
     }
 
@@ -682,7 +838,7 @@ export function createAsset(
       now,
     );
 
-    return {
+    const result = {
       asset: {
         id,
         filename,
@@ -695,6 +851,14 @@ export function createAsset(
       },
       created: true,
     };
+    db.exec('COMMIT');
+    inTransaction = false;
+    return result;
+  } catch (error) {
+    if (inTransaction) {
+      db.exec('ROLLBACK');
+    }
+    throw error;
   } finally {
     db.close();
   }
@@ -1171,8 +1335,12 @@ export function rebuildBacklinks(db: DatabaseSync, pageId: string): void {
     'INSERT OR REPLACE INTO page_links (source_page_id, source_block_id, target_page_id) VALUES (?, ?, ?)',
   );
 
-  for (const linkedId of ids) {
-    const blockId = randomBytes(8).toString('hex');
+  const targetExists = db.prepare('SELECT 1 FROM pages WHERE id = ? AND deleted_at IS NULL');
+  for (const [index, linkedId] of ids.entries()) {
+    if (!targetExists.get(linkedId)) {
+      continue;
+    }
+    const blockId = createHash('sha256').update(`${pageId}:${linkedId}:${index}`).digest('hex').slice(0, 16);
     stmt.run(pageId, blockId, linkedId);
   }
 }
