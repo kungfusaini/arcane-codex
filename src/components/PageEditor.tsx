@@ -11,7 +11,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { BlockNoteSchema, PartialBlock } from '@blocknote/core';
+import { BlockNoteSchema, PartialBlock, defaultBlockSpecs } from '@blocknote/core';
 import {
   BlockNoteViewRaw as BlockNoteView,
   SuggestionMenuController,
@@ -119,7 +119,6 @@ const PAGE_LINK_BLOCK = createReactBlockSpec(
           onClick={openPage}
           contentEditable={false}
           draggable={false}
-          tabIndex={-1}
         >
           {title}
         </a>
@@ -136,6 +135,7 @@ const PAGE_LINK_BLOCK = createReactBlockSpec(
 
 const PAGE_GRAPH_SCHEMA = BlockNoteSchema.create({
   blockSpecs: {
+    ...defaultBlockSpecs,
     pageLink: PAGE_LINK_BLOCK(),
   },
 });
@@ -165,6 +165,10 @@ export function PageEditor({ pageId }: { pageId: string }) {
   });
 
   const saveTimerRef = useRef<number | null>(null);
+  const saveInFlightRef = useRef<Promise<void> | null>(null);
+  const saveQueuedRef = useRef(false);
+  const savePageRef = useRef<() => Promise<void>>(async () => {});
+  const editVersionRef = useRef(0);
   const isApplyingRemoteContent = useRef(false);
   const hasPendingContent = useRef(false);
   const pendingRevision = useRef(0);
@@ -191,7 +195,9 @@ export function PageEditor({ pageId }: { pageId: string }) {
     isApplyingRemoteContent.current = true;
     editor.replaceBlocks(editor.document, payload as Parameters<typeof editor.replaceBlocks>[1]);
     savedDocRef.current = JSON.stringify(payload);
-    isApplyingRemoteContent.current = false;
+    queueMicrotask(() => {
+      isApplyingRemoteContent.current = false;
+    });
   }, [editor]);
 
   const readRecoveryDraft = useCallback((remote: PageRecord): RecoveryDraft | null => {
@@ -222,30 +228,42 @@ export function PageEditor({ pageId }: { pageId: string }) {
   }, [draftKey, pageId]);
 
   const loadPage = useCallback(async () => {
-    const response = await fetch(`/api/pages/${pageId}`);
-    if (!response.ok) {
-      setStatus('error');
-      setStatusMessage('Page not found');
-      return;
-    }
-
-    const payload = (await response.json()) as { page: PageRecord; backlinks: PageRecord[] };
-    setPage(payload.page);
-    setBacklinks(payload.backlinks);
-    pendingRevision.current = payload.page.revision;
-
-    isApplyingRemoteContent.current = true;
-    setTitle(payload.page.title);
-    titleRef.current = payload.page.title;
-
-    applyInitialContent(payload.page.contentJson);
-    isApplyingRemoteContent.current = false;
-
-    setConflictPage(null);
-    setRecoveryDraft(readRecoveryDraft(payload.page));
     setStatus('idle');
     setStatusMessage('');
-    setEditorReady(true);
+    try {
+      const response = await fetch(`/api/pages/${pageId}`);
+      if (!response.ok) {
+        throw new Error(response.status === 404 ? 'Page not found' : 'Page could not be loaded');
+      }
+
+      const payload = (await response.json()) as { page: PageRecord; backlinks: PageRecord[] };
+      setPage(payload.page);
+      setBacklinks(payload.backlinks);
+      pendingRevision.current = payload.page.revision;
+      editVersionRef.current = 0;
+      saveQueuedRef.current = false;
+      hasPendingContent.current = false;
+      if (saveTimerRef.current !== null) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+
+      setTitle(payload.page.title);
+      titleRef.current = payload.page.title;
+
+      applyInitialContent(payload.page.contentJson);
+
+      setConflictPage(null);
+      setRecoveryDraft(readRecoveryDraft(payload.page));
+      setStatus('idle');
+      setStatusMessage('');
+      setEditorReady(true);
+    } catch (error) {
+      setPage(null);
+      setEditorReady(false);
+      setStatus('error');
+      setStatusMessage(error instanceof Error ? error.message : 'Page could not be loaded');
+    }
   }, [applyInitialContent, pageId, readRecoveryDraft]);
 
   const loadPageList = useCallback(async () => {
@@ -266,55 +284,87 @@ export function PageEditor({ pageId }: { pageId: string }) {
   }, []);
 
   const savePage = useCallback(async () => {
+    if (saveInFlightRef.current) {
+      saveQueuedRef.current = true;
+      await saveInFlightRef.current;
+      return;
+    }
+
+    saveQueuedRef.current = false;
     const documentJson = savedDocRef.current;
+    const titleToSave = titleRef.current.trim() || 'Untitled';
     const editorRevision = pendingRevision.current;
+    const saveVersion = editVersionRef.current;
 
+    let canFlushQueuedSave = false;
+    const operation = (async () => {
+      try {
+        const response = await fetch(`/api/pages/${pageId}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          keepalive: true,
+          body: JSON.stringify({
+            title: titleToSave,
+            contentJson: documentJson,
+            revision: editorRevision,
+          }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          page?: PageRecord;
+          backlinks?: PageRecord[];
+          current?: PageRecord;
+          error?: string;
+        };
+
+        if (response.status === 409) {
+          setConflictPage(payload.current ?? null);
+          setStatus('conflict');
+          setStatusMessage('A newer page revision exists. Your local draft is preserved.');
+          return;
+        }
+        if (!response.ok || !payload.page) {
+          throw new Error(payload.error || 'Save request failed');
+        }
+
+        canFlushQueuedSave = true;
+        pendingRevision.current = payload.page.revision;
+        setPage(payload.page);
+        setBacklinks(payload.backlinks ?? []);
+        setConflictPage(null);
+        setRecoveryDraft(null);
+
+        if (editVersionRef.current === saveVersion) {
+          setStatus('saved');
+          setStatusMessage('Saved');
+          hasPendingContent.current = false;
+          window.localStorage.removeItem(draftKey);
+        } else {
+          saveQueuedRef.current = true;
+          hasPendingContent.current = true;
+          setStatus('saving');
+          setStatusMessage('Saving newer changes');
+        }
+      } catch (error) {
+        setStatus('error');
+        setStatusMessage(error instanceof Error ? `${error.message}. Your draft remains in this browser.` : 'Save failed. Your draft remains in this browser.');
+      }
+    })();
+
+    saveInFlightRef.current = operation;
     try {
-      const response = await fetch(`/api/pages/${pageId}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        keepalive: true,
-        body: JSON.stringify({
-          title: titleRef.current.trim() || 'Untitled',
-          contentJson: documentJson,
-          revision: editorRevision,
-        }),
-      });
-      const payload = (await response.json().catch(() => ({}))) as {
-        page?: PageRecord;
-        backlinks?: PageRecord[];
-        current?: PageRecord;
-        error?: string;
-      };
-
-      if (response.status === 409) {
-        setConflictPage(payload.current ?? null);
-        setStatus('conflict');
-        setStatusMessage('A newer page revision exists. Your local draft is preserved.');
-        return;
+      await operation;
+    } finally {
+      saveInFlightRef.current = null;
+      if (canFlushQueuedSave && saveQueuedRef.current && hasPendingContent.current) {
+        saveQueuedRef.current = false;
+        window.setTimeout(() => {
+          void savePageRef.current();
+        }, 0);
       }
-      if (!response.ok || !payload.page) {
-        throw new Error(payload.error || 'Save request failed');
-      }
-
-      pendingRevision.current = payload.page.revision;
-      setStatus('saved');
-      setStatusMessage('Saved');
-      setPage(payload.page);
-      setBacklinks(payload.backlinks ?? []);
-      setConflictPage(null);
-      setRecoveryDraft(null);
-      hasPendingContent.current = false;
-      window.localStorage.removeItem(draftKey);
-
-      if (saveTimerRef.current !== null) {
-        clearTimeout(saveTimerRef.current);
-      }
-    } catch (error) {
-      setStatus('error');
-      setStatusMessage(error instanceof Error ? `${error.message}. Your draft remains in this browser.` : 'Save failed. Your draft remains in this browser.');
     }
   }, [draftKey, pageId]);
+
+  savePageRef.current = savePage;
 
   const requestSave = useCallback(() => {
     if (!editorReady || !page || page.deletedAt) {
@@ -324,6 +374,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
       clearTimeout(saveTimerRef.current);
     }
 
+    editVersionRef.current += 1;
     hasPendingContent.current = true;
     window.localStorage.setItem(draftKey, JSON.stringify({
       pageId,
@@ -336,6 +387,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
     setStatusMessage('Saving');
 
     saveTimerRef.current = window.setTimeout(() => {
+      saveTimerRef.current = null;
       void savePage();
     }, 700);
   }, [draftKey, editorReady, page, pageId, savePage]);
@@ -507,9 +559,27 @@ export function PageEditor({ pageId }: { pageId: string }) {
         return;
       }
       await loadPage();
+      window.dispatchEvent(new Event('arcane-pages-changed'));
       setStatus('saved');
       setStatusMessage('Page restored');
       return;
+    }
+
+    if (!window.confirm(`Move “${page.title || 'Untitled'}” to trash? You can restore it from the sidebar.`)) {
+      return;
+    }
+
+    if (hasPendingContent.current) {
+      if (saveTimerRef.current !== null) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      await savePage();
+      if (hasPendingContent.current) {
+        setStatus('error');
+        setStatusMessage('Save or resolve the current draft before moving this page to trash.');
+        return;
+      }
     }
 
     const response = await fetch(`/api/pages/${pageId}`, { method: 'DELETE' });
@@ -522,6 +592,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
     setStatus('saved');
     setStatusMessage('Moved to trash');
     await loadPage();
+    window.dispatchEvent(new Event('arcane-pages-changed'));
   };
 
   const onTitleInput = (event: ChangeEvent<HTMLInputElement>) => {
@@ -554,8 +625,39 @@ export function PageEditor({ pageId }: { pageId: string }) {
     });
   }, [editor]);
 
+  const createChildPageCard = useCallback(async () => {
+    const response = await fetch('/api/pages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'Untitled', parentId: pageId }),
+    });
+    const payload = (await response.json().catch(() => ({}))) as { page?: SidebarPage; error?: string };
+    if (!response.ok || !payload.page) {
+      setStatus('error');
+      setStatusMessage(payload.error || 'Child page could not be created');
+      return;
+    }
+
+    setAllPages((current) => [...current.filter((item) => item.id !== payload.page!.id), payload.page!]);
+    insertPageCard(payload.page);
+    window.dispatchEvent(new Event('arcane-pages-changed'));
+    setStatus('saving');
+    setStatusMessage('Child page created; saving page card');
+  }, [insertPageCard, pageId]);
+
   const getSlashMenuItems = useCallback(async (query: string): Promise<(DefaultReactSuggestionItem & { pageId?: string })[]> => {
     const defaultItems = filterSuggestionItems(getDefaultReactSlashMenuItems(editor), query);
+    const normalized = query.trim().toLowerCase();
+    const createChildItem = !normalized || 'new child page'.includes(normalized)
+      ? [{
+          title: 'New child page',
+          subtext: 'Create a nested page and insert its page card',
+          onItemClick: () => {
+            void createChildPageCard();
+          },
+          group: 'Pages',
+        }]
+      : [];
     const pages = pageSuggestions(query).map((item) => ({
       title: `Page: ${item.title || 'Untitled'}`,
       subtext: 'Insert page card',
@@ -566,8 +668,8 @@ export function PageEditor({ pageId }: { pageId: string }) {
       group: 'Pages',
     }));
 
-    return [...defaultItems, ...pages];
-  }, [editor, insertPageCard, pageSuggestions]);
+    return [...defaultItems, ...createChildItem, ...pages];
+  }, [createChildPageCard, editor, insertPageCard, pageSuggestions]);
 
   const insertMention = useCallback(
     (item: MentionItem) => {
@@ -653,7 +755,15 @@ export function PageEditor({ pageId }: { pageId: string }) {
   }, [loadAssets, loadPage, loadPageList, savePage]);
 
   if (!page) {
-    return <div className="editor-shell help">Loading page…</div>;
+    return status === 'error' ? (
+      <section className="editor-shell recovery-notice error" role="alert">
+        <strong>{statusMessage || 'Page could not be loaded'}</strong>
+        <span>Check the page link or retry after running the workspace health check.</span>
+        <button type="button" onClick={() => void loadPage()}>Retry loading page</button>
+      </section>
+    ) : (
+      <div className="editor-shell help" role="status">Loading page…</div>
+    );
   }
 
   const showTrashNotice = page.deletedAt ? (
@@ -845,7 +955,12 @@ export function PageEditor({ pageId }: { pageId: string }) {
       ) : null}
 
       <div className={`status ${status === 'idle' ? '' : status === 'saved' ? 'saved' : status === 'error' ? 'error' : status === 'conflict' ? 'error' : 'saving'}`}>
-        {statusMessage || 'Saved'}
+        <span>{statusMessage || 'Saved'}</span>
+        {status === 'error' && hasPendingContent.current ? (
+          <button type="button" className="mini-btn" onClick={() => void savePage()}>
+            Retry save
+          </button>
+        ) : null}
       </div>
 
       <div className="editor-view">

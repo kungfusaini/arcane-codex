@@ -16,12 +16,23 @@ type PageSummary = {
 export default function HomePage() {
   const [pages, setPages] = useState<PageSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const refreshPages = async () => {
-    const response = await fetch('/api/pages');
-    const payload = (await response.json()) as { pages: PageSummary[] };
-    setPages(payload.pages);
-    setLoading(false);
+    setLoading(true);
+    try {
+      const response = await fetch('/api/pages');
+      if (!response.ok) {
+        throw new Error('Workspace could not be loaded.');
+      }
+      const payload = (await response.json()) as { pages: PageSummary[] };
+      setPages(payload.pages);
+      setError('');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Workspace could not be loaded.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -29,13 +40,20 @@ export default function HomePage() {
   }, []);
 
   const createFirstPage = async () => {
-    const response = await fetch('/api/pages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ title: 'Welcome', parentId: null }),
-    });
-    const payload = (await response.json()) as { page: PageSummary };
-    window.location.href = `/page/${payload.page.id}`;
+    try {
+      const response = await fetch('/api/pages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: 'Untitled', parentId: null }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { page?: PageSummary; error?: string };
+      if (!response.ok || !payload.page) {
+        throw new Error(payload.error || 'Page could not be created.');
+      }
+      window.location.href = `/page/${payload.page.id}`;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Page could not be created.');
+    }
   };
 
   return (
@@ -51,6 +69,11 @@ export default function HomePage() {
         <section className="editor-shell">
           {loading ? (
             <p className="help">Loading workspace…</p>
+          ) : error ? (
+            <div className="recovery-notice error" role="alert">
+              <strong>{error}</strong>
+              <button type="button" onClick={() => void refreshPages()}>Retry loading workspace</button>
+            </div>
           ) : pages.length ? (
             <>
               <p className="help">Your workspace has {pages.length} page{pages.length === 1 ? '' : 's'}.</p>

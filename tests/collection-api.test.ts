@@ -122,8 +122,12 @@ describe('collections HTTP API', () => {
         ),
         { params: { id: collectionId } },
       );
-      const filteredPayload = (await callJson(filtered)) as { items: Array<{ propertiesJson: string }> };
+      const filteredPayload = (await callJson(filtered)) as {
+        items: Array<{ propertiesJson: string }>;
+        availablePages: Array<{ id: string }>;
+      };
       assert.equal(filteredPayload.items.length, 1);
+      assert.equal(filteredPayload.availablePages.length, 0, 'filtered-out collection members must not become addable again');
 
       const update = await collectionItemsRoute.PATCH(
         new NextRequest(`http://localhost/api/collections/${collectionId}/items`, {
@@ -186,6 +190,37 @@ describe('collections HTTP API', () => {
 
       const renamed = await rename.json() as { collection: { viewsJson: string } };
       assert.equal(JSON.parse(renamed.collection.viewsJson).mode, 'gallery');
+
+      const schemaUpdate = await collectionRoute.PATCH(
+        new NextRequest(`http://localhost/api/collections/${collectionId}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            schema: {
+              properties: [{ id: 'status', name: 'Status', type: 'select', options: ['Todo', 'Done', 'Blocked'] }],
+            },
+          }),
+        }),
+        { params: { id: collectionId } },
+      );
+      assert.equal(schemaUpdate.status, 200);
+      const schemaPayload = await schemaUpdate.json() as { collection: { schemaJson: string } };
+      assert.deepEqual(JSON.parse(schemaPayload.collection.schemaJson).properties[0].options, ['Todo', 'Done', 'Blocked']);
+    });
+  });
+
+  it('rejects an invalid collection host page with a client error', async () => {
+    await withWorkspace(async () => {
+      const response = await collectionsRoute.POST(
+        new NextRequest('http://localhost/api/collections', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name: 'Broken host', hostPageId: '11111111-1111-4111-8111-111111111111' }),
+        }),
+      );
+      assert.equal(response.status, 400);
+      const payload = await callJson(response);
+      assert.match(String(payload.error), /host page not found/i);
     });
   });
 });

@@ -6,6 +6,7 @@ type CollectionProperty = {
   id: string;
   name: string;
   type: CollectionPropertyType;
+  options?: string[];
 };
 
 type CollectionPayload = {
@@ -65,16 +66,26 @@ function parseCollectionSchema(payload: unknown): CollectionSchema {
         id?: unknown;
         name?: unknown;
         type?: unknown;
+        options?: unknown;
       };
 
       if (typeof raw.id !== 'string' || typeof raw.name !== 'string') {
         return null;
       }
 
+      const type = parseCollectionType(raw.type);
       return {
-        id: raw.id,
-        name: raw.name,
-        type: parseCollectionType(raw.type),
+        id: raw.id.trim(),
+        name: raw.name.trim() || 'Property',
+        type,
+        options:
+          type === 'select' || type === 'multi-select'
+            ? Array.from(new Set(
+                Array.isArray(raw.options)
+                  ? raw.options.map((option) => (typeof option === 'string' ? option.trim() : '')).filter(Boolean)
+                  : [],
+              ))
+            : undefined,
       } as CollectionProperty;
     })
     .filter((property): property is CollectionProperty => Boolean(property));
@@ -287,8 +298,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     ordered.sort((a, b) => a.sortKey - b.sortKey);
   }
 
-  const joinedPageIds = new Set(ordered.map((item) => item.pageId));
-  const availablePages = listPages().filter((page) => !joinedPageIds.has(page.id));
+  const joinedPageIds = new Set(items.map((item) => item.pageId));
+  const availablePages = allPages.filter((page) => !joinedPageIds.has(page.id));
 
   return NextResponse.json({ collection, items: ordered, availablePages, schema: parsedSchema, views: collection.viewsJson });
 }

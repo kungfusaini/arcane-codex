@@ -134,14 +134,18 @@ export async function POST(request: NextRequest) {
 
   const hostPageId = payload.hostPageId === null ? null : typeof payload.hostPageId === 'string' ? payload.hostPageId : undefined;
 
-  const collection = createCollection({
-    name,
-    hostPageId,
-    schema: parseCollectionSchema(payload.schema),
-    views: parseCollectionViews(payload.views),
-  });
+  try {
+    const collection = createCollection({
+      name,
+      hostPageId,
+      schema: parseCollectionSchema(payload.schema),
+      views: parseCollectionViews(payload.views),
+    });
 
-  return NextResponse.json({ collection }, { status: 201 });
+    return NextResponse.json({ collection }, { status: 201 });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Collection could not be created' }, { status: 400 });
+  }
 }
 
 export async function PATCH(request: NextRequest) {
@@ -187,6 +191,10 @@ export async function PATCH(request: NextRequest) {
     updates.views = parseCollectionViews(payload.views);
   }
 
-  const collection = updateCollection(collectionId, updates);
-  return NextResponse.json({ collection });
+  try {
+    const collection = updateCollection(collectionId, updates);
+    return NextResponse.json({ collection });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Collection could not be updated' }, { status: 400 });
+  }
 }

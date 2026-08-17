@@ -7,3 +7,35 @@
   margin: 0;
   font-size: var(--font-size-400);
 }
+
+.page-link-block {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--space-10);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-page-muted);
+  color: var(--color-accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.page-link-block:hover {
+  text-decoration: underline;
+}
+
+.page-link-block:active {
+  background: var(--color-page);
+}
+
+.editor-view .bn-file-block-content-wrapper,
+.editor-view .bn-visual-media-wrapper,
+.editor-view .bn-file-caption {
+  max-width: 100% !important;
+}
+
+.editor-view .bn-visual-media {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: auto;
+}

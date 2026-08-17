@@ -91,6 +91,10 @@ button:active {
   background: var(--color-page-muted);
 }
 
+a:active {
+  color: var(--color-accent);
+}
+
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
@@ -133,7 +137,12 @@ select {
   display: grid;
   grid-template-rows: auto auto 1fr;
   gap: var(--space-4);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  max-height: 100vh;
+  position: sticky;
+  top: var(--space-0);
+  align-self: start;
 }
 
 .sidebar h1 {
@@ -171,7 +180,9 @@ select {
   padding: var(--space-6);
   display: grid;
   grid-template-rows: auto 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
+  min-width: 0;
 }
 
 .editor-shell {
@@ -181,7 +192,9 @@ select {
   padding: var(--space-4);
   min-height: 70vh;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
+  min-width: 0;
 }
 
 .editor-toolbar {
@@ -224,6 +237,7 @@ select {
   min-height: var(--space-8);
   display: inline-flex;
   align-items: center;
+  gap: var(--space-2);
   border-radius: var(--radius-xl);
   padding: var(--space-2) var(--space-3);
   width: fit-content;
@@ -281,6 +295,21 @@ select {
   gap: var(--space-2);
   align-items: center;
   flex-wrap: wrap;
+}
+
+@media (hover: hover) and (pointer: fine) and (min-width: 65rem) {
+  .tree-actions {
+    visibility: hidden;
+    height: 0;
+    overflow: hidden;
+  }
+
+  .tree-item:hover .tree-actions,
+  .tree-item:focus-within .tree-actions {
+    visibility: visible;
+    height: auto;
+    overflow: visible;
+  }
 }
 
 .mini-btn,
@@ -438,6 +467,29 @@ select {
 
 .status-note {
   margin: var(--space-0);
+}
+
+.trash-section,
+.trash-list,
+.no-results-state {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.trash-list {
+  list-style: none;
+  margin: var(--space-0);
+  padding: var(--space-0);
+}
+
+.trash-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-page-muted);
 }
 
 .recovery-notice,
@@ -670,13 +722,38 @@ select {
   }
 
   .layout-shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .sidebar,
+  .main-column {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .tree-title-wrap {
+    grid-template-columns: auto auto minmax(0, 1fr);
+  }
+
+  .tree-title-wrap .text-link {
+    overflow-wrap: anywhere;
+  }
+
+  .tree-actions,
+  .nest-select-label,
+  .tree-select {
+    min-width: 0;
+    max-width: 100%;
   }
 
   .sidebar {
     grid-template-rows: auto auto auto;
     border-right: none;
     border-bottom: 1px solid var(--color-border);
+    max-height: none;
+    position: static;
   }
 
   .main-column {

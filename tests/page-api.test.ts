@@ -8,6 +8,7 @@ import { NextRequest } from 'next/server';
 import * as pagesRoute from '../src/app/api/pages/route';
 import * as pageRoute from '../src/app/api/pages/[id]/route';
 import * as reorderRoute from '../src/app/api/pages/reorder/route';
+import * as restoreRoute from '../src/app/api/pages/[id]/restore/route';
 import { ensureWorkspaceDirs } from '../src/lib/data/workspace';
 
 type AnyPayload = { [key: string]: unknown };
@@ -202,6 +203,54 @@ describe('page API endpoints', () => {
       );
 
       assert.equal(cycleRes.status, 400);
+    });
+  });
+
+  it('returns 400 for malformed reorder payloads', async () => {
+    await withWorkspace(async () => {
+      const response = await reorderRoute.POST(
+        new NextRequest('http://localhost/api/pages/reorder', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ moves: [{ id: 'missing-fields', parentId: null }] }),
+        }),
+      );
+      assert.equal(response.status, 400);
+      const payload = await callJson(response);
+      assert.match(String(payload.error), /revision/i);
+    });
+  });
+
+  it('lists trashed pages and restores them through the API', async () => {
+    await withWorkspace(async () => {
+      const createdResponse = await pagesRoute.POST(
+        new NextRequest('http://localhost/api/pages', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ title: 'Recover me' }),
+        }),
+      );
+      const created = (await callJson(createdResponse)) as { page: { id: string } };
+      const deleted = await pageRoute.DELETE(
+        new NextRequest(`http://localhost/api/pages/${created.page.id}`, { method: 'DELETE' }),
+        { params: { id: created.page.id } },
+      );
+      assert.equal(deleted.status, 200);
+
+      const trashResponse = await pagesRoute.GET(
+        new NextRequest('http://localhost/api/pages?includeDeleted=true'),
+      );
+      const trash = (await callJson(trashResponse)) as { pages: Array<{ id: string }> };
+      assert.deepEqual(trash.pages.map((page) => page.id), [created.page.id]);
+
+      const restored = await restoreRoute.POST(
+        new Request(`http://localhost/api/pages/${created.page.id}/restore`, { method: 'POST' }),
+        { params: { id: created.page.id } },
+      );
+      assert.equal(restored.status, 200);
+      const activeResponse = await pagesRoute.GET(new NextRequest('http://localhost/api/pages'));
+      const active = (await callJson(activeResponse)) as { pages: Array<{ id: string }> };
+      assert.ok(active.pages.some((page) => page.id === created.page.id));
     });
   });
 

@@ -55,6 +55,7 @@ export type ExportManifest = {
   collections: Array<{
     id: string;
     path: string;
+    indexPath: string;
     name: string;
     itemCount: number;
   }>;
@@ -405,8 +406,40 @@ function collectionToCsv(
   return `${[header.map(csvCell).join(','), ...rows].join('\n')}\n`;
 }
 
+function collectionToMarkdown(
+  collection: CollectionRecord,
+  collectionPath: string,
+  csvPath: string,
+  items: CollectionItemRecord[],
+  pagesById: Map<string, PageRecord>,
+  pagePathById: Map<string, string>,
+  warnings: Set<string>,
+): string {
+  const rows = items
+    .slice()
+    .sort((left, right) => left.sortKey - right.sortKey || compareText(left.pageId, right.pageId))
+    .map((item) => {
+      const page = pagesById.get(item.pageId);
+      const target = pagePathById.get(item.pageId);
+      if (!page || !target) {
+        warnings.add(`Collection ${collection.id} references missing or trashed page ${item.pageId}.`);
+        return `- Missing or trashed page (${item.pageId})`;
+      }
+      return `- [${escapeMarkdownText(page.title || 'Untitled')}](${relativeLink(collectionPath, target)})`;
+    });
+
+  return [
+    `# ${escapeMarkdownText(collection.name)}`,
+    '',
+    `[Structured data (CSV)](${relativeLink(collectionPath, csvPath)})`,
+    '',
+    rows.length ? rows.join('\n') : '_No entries_',
+    '',
+  ].join('\n');
+}
+
 function exportReadme(manifest: ExportManifest): string {
-  return `# Arcane Codex export\n\nThis deterministic snapshot contains active pages as Markdown, workspace assets, collection rows as CSV, and a machine-readable manifest.\n\n- Page links are relative paths inside \`pages/\`.\n- Asset links are relative paths into \`assets/\`.\n- Missing references and unsupported block fallbacks are listed in \`manifest.json\`.\n- Deleted pages and revision history are not included.\n\nSnapshot: ${manifest.snapshotAt}\nWarnings: ${manifest.warnings.length}\n`;
+  return `# Arcane Codex export\n\nThis deterministic snapshot contains active pages as Markdown, workspace assets, collection indexes and rows as Markdown/CSV, and a machine-readable manifest.\n\n- Page links are relative paths inside \`pages/\`.\n- Asset links are relative paths into \`assets/\`.\n- Collection indexes link to their page entries and companion CSV files.\n- Missing references and unsupported block fallbacks are listed in \`manifest.json\`.\n- Deleted pages and revision history are not included.\n\nSnapshot: ${manifest.snapshotAt}\nWarnings: ${manifest.warnings.length}\n`;
 }
 
 export function buildWorkspaceExport(dataDir?: string): WorkspaceExport {
@@ -454,13 +487,19 @@ export function buildWorkspaceExport(dataDir?: string): WorkspaceExport {
   });
 
   const collectionManifest = collections.map((collection) => {
-    const collectionPath = `collections/${slug(collection.name, 'collection')}--${collection.id}.csv`;
+    const basename = `${slug(collection.name, 'collection')}--${collection.id}`;
+    const collectionPath = `collections/${basename}.csv`;
+    const indexPath = `collections/${basename}.md`;
     const items = listCollectionItems(collection.id, dataDir);
     entries.push({
       path: collectionPath,
       data: collectionToCsv(collection, items, pagesById, warnings),
     });
-    return { id: collection.id, path: collectionPath, name: collection.name, itemCount: items.length };
+    entries.push({
+      path: indexPath,
+      data: collectionToMarkdown(collection, indexPath, collectionPath, items, pagesById, pagePathById, warnings),
+    });
+    return { id: collection.id, path: collectionPath, indexPath, name: collection.name, itemCount: items.length };
   });
 
   const timestamps = [

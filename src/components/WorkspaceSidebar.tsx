@@ -104,6 +104,7 @@ export function WorkspaceSidebar({
   onCreated: (page?: SidebarPage) => void;
 }) {
   const [pages, setPages] = useState<SidebarPage[]>([]);
+  const [trashPages, setTrashPages] = useState<SidebarPage[]>([]);
   const [query, setQuery] = useState('');
   const [isLoading, setLoading] = useState(true);
   const [status, setStatus] = useState('');
@@ -131,6 +132,19 @@ export function WorkspaceSidebar({
     }
   };
 
+  const fetchTrashPages = async () => {
+    try {
+      const response = await fetch('/api/pages?includeDeleted=true');
+      if (!response.ok) {
+        throw new Error('Trash could not be loaded.');
+      }
+      const payload = (await response.json()) as SidebarPayload;
+      setTrashPages(payload.pages);
+    } catch {
+      setStatus('Trash could not be loaded.');
+    }
+  };
+
   const fetchHealth = async () => {
     try {
       const response = await fetch('/api/health', { cache: 'no-store' });
@@ -146,8 +160,14 @@ export function WorkspaceSidebar({
   };
 
   useEffect(() => {
-    void fetchPages();
+    const refreshPageLists = () => {
+      void fetchPages();
+      void fetchTrashPages();
+    };
+    refreshPageLists();
     void fetchHealth();
+    window.addEventListener('arcane-pages-changed', refreshPageLists);
+    return () => window.removeEventListener('arcane-pages-changed', refreshPageLists);
   }, []);
 
   const childrenByParent = useMemo(() => {
@@ -185,21 +205,6 @@ export function WorkspaceSidebar({
   }, [pages, query]);
 
   const tree = useMemo(() => addRevisionToTree(baseTree, pageById), [baseTree, pageById]);
-
-  const visibleNodes = useMemo(() => {
-    return collapsedNodes.size === 0
-      ? tree
-      : tree.map((node) => {
-          const isCollapsed = collapsedNodes.has(node.id);
-          if (!isCollapsed) {
-            return node;
-          }
-          return {
-            ...node,
-            children: [],
-          };
-        });
-  }, [collapsedNodes, tree]);
 
   const reorderSiblings = async (moves: ReorderMove[]) => {
     const response = await fetch('/api/pages/reorder', {
@@ -354,28 +359,41 @@ export function WorkspaceSidebar({
     }
   };
 
-  const onSearchSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const onSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const value = query.trim();
-    if (!value) {
-      await fetchPages();
-      return;
-    }
-
-    const response = await fetch(`/api/pages?query=${encodeURIComponent(value)}`);
-    const payload = (await response.json()) as SidebarPayload;
-    setPages(payload.pages);
   };
 
   const onCreatePage = async (parentId: string | null = null) => {
-    const response = await fetch('/api/pages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ title: 'Untitled', parentId }),
-    });
-    const payload = (await response.json()) as { page: SidebarPage };
-    await fetchPages();
-    onCreated(payload.page);
+    try {
+      const response = await fetch('/api/pages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: 'Untitled', parentId }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { page?: SidebarPage; error?: string };
+      if (!response.ok || !payload.page) {
+        throw new Error(payload.error || 'Page could not be created.');
+      }
+      await fetchPages();
+      onCreated(payload.page);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Page could not be created.');
+    }
+  };
+
+  const restoreTrashPage = async (pageId: string) => {
+    const response = await fetch(`/api/pages/${pageId}/restore`, { method: 'POST' });
+    if (!response.ok) {
+      setStatus('Page could not be restored.');
+      return;
+    }
+    await Promise.all([fetchPages(), fetchTrashPages()]);
+    if (currentPageId === pageId) {
+      window.location.reload();
+      return;
+    }
+    setStatus('Page restored');
+    setTimeout(() => setStatus(''), 1200);
   };
 
   const duplicatePage = async (pageId: string) => {
@@ -613,7 +631,7 @@ export function WorkspaceSidebar({
           <button type="button" onClick={() => onCreatePage(null)}>
             New page
           </button>
-          <button type="button" onClick={() => onCreatePage(currentPageId ? currentPageId : null)}>
+          <button type="button" disabled={!currentPageId} onClick={() => onCreatePage(currentPageId ?? null)}>
             New child page
           </button>
         </div>
@@ -623,16 +641,37 @@ export function WorkspaceSidebar({
 
       {isLoading ? (
         <p className="help">Loading workspace…</p>
-      ) : visibleNodes.length ? (
-        <ul className="tree-level">{renderRows(visibleNodes)}</ul>
+      ) : tree.length ? (
+        <ul className="tree-level">{renderRows(tree)}</ul>
       ) : status ? (
         <div className="grid">
           <p className="help status-note">{status}</p>
           <button type="button" onClick={() => void fetchPages()}>Retry loading pages</button>
         </div>
+      ) : query.trim() ? (
+        <div className="grid">
+          <p className="help">No pages match “{query.trim()}”.</p>
+          <button type="button" onClick={() => setQuery('')}>Clear search</button>
+        </div>
       ) : (
         <p className="help">No pages yet. Create one to begin.</p>
       )}
+
+      {trashPages.length ? (
+        <section className="trash-section" aria-labelledby="trash-title">
+          <div className="workspace-title" id="trash-title">Trash</div>
+          <ul className="trash-list">
+            {trashPages.map((trashPage) => (
+              <li key={trashPage.id}>
+                <span>{trashPage.icon ?? '📄'} {trashPage.title || 'Untitled'}</span>
+                <button type="button" className="mini-btn" onClick={() => void restoreTrashPage(trashPage.id)}>
+                  Restore
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {status && pages.length ? <p className="help status-note">{status}</p> : null}
     </aside>

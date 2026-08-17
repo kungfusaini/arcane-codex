@@ -72,8 +72,8 @@ export default function CollectionsPage() {
     }
 
     setName('');
-    setStatus('Collection created');
     await loadCollections();
+    setStatus('Collection created');
     setTimeout(() => setStatus(''), 1200);
   };
 
@@ -113,10 +113,10 @@ export default function CollectionsPage() {
               placeholder="New collection name"
               aria-label="Collection name"
             />
-            <button type="submit">Create collection</button>
+            <button type="submit" disabled={!name.trim()}>Create collection</button>
           </form>
 
-          {status ? <p className="status-note">{status}</p> : null}
+          {status && status !== 'Failed to load collections' ? <p className="status-note">{status}</p> : null}
 
           {isLoading ? (
             <p className="help">Loading collections…</p>
@@ -139,6 +139,11 @@ export default function CollectionsPage() {
                 </li>
               ))}
             </ul>
+          ) : status === 'Failed to load collections' ? (
+            <div className="recovery-notice error" role="alert">
+              <strong>{status}</strong>
+              <button type="button" onClick={() => void loadCollections()}>Retry loading collections</button>
+            </div>
           ) : (
             <p className="help">No collections yet. Create one to begin building structured tables.</p>
           )}

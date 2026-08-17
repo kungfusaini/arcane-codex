@@ -107,6 +107,12 @@ function runMigrations(db: DatabaseSync): void {
   const row = db.prepare('PRAGMA user_version;').get() as DbRow;
   const currentVersion = Number(row.user_version ?? 0);
 
+  if (currentVersion > CURRENT_SCHEMA_VERSION) {
+    throw new WorkspaceIntegrityError(
+      `Workspace schema version ${currentVersion} is newer than this Arcane Codex build supports (${CURRENT_SCHEMA_VERSION}).`,
+    );
+  }
+
   if (currentVersion < 1) {
     const schemaSql = `
       CREATE TABLE IF NOT EXISTS pages (
@@ -399,8 +405,11 @@ export function createPage(input: NewPage, dataDir?: string): PageRecord {
   const pageId = randomUUID();
   const sortKey = input.sortKey !== undefined ? input.sortKey : Number.parseFloat(`${now}.${Math.floor(Math.random() * 1000)}`);
   const db = createStorageConnection(dataDir);
+  let inTransaction = false;
 
   try {
+    db.exec('BEGIN IMMEDIATE');
+    inTransaction = true;
     const stmt = db.prepare(`
       INSERT INTO pages (id, parent_id, sort_key, title, icon, cover_asset_id, content_json, revision, created_at, updated_at, deleted_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
@@ -416,12 +425,24 @@ export function createPage(input: NewPage, dataDir?: string): PageRecord {
       now,
       now,
     );
+    rebuildBacklinks(db, pageId);
 
-    const page = getPage(pageId, dataDir);
-    if (!page) {
+    const row = db.prepare(
+      `SELECT id, parent_id, sort_key, title, icon, cover_asset_id, content_json, revision, created_at, updated_at, deleted_at
+       FROM pages WHERE id = ?`,
+    ).get(pageId) as DbRow | undefined;
+    if (!row) {
       throw new Error('Could not load created page');
     }
-    return page;
+
+    db.exec('COMMIT');
+    inTransaction = false;
+    return rowToPage(row);
+  } catch (error) {
+    if (inTransaction) {
+      db.exec('ROLLBACK');
+    }
+    throw error;
   } finally {
     db.close();
   }
@@ -1025,28 +1046,41 @@ export function createCollection(
   const id = randomUUID();
   const now = Date.now();
 
-  const schema = normalizeCollectionSchema(input.schema);
-  const views = normalizeCollectionViews(input.views);
+  try {
+    if (input.hostPageId) {
+      const host = db.prepare('SELECT 1 FROM pages WHERE id = ? AND deleted_at IS NULL').get(input.hostPageId);
+      if (!host) {
+        throw new Error('Collection host page not found');
+      }
+    }
 
-  db.prepare(
-    `INSERT INTO collections (id, host_page_id, name, schema_json, views_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    id,
-    input.hostPageId ?? null,
-    name,
-    JSON.stringify(schema),
-    JSON.stringify(views),
-    now,
-    now,
-  );
-  db.close();
+    const schema = normalizeCollectionSchema(input.schema);
+    const views = normalizeCollectionViews(input.views);
 
-  const collection = getCollection(id, dataDir);
-  if (!collection) {
-    throw new Error('Could not load created collection');
+    db.prepare(
+      `INSERT INTO collections (id, host_page_id, name, schema_json, views_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      id,
+      input.hostPageId ?? null,
+      name,
+      JSON.stringify(schema),
+      JSON.stringify(views),
+      now,
+      now,
+    );
+
+    const row = db.prepare(
+      `SELECT id, host_page_id, name, schema_json, views_json, created_at, updated_at
+       FROM collections WHERE id = ?`,
+    ).get(id) as DbRow | undefined;
+    if (!row) {
+      throw new Error('Could not load created collection');
+    }
+    return rowToCollection(row);
+  } finally {
+    db.close();
   }
-  return collection;
 }
 
 export function updateCollection(
@@ -1078,8 +1112,15 @@ export function updateCollection(
       values.push(name);
     }
     if (Object.hasOwn(updates, 'hostPageId')) {
+      const hostPageId = updates.hostPageId ?? null;
+      if (hostPageId) {
+        const host = db.prepare('SELECT 1 FROM pages WHERE id = ? AND deleted_at IS NULL').get(hostPageId);
+        if (!host) {
+          throw new Error('Collection host page not found');
+        }
+      }
       fields.push('host_page_id = ?');
-      values.push(updates.hostPageId ?? null);
+      values.push(hostPageId);
     }
     if (Object.hasOwn(updates, 'schema')) {
       fields.push('schema_json = ?');

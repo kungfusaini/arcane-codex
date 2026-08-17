@@ -8,6 +8,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -501,6 +502,7 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
   const [availablePages, setAvailablePages] = useState<PageForSelector[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [status, setStatus] = useState('');
+  const viewSaveTimerRef = useRef<number | null>(null);
 
   const [newPropertyName, setNewPropertyName] = useState('');
   const [newPropertyType, setNewPropertyType] = useState<CollectionPropertyType>('text');
@@ -596,19 +598,33 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
         setStatusTemporarily('Could not save view settings');
         return;
       }
-      setViews(nextViews);
     },
     [collection, setStatusTemporarily],
   );
 
-  const updateViewsPersisted = useCallback(() => {
-    const next = {
-      ...views,
-      sort: sortBy === 'sortKey' ? undefined : { propertyId: sortBy, direction: sortDirection },
-      filter: filterBy ? { propertyId: filterBy, query: filterQuery } : undefined,
+  useEffect(() => {
+    if (!collection || isLoading) {
+      return;
+    }
+    if (viewSaveTimerRef.current !== null) {
+      clearTimeout(viewSaveTimerRef.current);
+    }
+    viewSaveTimerRef.current = window.setTimeout(() => {
+      viewSaveTimerRef.current = null;
+      void saveViews({
+        ...views,
+        sort: sortBy === 'sortKey' ? undefined : { propertyId: sortBy, direction: sortDirection },
+        filter: filterBy ? { propertyId: filterBy, query: filterQuery } : undefined,
+      });
+    }, 350);
+
+    return () => {
+      if (viewSaveTimerRef.current !== null) {
+        clearTimeout(viewSaveTimerRef.current);
+        viewSaveTimerRef.current = null;
+      }
     };
-    void saveViews(next);
-  }, [views, sortBy, sortDirection, filterBy, filterQuery, saveViews]);
+  }, [collection, filterBy, filterQuery, isLoading, saveViews, sortBy, sortDirection, views]);
 
   const addProperty = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -666,6 +682,10 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
   };
 
   const removeProperty = async (propertyId: string) => {
+    const property = schema.properties.find((entry) => entry.id === propertyId);
+    if (!window.confirm(`Remove “${property?.name || 'this property'}” from the collection? Existing values will be hidden from the collection view.`)) {
+      return;
+    }
     const next = {
       ...schema,
       properties: schema.properties.filter((entry) => entry.id !== propertyId),
@@ -824,6 +844,10 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
     if (!collection) {
       return;
     }
+    const entry = items.find((item) => item.pageId === pageId);
+    if (!window.confirm(`Remove “${entry?.page.title || 'this page'}” from the collection? The page itself will remain in the workspace.`)) {
+      return;
+    }
 
     const response = await fetch(`/api/collections/${collection.id}/items`, {
       method: 'DELETE',
@@ -879,10 +903,13 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
   const ordered = useMemo(() => sortItems(filtered, schema, sortBy, sortDirection), [filtered, schema, sortBy, sortDirection]);
 
   if (!collection) {
-    return (
-      <div className="editor-shell">
-        <p className="help">{isLoading ? 'Loading collection…' : 'Collection not found'}</p>
-      </div>
+    return isLoading ? (
+      <div className="editor-shell help" role="status">Loading collection…</div>
+    ) : (
+      <section className="editor-shell recovery-notice error" role="alert">
+        <strong>{status || 'Collection not found'}</strong>
+        <button type="button" onClick={() => void loadCollection()}>Retry loading collection</button>
+      </section>
     );
   }
 
@@ -903,7 +930,7 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
           <div className="toolbar">
             <button type="button" onClick={() => {
               const next: ViewMode = views.mode === 'table' ? 'gallery' : 'table';
-              void saveViews({ ...views, mode: next });
+              setViews((current) => ({ ...current, mode: next }));
             }}>
               View: {views.mode === 'table' ? 'Table' : 'Gallery'}
             </button>
@@ -920,7 +947,6 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
             value={sortBy}
             onChange={(event: ChangeEvent<HTMLSelectElement>) => {
               setSortBy(event.target.value);
-              updateViewsPersisted();
             }}
           >
             <option value="sortKey">Default order</option>
@@ -936,7 +962,6 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
             value={sortDirection}
             onChange={(event: ChangeEvent<HTMLSelectElement>) => {
               setSortDirection(event.target.value as SortDirection);
-              updateViewsPersisted();
             }}
           >
             <option value="asc">Asc</option>
@@ -949,7 +974,6 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
             value={filterBy}
             onChange={(event: ChangeEvent<HTMLSelectElement>) => {
               setFilterBy(event.target.value);
-              updateViewsPersisted();
             }}
           >
             <option value="">None</option>
@@ -964,7 +988,6 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
             value={filterQuery}
             onChange={(event: ChangeEvent<HTMLInputElement>) => {
               setFilterQuery(event.target.value);
-              updateViewsPersisted();
             }}
           />
         </section>
@@ -1068,8 +1091,18 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
 
       {isLoading ? (
         <p className="help">Loading entries…</p>
+      ) : items.length === 0 ? (
+        <p className="help">No entries yet. Add an existing page or create a new page entry above.</p>
       ) : ordered.length === 0 ? (
-        <p className="help">No entries match your current filter.</p>
+        <div className="no-results-state">
+          <p className="help">No entries match your current filter.</p>
+          <button type="button" onClick={() => {
+            setFilterBy('');
+            setFilterQuery('');
+          }}>
+            Clear filter
+          </button>
+        </div>
       ) : views.mode === 'gallery' ? (
         <section className="collection-gallery">
           {ordered.map((item) => {

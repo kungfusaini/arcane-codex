@@ -14,29 +14,29 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No moves provided' }, { status: 400 });
   }
 
-  const normalized = moves.map((move) => {
-    if (!move || typeof move.id !== 'string' || move.id.length === 0) {
-      throw new Error('Each move requires an id');
-    }
-    if (!Object.hasOwn(move, 'revision') || typeof move.revision !== 'number' || !Number.isFinite(move.revision)) {
-      throw new Error('Each move requires a revision number');
-    }
-    if (!Number.isFinite(move.sortKey)) {
-      throw new Error('Each move requires a valid sortKey');
-    }
-    if (!(move.parentId === null || typeof move.parentId === 'string')) {
-      throw new Error('Each move requires parentId');
-    }
-
-    return {
-      id: move.id,
-      parentId: move.parentId,
-      sortKey: move.sortKey,
-      revision: move.revision,
-    } satisfies PageMoveInput;
-  });
-
   try {
+    const normalized = moves.map((move) => {
+      if (!move || typeof move.id !== 'string' || move.id.length === 0) {
+        throw new Error('Each move requires an id');
+      }
+      if (!Object.hasOwn(move, 'revision') || typeof move.revision !== 'number' || !Number.isFinite(move.revision)) {
+        throw new Error('Each move requires a revision number');
+      }
+      if (!Number.isFinite(move.sortKey)) {
+        throw new Error('Each move requires a valid sortKey');
+      }
+      if (!(move.parentId === null || typeof move.parentId === 'string')) {
+        throw new Error('Each move requires parentId');
+      }
+
+      return {
+        id: move.id,
+        parentId: move.parentId,
+        sortKey: move.sortKey,
+        revision: move.revision,
+      } satisfies PageMoveInput;
+    });
+
     const pages = applyPageMoves(normalized);
     return NextResponse.json({ pages });
   } catch (error) {

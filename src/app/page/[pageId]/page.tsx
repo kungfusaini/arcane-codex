@@ -1,7 +1,15 @@
 "use client";
 
+import dynamic from 'next/dynamic';
 import { WorkspaceSidebar } from '@/components/WorkspaceSidebar';
-import { PageEditor } from '@/components/PageEditor';
+
+const PageEditor = dynamic(
+  () => import('@/components/PageEditor').then((module) => module.PageEditor),
+  {
+    ssr: false,
+    loading: () => <div className="editor-shell help" role="status">Loading page editor…</div>,
+  },
+);
 
 export default function PageRoute({ params }: { params: { pageId: string } }) {
   const { pageId } = params;

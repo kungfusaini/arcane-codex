@@ -11,6 +11,7 @@ import {
   createCollectionItem,
   createPage,
   createStorageConnection,
+  duplicatePage,
   extractLinkedPageIds,
   getPage,
   listCollectionItems,
@@ -22,6 +23,7 @@ import {
   updateCollection,
   updateCollectionItemProperties,
   updatePage,
+  WorkspaceIntegrityError,
 } from '../src/lib/data/storage';
 import { RevisionConflictError } from '../src/lib/data/types';
 import {
@@ -42,6 +44,32 @@ describe('workspace bootstrap', () => {
     assert.equal(existsSync(getWorkspaceDbPath(base)), true);
 
     rmSync(base, { recursive: true, force: true });
+  });
+
+  it('migrates legacy schema versions and rejects newer incompatible workspaces', () => {
+    const base = mkdtempSync(path.join(os.tmpdir(), 'arcane-codex-migration-'));
+    try {
+      openWorkspace({ dataDir: base });
+      const legacy = createStorageConnection(base);
+      legacy.exec('DROP INDEX IF EXISTS idx_assets_sha256; PRAGMA user_version = 1;');
+      legacy.close();
+
+      openWorkspace({ dataDir: base });
+      const migrated = createStorageConnection(base);
+      const version = migrated.prepare('PRAGMA user_version').get() as { user_version: number };
+      const assetIndex = migrated.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_assets_sha256'").get();
+      assert.equal(version.user_version, 2);
+      assert.ok(assetIndex);
+      migrated.exec('PRAGMA user_version = 99;');
+      migrated.close();
+
+      assert.throws(
+        () => openWorkspace({ dataDir: base }),
+        (error: unknown) => error instanceof WorkspaceIntegrityError && /newer/.test(error.message),
+      );
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
   });
 });
 
@@ -272,11 +300,11 @@ describe('pages CRUD and ordering', () => {
     // Updating a page to create cycle should fail.
     assert.throws(
       () =>
-        updatePage(grandchild.id, {
-          revision: grandchild.revision,
-          parentId: child.id,
-          title: 'Grandchild',
-        }),
+        updatePage(parent.id, {
+          revision: parent.revision,
+          parentId: grandchild.id,
+          title: 'Parent',
+        }, workspace),
       (error: unknown) => error instanceof Error,
     );
 
@@ -326,18 +354,17 @@ describe('pages CRUD and ordering', () => {
       ]),
     }, workspace);
 
-    updatePage(source.id, {
-      revision: source.revision,
-      title: source.title,
-      contentJson: source.contentJson,
-    }, workspace);
-
     const ids = extractLinkedPageIds(source.contentJson);
     assert.equal(ids.includes(target.id), true);
 
-    const backlinks = readBacklinks(target.id, workspace);
-    assert.equal(backlinks.length, 1);
-    assert.equal(backlinks[0].id, source.id);
+    const backlinksAfterCreate = readBacklinks(target.id, workspace);
+    assert.equal(backlinksAfterCreate.length, 1);
+    assert.equal(backlinksAfterCreate[0].id, source.id);
+
+    const duplicate = duplicatePage(source.id, workspace);
+    assert.ok(duplicate);
+    const backlinksAfterDuplicate = readBacklinks(target.id, workspace);
+    assert.equal(backlinksAfterDuplicate.length, 2);
 
     rmSync(workspace, { recursive: true, force: true });
   });

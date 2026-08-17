@@ -19,7 +19,7 @@ function entryText(entries: ReturnType<typeof buildWorkspaceExport>['entries'], 
 }
 
 describe('workspace export', () => {
-  it('builds deterministic Markdown, assets, collection CSV, warnings, and ZIP bytes', async () => {
+  it('builds deterministic Markdown, assets, collection indexes and CSV, warnings, and ZIP bytes', async () => {
     const workspace = mkdtempSync(path.join(os.tmpdir(), 'arcane-codex-export-'));
     ensureWorkspaceDirs(workspace);
 
@@ -75,6 +75,11 @@ describe('workspace export', () => {
       assert.match(csv, /"page_id","page_title","sort_key","Status"/);
       assert.match(csv, /"Target page"/);
       assert.match(csv, /"Done"/);
+      const collectionIndex = entryText(first.entries, collectionEntry.indexPath);
+      assert.match(collectionIndex, /^# Projects & plans/m);
+      assert.match(collectionIndex, /Structured data \(CSV\)/);
+      assert.match(collectionIndex, /Target page/);
+      assert.match(collectionIndex, /\.\.\/pages\//);
       assert.ok(first.manifest.warnings.some((warning) => warning.includes(missingId)));
       assert.ok(first.manifest.warnings.some((warning) => warning.includes('futureWidget')));
 
