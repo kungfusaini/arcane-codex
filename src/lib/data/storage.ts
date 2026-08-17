@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync } from 'node:fs';
 import {
   AssetRecord,
   CollectionItemPayload,
@@ -24,7 +24,7 @@ import {
   getWorkspaceBaseDir,
 } from './workspace';
 
-const CURRENT_SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION = 2;
 
 export type StorageHandle = {
   dbPath: string;
@@ -144,6 +144,11 @@ function runMigrations(db: DatabaseSync): void {
     db.exec('PRAGMA user_version = 1;');
   }
 
+  if (currentVersion < 2) {
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_sha256 ON assets(sha256);');
+    db.exec('PRAGMA user_version = 2;');
+  }
+
   if (currentVersion !== CURRENT_SCHEMA_VERSION) {
     db.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`);
   }
@@ -169,6 +174,22 @@ function rowToPage(row: DbRow): PageRecord {
     deletedAt: row.deleted_at == null ? null : Number(row.deleted_at),
   };
 }
+
+function sanitizeFilename(filename: string): string {
+  const safe = filename
+    .trim()
+    .replace(/[\\/]/g, '-')
+    .replace(/\.{2,}/g, '.')
+    .replace(/\s+/g, ' ')
+    .replace(/[^\w\- .()]+/g, '_')
+    .replace(/(^\.+|\.+$)/g, '');
+  return safe || 'upload';
+}
+
+export type AssetCreateResult = {
+  asset: AssetRecord;
+  created: boolean;
+};
 
 function rowToAsset(row: DbRow): AssetRecord {
   return {
@@ -598,6 +619,17 @@ export function getAsset(id: string, dataDir?: string): AssetRecord | null {
   }
 }
 
+function getAssetBySha256(hash: string, db: DatabaseSync): AssetRecord | null {
+  const row = db
+    .prepare(
+      `SELECT id, filename, mime_type, sha256, size, width, height, created_at
+       FROM assets
+       WHERE sha256 = ?`,
+    )
+    .get(hash) as DbRow | undefined;
+  return row ? rowToAsset(row) : null;
+}
+
 export function getAssetPathFromId(assetId: string, dataDir?: string): string {
   const asset = getAsset(assetId, dataDir);
   if (!asset) {
@@ -616,45 +648,56 @@ export function createAsset(
     height?: number | null;
   },
   dataDir?: string,
-): AssetRecord {
+): AssetCreateResult {
   const db = createStorageConnection(dataDir);
-  const assetDir = getWorkspaceAssetsDir(dataDir);
-  mkdirSync(assetDir, { recursive: true });
+  try {
+    const assetDir = getWorkspaceAssetsDir(dataDir);
+    mkdirSync(assetDir, { recursive: true });
 
-  const id = randomUUID();
-  const ext = path.extname(options.filename);
-  const targetPath = path.join(assetDir, `${id}${ext}`);
-  const sourceData = readFileSync(options.sourcePath);
-  const hash = createHash('sha256').update(sourceData).digest('hex');
-  const now = Date.now();
+    const sourceData = readFileSync(options.sourcePath);
+    const hash = createHash('sha256').update(sourceData).digest('hex');
+    const existing = getAssetBySha256(hash, db);
+    if (existing) {
+      return { asset: existing, created: false };
+    }
 
-  writeFileSync(targetPath, sourceData);
+    const filename = sanitizeFilename(options.filename);
+    const ext = path.extname(filename);
+    const id = hash;
+    const targetPath = path.join(assetDir, `${id}${ext}`);
+    const now = Date.now();
 
-  db.prepare(
-    `INSERT INTO assets (id, filename, mime_type, sha256, size, width, height, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    id,
-    options.filename,
-    options.mimeType,
-    hash,
-    sourceData.length,
-    options.width ?? null,
-    options.height ?? null,
-    now,
-  );
-  db.close();
+    copyFileSync(options.sourcePath, targetPath);
+    db.prepare(
+      `INSERT INTO assets (id, filename, mime_type, sha256, size, width, height, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      id,
+      filename,
+      options.mimeType,
+      hash,
+      sourceData.length,
+      options.width ?? null,
+      options.height ?? null,
+      now,
+    );
 
-  return {
-    id,
-    filename: options.filename,
-    mimeType: options.mimeType,
-    sha256: hash,
-    size: sourceData.length,
-    width: options.width ?? null,
-    height: options.height ?? null,
-    createdAt: now,
-  };
+    return {
+      asset: {
+        id,
+        filename,
+        mimeType: options.mimeType,
+        sha256: hash,
+        size: sourceData.length,
+        width: options.width ?? null,
+        height: options.height ?? null,
+        createdAt: now,
+      },
+      created: true,
+    };
+  } finally {
+    db.close();
+  }
 }
 
 const DEFAULT_COLLECTION_SCHEMA: CollectionSchema = {

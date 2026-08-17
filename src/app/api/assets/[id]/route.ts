@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { existsSync, createReadStream } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import { getAsset, getAssetPathFromId } from '@/lib/data/storage';
 
+function getDataDir(): string | undefined {
+  return process.env.ARCANE_DATA_DIR;
+}
+
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
-  const asset = getAsset(params.id);
+  const asset = getAsset(params.id, getDataDir());
   if (!asset) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
-  const filePath = getAssetPathFromId(asset.id);
+  const filePath = getAssetPathFromId(asset.id, getDataDir());
   if (!existsSync(filePath)) {
     return NextResponse.json({ error: 'Asset missing on disk' }, { status: 410 });
   }
