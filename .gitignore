@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.venv/
+env/
+
+# tooling
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# generated paint outputs
+artifacts/
+
+# Node
+node_modules/
+.next/
+coverage/
+npm-debug.log*
+
+# Next.js export artifacts
+out/
+
+# TypeScript incremental cache
+tsconfig.tsbuildinfo

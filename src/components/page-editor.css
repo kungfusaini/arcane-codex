@@ -1,0 +1,9 @@
+.page-editor {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.backlinks h3 {
+  margin: 0;
+  font-size: var(--font-size-400);
+}
