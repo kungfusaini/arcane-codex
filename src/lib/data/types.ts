@@ -51,6 +51,26 @@ export type PageLinkRecord = {
   targetPageId: string;
 };
 
+export type CollectionPropertyType = 'text' | 'number' | 'select' | 'multi-select' | 'checkbox' | 'date' | 'url';
+
+export type CollectionProperty = {
+  id: string;
+  name: string;
+  type: CollectionPropertyType;
+  options?: string[];
+};
+
+export type CollectionSchema = {
+  properties: CollectionProperty[];
+};
+
+export type CollectionItemRecord = {
+  collectionId: string;
+  pageId: string;
+  propertiesJson: string;
+  sortKey: number;
+};
+
 export type CollectionRecord = {
   id: string;
   hostPageId: string | null;
@@ -61,10 +81,40 @@ export type CollectionRecord = {
   updatedAt: number;
 };
 
-export type CollectionItemRecord = {
+export type CollectionViewMode = 'table' | 'gallery';
+
+export type CollectionSort = {
+  propertyId: string;
+  direction: 'asc' | 'desc';
+};
+
+export type CollectionFilter = {
+  propertyId: string;
+  query: string;
+};
+
+export type CollectionViews = {
+  mode: CollectionViewMode;
+  sort?: CollectionSort;
+  filter?: CollectionFilter;
+};
+
+export type CollectionItemPayload = {
   collectionId: string;
   pageId: string;
-  propertiesJson: string;
+  sortKey?: number;
+  properties: Record<string, unknown>;
+};
+
+export type CollectionPropertiesPatch = {
+  collectionId: string;
+  pageId: string;
+  properties: Record<string, unknown>;
+};
+
+export type CollectionUpdateItemSort = {
+  collectionId: string;
+  pageId: string;
   sortKey: number;
 };
 

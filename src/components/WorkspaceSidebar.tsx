@@ -442,6 +442,11 @@ export function WorkspaceSidebar({
     <aside className="sidebar">
       <h1>Arcane Codex</h1>
 
+      <nav className="sidebar-nav" aria-label="Collections and content">
+        <Link href="/">Workspace</Link>
+        <Link href="/collections">Collections</Link>
+      </nav>
+
       <div className="sidebar-section">
         <form onSubmit={onSearchSubmit} className="grid" role="search">
           <input

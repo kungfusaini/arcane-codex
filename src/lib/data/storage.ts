@@ -4,8 +4,13 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import {
   AssetRecord,
+  CollectionItemPayload,
   CollectionItemRecord,
+  CollectionPropertiesPatch,
   CollectionRecord,
+  CollectionSchema,
+  CollectionUpdateItemSort,
+  CollectionViews,
   NewPage,
   PageMoveInput,
   PageRecord,
@@ -175,6 +180,18 @@ function rowToAsset(row: DbRow): AssetRecord {
     width: row.width == null ? null : Number(row.width),
     height: row.height == null ? null : Number(row.height),
     createdAt: Number(row.created_at),
+  };
+}
+
+function rowToCollection(row: DbRow): CollectionRecord {
+  return {
+    id: String(row.id),
+    hostPageId: (row.host_page_id as string | null) ?? null,
+    name: String(row.name),
+    schemaJson: String(row.schema_json),
+    viewsJson: String(row.views_json),
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
   };
 }
 
@@ -544,7 +561,114 @@ export function createAsset(
   };
 }
 
-export function listCollectionPages(dataDir?: string): CollectionRecord[] {
+const DEFAULT_COLLECTION_SCHEMA: CollectionSchema = {
+  properties: [],
+};
+
+const DEFAULT_COLLECTION_VIEWS: CollectionViews = {
+  mode: 'table',
+};
+
+function normalizeCollectionSchema(input: unknown): CollectionSchema {
+  if (!input || typeof input !== 'object') {
+    return { ...DEFAULT_COLLECTION_SCHEMA };
+  }
+
+  const candidate = input as Partial<CollectionSchema>;
+  if (!Array.isArray(candidate.properties)) {
+    return { ...DEFAULT_COLLECTION_SCHEMA };
+  }
+
+  const properties = candidate.properties
+    .map((property) => {
+      if (!property || typeof property !== 'object') {
+        return null;
+      }
+
+      const candidateProperty = property as {
+        id?: unknown;
+        name?: unknown;
+        type?: unknown;
+        options?: unknown;
+      };
+
+      if (typeof candidateProperty.id !== 'string' || typeof candidateProperty.name !== 'string') {
+        return null;
+      }
+
+      const type = candidateProperty.type;
+      const parsedType =
+        type === 'text' ||
+        type === 'number' ||
+        type === 'select' ||
+        type === 'multi-select' ||
+        type === 'checkbox' ||
+        type === 'date' ||
+        type === 'url'
+          ? type
+          : 'text';
+
+      return {
+        id: candidateProperty.id,
+        name: candidateProperty.name.trim() || 'Property',
+        type: parsedType,
+        options:
+          parsedType === 'select' || parsedType === 'multi-select'
+            ? Array.from(new Set(
+                Array.isArray(candidateProperty.options)
+                  ? candidateProperty.options
+                      .map((option) => (typeof option === 'string' ? option.trim() : ''))
+                      .filter(Boolean)
+                  : [],
+              ))
+            : undefined,
+      };
+    })
+    .filter(Boolean) as CollectionSchema['properties'];
+
+  return {
+    properties,
+  };
+}
+
+function normalizeCollectionViews(input: unknown): CollectionViews {
+  if (!input || typeof input !== 'object') {
+    return { ...DEFAULT_COLLECTION_VIEWS };
+  }
+
+  const candidate = input as Partial<CollectionViews>;
+  const mode = candidate.mode === 'gallery' ? 'gallery' : 'table';
+  const sort =
+    candidate.sort &&
+    candidate.sort.propertyId &&
+    typeof candidate.sort.propertyId === 'string' &&
+    (candidate.sort.direction === 'asc' || candidate.sort.direction === 'desc')
+      ? {
+          propertyId: candidate.sort.propertyId,
+          direction: candidate.sort.direction,
+        }
+      : undefined;
+
+  const filter =
+    candidate.filter &&
+    typeof candidate.filter === 'object' &&
+    typeof candidate.filter.propertyId === 'string' &&
+    typeof candidate.filter.query === 'string' &&
+    candidate.filter.propertyId.trim().length > 0
+      ? {
+          propertyId: candidate.filter.propertyId,
+          query: candidate.filter.query,
+        }
+      : undefined;
+
+  return {
+    mode,
+    sort,
+    filter,
+  };
+}
+
+export function listCollections(dataDir?: string): CollectionRecord[] {
   const db = createStorageConnection(dataDir);
   try {
     const rows = db
@@ -554,15 +678,138 @@ export function listCollectionPages(dataDir?: string): CollectionRecord[] {
          ORDER BY updated_at DESC`,
       )
       .all() as DbRow[];
-    return rows.map((row) => ({
-      id: String(row.id),
-      hostPageId: (row.host_page_id as string | null) ?? null,
-      name: String(row.name),
-      schemaJson: String(row.schema_json),
-      viewsJson: String(row.views_json),
-      createdAt: Number(row.created_at),
-      updatedAt: Number(row.updated_at),
-    }));
+    return rows.map(rowToCollection);
+  } finally {
+    db.close();
+  }
+}
+
+export function listCollectionPages(dataDir?: string): CollectionRecord[] {
+  return listCollections(dataDir);
+}
+
+export function getCollection(collectionId: string, dataDir?: string): CollectionRecord | null {
+  const db = createStorageConnection(dataDir);
+  try {
+    const row = db
+      .prepare(
+        `SELECT id, host_page_id, name, schema_json, views_json, created_at, updated_at
+         FROM collections
+         WHERE id = ?`,
+      )
+      .get(collectionId) as DbRow | undefined;
+    return row ? rowToCollection(row) : null;
+  } finally {
+    db.close();
+  }
+}
+
+export function createCollection(
+  input: {
+    name: string;
+    hostPageId?: string | null;
+    schema?: CollectionSchema;
+    views?: CollectionViews;
+  },
+  dataDir?: string,
+): CollectionRecord {
+  const name = input.name?.trim();
+  if (!name) {
+    throw new Error('Collection name is required');
+  }
+
+  const db = createStorageConnection(dataDir);
+  const id = randomUUID();
+  const now = Date.now();
+
+  const schema = normalizeCollectionSchema(input.schema);
+  const views = normalizeCollectionViews(input.views);
+
+  db.prepare(
+    `INSERT INTO collections (id, host_page_id, name, schema_json, views_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    id,
+    input.hostPageId ?? null,
+    name,
+    JSON.stringify(schema),
+    JSON.stringify(views),
+    now,
+    now,
+  );
+  db.close();
+
+  const collection = getCollection(id, dataDir);
+  if (!collection) {
+    throw new Error('Could not load created collection');
+  }
+  return collection;
+}
+
+export function updateCollection(
+  collectionId: string,
+  updates: {
+    name?: string;
+    hostPageId?: string | null;
+    schema?: CollectionSchema;
+    views?: CollectionViews;
+  },
+  dataDir?: string,
+): CollectionRecord {
+  const db = createStorageConnection(dataDir);
+  try {
+    const current = getCollection(collectionId, dataDir);
+    if (!current) {
+      throw new Error('Collection not found');
+    }
+
+    const fields: string[] = [];
+    const values: Array<string | number | null> = [];
+
+    if (updates.name !== undefined) {
+      const name = updates.name.trim();
+      if (!name) {
+        throw new Error('Collection name is required');
+      }
+      fields.push('name = ?');
+      values.push(name);
+    }
+    if (Object.hasOwn(updates, 'hostPageId')) {
+      fields.push('host_page_id = ?');
+      values.push(updates.hostPageId ?? null);
+    }
+    if (Object.hasOwn(updates, 'schema')) {
+      fields.push('schema_json = ?');
+      values.push(JSON.stringify(normalizeCollectionSchema(updates.schema)));
+    }
+    if (Object.hasOwn(updates, 'views')) {
+      fields.push('views_json = ?');
+      values.push(JSON.stringify(normalizeCollectionViews(updates.views)));
+    }
+
+    if (!fields.length) {
+      return current;
+    }
+
+    fields.push('updated_at = ?');
+    values.push(String(Date.now()));
+
+    db.prepare(`UPDATE collections SET ${fields.join(', ')} WHERE id = ?`).run(...values, collectionId);
+
+    const updated = getCollection(collectionId, dataDir);
+    if (!updated) {
+      throw new Error('Could not load updated collection');
+    }
+    return updated;
+  } finally {
+    db.close();
+  }
+}
+
+export function deleteCollection(collectionId: string, dataDir?: string): void {
+  const db = createStorageConnection(dataDir);
+  try {
+    db.prepare('DELETE FROM collections WHERE id = ?').run(collectionId);
   } finally {
     db.close();
   }
@@ -585,6 +832,167 @@ export function listCollectionItems(collectionId: string, dataDir?: string): Col
       propertiesJson: String(row.properties_json),
       sortKey: Number(row.sort_key),
     }));
+  } finally {
+    db.close();
+  }
+}
+
+function getCollectionItem(collectionId: string, pageId: string, db: DatabaseSync): CollectionItemRecord | null {
+  const row = db
+    .prepare(
+      `SELECT collection_id, page_id, properties_json, sort_key
+       FROM collection_items
+       WHERE collection_id = ? AND page_id = ?`,
+    )
+    .get(collectionId, pageId) as DbRow | undefined;
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    collectionId: String(row.collection_id),
+    pageId: String(row.page_id),
+    propertiesJson: String(row.properties_json),
+    sortKey: Number(row.sort_key),
+  };
+}
+
+export function createCollectionItem(input: CollectionItemPayload, dataDir?: string): CollectionItemRecord {
+  const db = createStorageConnection(dataDir);
+
+  try {
+    const collection = getCollection(input.collectionId, dataDir);
+    if (!collection) {
+      throw new Error('Collection not found');
+    }
+
+    const page = getPage(input.pageId, dataDir);
+    if (!page || page.deletedAt !== null) {
+      throw new Error('Page not found');
+    }
+
+    if (getCollectionItem(input.collectionId, input.pageId, db)) {
+      throw new Error('Page is already in collection');
+    }
+
+    const maxResult = db
+      .prepare('SELECT MAX(sort_key) as maxSort FROM collection_items WHERE collection_id = ?')
+      .get(input.collectionId) as DbRow | undefined;
+    const baseSort = typeof maxResult?.maxSort === 'number' ? Number(maxResult.maxSort) : 0;
+    const sortKey = input.sortKey !== undefined ? input.sortKey : baseSort + 1;
+
+    const propertiesJson = JSON.stringify(input.properties ?? {});
+    db.prepare(
+      `INSERT INTO collection_items (collection_id, page_id, properties_json, sort_key)
+       VALUES (?, ?, ?, ?)`,
+    ).run(input.collectionId, input.pageId, propertiesJson, sortKey);
+
+    return {
+      collectionId: input.collectionId,
+      pageId: input.pageId,
+      propertiesJson,
+      sortKey,
+    };
+  } finally {
+    db.close();
+  }
+}
+
+export function updateCollectionItemProperties(input: CollectionPropertiesPatch, dataDir?: string): CollectionItemRecord {
+  const db = createStorageConnection(dataDir);
+
+  try {
+    const item = getCollectionItem(input.collectionId, input.pageId, db);
+    if (!item) {
+      throw new Error('Collection item not found');
+    }
+
+    const currentProperties = parseCollectionItemProperties(item.propertiesJson);
+    const merged = {
+      ...currentProperties,
+      ...input.properties,
+    } as Record<string, unknown>;
+
+    const propertiesJson = JSON.stringify(merged);
+    db.prepare(
+      `UPDATE collection_items
+       SET properties_json = ?
+       WHERE collection_id = ? AND page_id = ?`,
+    ).run(propertiesJson, input.collectionId, input.pageId);
+
+    return {
+      ...item,
+      propertiesJson,
+    };
+  } finally {
+    db.close();
+  }
+}
+
+function parseCollectionItemProperties(rawProperties: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(rawProperties) as unknown;
+    if (parsed && typeof parsed === 'object') {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // ignore parse failure
+  }
+  return {};
+}
+
+export function applyCollectionItemMoves(moves: CollectionUpdateItemSort[], dataDir?: string): CollectionItemRecord[] {
+  if (!moves.length) {
+    return [];
+  }
+
+  const db = createStorageConnection(dataDir);
+
+  try {
+    db.exec('BEGIN');
+
+    const updateStmt = db.prepare(`UPDATE collection_items SET sort_key = ? WHERE collection_id = ? AND page_id = ?`);
+
+    const updated: CollectionItemRecord[] = [];
+    const seen = new Set<string>();
+
+    for (const move of moves) {
+      const key = `${move.collectionId}::${move.pageId}`;
+      if (seen.has(key)) {
+        throw new Error(`Duplicate collection move: ${move.collectionId}/${move.pageId}`);
+      }
+      seen.add(key);
+
+      if (!Number.isFinite(move.sortKey)) {
+        throw new Error('sortKey must be a number');
+      }
+
+      const item = getCollectionItem(move.collectionId, move.pageId, db);
+      if (!item) {
+        throw new Error(`Collection item not found: ${move.collectionId}/${move.pageId}`);
+      }
+      updateStmt.run(move.sortKey, move.collectionId, move.pageId);
+      updated.push({
+        ...item,
+        sortKey: move.sortKey,
+      });
+    }
+
+    db.exec('COMMIT');
+    return updated;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  } finally {
+    db.close();
+  }
+}
+
+export function removeCollectionItem(collectionId: string, pageId: string, dataDir?: string): void {
+  const db = createStorageConnection(dataDir);
+  try {
+    db.prepare('DELETE FROM collection_items WHERE collection_id = ? AND page_id = ?').run(collectionId, pageId);
   } finally {
     db.close();
   }
