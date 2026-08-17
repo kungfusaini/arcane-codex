@@ -1,7 +1,7 @@
 "use client";
 
 import Link from 'next/link';
-import { FormEvent, useEffect, useMemo, useState, type ChangeEvent } from 'react';
+import { FormEvent, useEffect, useMemo, useState, type ChangeEvent, type DragEvent } from 'react';
 import { buildTree, type PageTreeNode } from '@/lib/pageTree';
 
 type SidebarPage = {
@@ -27,6 +27,8 @@ type ReorderMove = {
   sortKey: number;
   revision: number;
 };
+
+type DropMode = 'before' | 'after' | 'into';
 
 const SEARCH_PLACEHOLDER = 'Search pages';
 
@@ -102,6 +104,7 @@ export function WorkspaceSidebar({
   const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+  const [draggingId, setDraggingId] = useState<string | null>(null);
 
   const fetchPages = async () => {
     setLoading(true);
@@ -241,6 +244,88 @@ export function WorkspaceSidebar({
     }
   };
 
+  const getDropMode = (event: DragEvent<HTMLDivElement>): DropMode => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const pointer = event.clientY - rect.top;
+    const ratio = pointer / rect.height;
+
+    if (ratio < 0.33) {
+      return 'before';
+    }
+    if (ratio > 0.67) {
+      return 'after';
+    }
+    return 'into';
+  };
+
+  const moveByDrag = async (sourceId: string, targetId: string, mode: DropMode) => {
+    const source = pageById.get(sourceId);
+    const target = pageById.get(targetId);
+    if (!source || !target) {
+      return;
+    }
+
+    if (sourceId === targetId) {
+      setStatus('Move skipped: same source and target');
+      setTimeout(() => setStatus(''), 1000);
+      return;
+    }
+
+    const descendants = getDescendantIds(sourceId, childrenByParent);
+    if (mode === 'into' && descendants.has(targetId)) {
+      setStatus('Move blocked: cannot move page into its own descendant');
+      return;
+    }
+
+    if (mode !== 'into' && target.parentId && descendants.has(target.parentId)) {
+      setStatus('Move blocked: would create a cycle');
+      return;
+    }
+
+    let moves: ReorderMove[] = [];
+
+    if (mode === 'into') {
+      if (source.parentId === targetId) {
+        return;
+      }
+      const children = getAllPagesForParent(pages, targetId);
+      moves = [
+        {
+          id: source.id,
+          parentId: targetId,
+          sortKey: children.length + 1,
+          revision: source.revision,
+        },
+      ];
+    } else {
+      const targetParentId = target.parentId;
+      const siblings = getAllPagesForParent(pages, targetParentId).filter((item) => item.id !== sourceId);
+      const targetIndex = siblings.findIndex((item) => item.id === targetId);
+      if (targetIndex < 0) {
+        return;
+      }
+
+      const insertAt = mode === 'before' ? targetIndex : targetIndex + 1;
+      const ordered = [...siblings];
+      ordered.splice(insertAt, 0, { ...source, parentId: targetParentId });
+
+      moves = ordered.map((item, idx) => ({
+        id: item.id,
+        parentId: targetParentId,
+        sortKey: idx + 1,
+        revision: item.revision,
+      }));
+    }
+
+    try {
+      await reorderSiblings(moves);
+      setStatus('Moved page');
+      setTimeout(() => setStatus(''), 1000);
+    } catch (error) {
+      setStatus((error as Error).message);
+    }
+  };
+
   const onSearchSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const value = query.trim();
@@ -335,7 +420,35 @@ export function WorkspaceSidebar({
 
         return (
           <li key={item.id} className="tree-item-row">
-            <div className={`tree-item ${isCurrent ? 'active' : ''}`}>
+            <div
+              className={`tree-item ${isCurrent ? 'active' : ''} ${draggingId === item.id ? 'dragging' : ''}`}
+              draggable
+              onDragStart={(event) => {
+                setDraggingId(item.id);
+                event.dataTransfer.setData('text/plain', item.id);
+                event.dataTransfer.effectAllowed = 'move';
+              }}
+              onDragEnd={() => {
+                setDraggingId(null);
+              }}
+              onDragOver={(event) => {
+                if (!draggingId) {
+                  return;
+                }
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                const draggingPageId = draggingId || event.dataTransfer.getData('text/plain');
+                if (!draggingPageId) {
+                  return;
+                }
+                const mode = getDropMode(event);
+                void moveByDrag(draggingPageId, item.id, mode);
+                setDraggingId(null);
+              }}
+            >
               <div className="tree-title-wrap">
                 {hasChildren ? (
                   <button

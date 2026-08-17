@@ -155,6 +155,56 @@ describe('page API endpoints', () => {
     });
   });
 
+  it('rejects hierarchy cycles from reorder API', async () => {
+    await withWorkspace(async () => {
+      const rootRes = await pagesRoute.POST(
+        new NextRequest('http://localhost/api/pages', {
+          method: 'POST',
+          body: JSON.stringify({ title: 'Root' }),
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+      const root = (await callJson(rootRes)) as { page: { id: string; revision: number } };
+
+      const childRes = await pagesRoute.POST(
+        new NextRequest('http://localhost/api/pages', {
+          method: 'POST',
+          body: JSON.stringify({ title: 'Child', parentId: root.page.id }),
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+      const child = (await callJson(childRes)) as { page: { id: string; revision: number } };
+
+      const grandchildRes = await pagesRoute.POST(
+        new NextRequest('http://localhost/api/pages', {
+          method: 'POST',
+          body: JSON.stringify({ title: 'Grandchild', parentId: child.page.id }),
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+      const grandchild = (await callJson(grandchildRes)) as { page: { id: string; revision: number } };
+
+      const cycleRes = await reorderRoute.POST(
+        new NextRequest('http://localhost/api/pages/reorder', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            moves: [
+              {
+                id: child.page.id,
+                parentId: grandchild.page.id,
+                sortKey: 1,
+                revision: child.page.revision,
+              },
+            ],
+          }),
+        }),
+      );
+
+      assert.equal(cycleRes.status, 400);
+    });
+  });
+
   it('returns 409 for stale revision conflict', async () => {
     await withWorkspace(async () => {
       const createRes = await pagesRoute.POST(

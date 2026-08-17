@@ -11,10 +11,12 @@ import {
   createCollectionItem,
   createPage,
   createStorageConnection,
+  extractLinkedPageIds,
   getPage,
   listCollectionItems,
   listPages,
   openWorkspace,
+  readBacklinks,
   restorePage,
   trashPage,
   updateCollection,
@@ -216,6 +218,127 @@ describe('pages CRUD and ordering', () => {
 
     const db = createStorageConnection(workspace);
     db.close();
+    rmSync(workspace, { recursive: true, force: true });
+  });
+
+  it('prevents cyclic hierarchy moves', () => {
+    const workspace = mkdtempSync(path.join(os.tmpdir(), 'arcane-codex-'));
+    ensureWorkspaceDirs(workspace);
+    openWorkspace({ dataDir: workspace });
+
+    const parent = createPage({ title: 'Parent' }, workspace);
+    const child = createPage({ title: 'Child', parentId: parent.id }, workspace);
+    const grandchild = createPage({ title: 'Grandchild', parentId: child.id }, workspace);
+
+    assert.throws(
+      () =>
+        applyPageMoves(
+          [
+            {
+              id: parent.id,
+              parentId: grandchild.id,
+              sortKey: 1,
+              revision: parent.revision,
+            },
+          ],
+          workspace,
+        ),
+      (error: unknown) => error instanceof Error,
+    );
+
+    // Attempting to move child under its own grandchild through multi-move should also fail.
+    assert.throws(
+      () =>
+        applyPageMoves(
+          [
+            {
+              id: child.id,
+              parentId: grandchild.id,
+              sortKey: 1,
+              revision: child.revision,
+            },
+            {
+              id: grandchild.id,
+              parentId: child.id,
+              sortKey: 1,
+              revision: grandchild.revision,
+            },
+          ],
+          workspace,
+        ),
+      (error: unknown) => error instanceof Error,
+    );
+
+    // Updating a page to create cycle should fail.
+    assert.throws(
+      () =>
+        updatePage(grandchild.id, {
+          revision: grandchild.revision,
+          parentId: child.id,
+          title: 'Grandchild',
+        }),
+      (error: unknown) => error instanceof Error,
+    );
+
+    rmSync(workspace, { recursive: true, force: true });
+  });
+
+  it('extracts links for backlink indexing', () => {
+    const workspace = mkdtempSync(path.join(os.tmpdir(), 'arcane-codex-'));
+    ensureWorkspaceDirs(workspace);
+    openWorkspace({ dataDir: workspace });
+
+    const root = createPage({ title: 'Root' }, workspace);
+    const target = createPage({ title: 'Target', parentId: root.id }, workspace);
+    const source = createPage({
+      title: 'Source',
+      parentId: root.id,
+      contentJson: JSON.stringify([
+        {
+          type: 'paragraph',
+          content: [
+            {
+              type: 'text',
+              text: 'intro',
+              styles: {},
+            },
+          ],
+        },
+        {
+          type: 'paragraph',
+          content: [
+            {
+              type: 'pageLink',
+              props: { pageId: target.id, title: 'Target' },
+            },
+            {
+              type: 'text',
+              text: 'and ',
+              styles: {},
+            },
+            {
+              type: 'link',
+              href: `/page/${target.id}`,
+              content: [{ type: 'text', text: 'same target', styles: {} }],
+            },
+          ],
+        },
+      ]),
+    }, workspace);
+
+    updatePage(source.id, {
+      revision: source.revision,
+      title: source.title,
+      contentJson: source.contentJson,
+    }, workspace);
+
+    const ids = extractLinkedPageIds(source.contentJson);
+    assert.equal(ids.includes(target.id), true);
+
+    const backlinks = readBacklinks(target.id, workspace);
+    assert.equal(backlinks.length, 1);
+    assert.equal(backlinks[0].id, source.id);
+
     rmSync(workspace, { recursive: true, force: true });
   });
 });

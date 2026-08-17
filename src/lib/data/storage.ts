@@ -282,6 +282,77 @@ function normalizeSortKey(baseSort: number, index: number): number {
   return Number.parseFloat(`${baseSort}.${index + 1}`);
 }
 
+const PAGE_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isPageId(value: string): boolean {
+  return PAGE_ID_REGEX.test(value);
+}
+
+function extractPageIdFromHref(href: string): string | null {
+  try {
+    const decoded = decodeURIComponent(href).trim();
+    const match = /^\/?page\/(?<id>[0-9a-f-]+)$/i.exec(decoded);
+    if (match?.groups?.id) {
+      return isPageId(match.groups.id) ? match.groups.id : null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function collectMoveTargets(moves: PageMoveInput[]): Map<string, string | null> {
+  const map = new Map<string, string | null>();
+  for (const move of moves) {
+    map.set(move.id, move.parentId);
+  }
+  return map;
+}
+
+function wouldIntroduceCycle(
+  candidateId: string,
+  targetParentId: string | null,
+  existingParents: Map<string, string | null>,
+): boolean {
+  let current = targetParentId;
+  const seen = new Set<string>();
+  while (current) {
+    if (current === candidateId) {
+      return true;
+    }
+    if (seen.has(current)) {
+      return true;
+    }
+    seen.add(current);
+    current = existingParents.get(current) ?? null;
+  }
+  return false;
+}
+
+function verifyTreeMove(
+  move: PageMoveInput,
+  allRows: DbRow[],
+  moveTargetById: Map<string, string | null>,
+) {
+  const effectiveParents = new Map<string, string | null>(
+    allRows.map((row) => [String(row.id), (row.parent_id as string | null) ?? null]),
+  );
+
+  for (const [id, parentId] of moveTargetById) {
+    effectiveParents.set(id, parentId);
+  }
+
+  const candidateParent = moveTargetById.get(move.id) ?? move.parentId;
+
+  if (candidateParent && !allRows.some((row) => String(row.id) === candidateParent && row.deleted_at == null)) {
+    throw new Error(`Target parent not found: ${candidateParent}`);
+  }
+
+  if (wouldIntroduceCycle(move.id, candidateParent, effectiveParents)) {
+    throw new Error('Move would create a cycle');
+  }
+}
+
 export function applyPageMoves(moves: PageMoveInput[], dataDir?: string): PageRecord[] {
   if (moves.length === 0) {
     return [];
@@ -292,7 +363,10 @@ export function applyPageMoves(moves: PageMoveInput[], dataDir?: string): PageRe
   try {
     db.exec('BEGIN');
     const now = Date.now();
+    const allRows = db.prepare('SELECT id, parent_id, deleted_at FROM pages').all() as DbRow[];
     const currentStmt = db.prepare('SELECT id, revision, deleted_at FROM pages WHERE id = ?');
+    const moveTargetById = collectMoveTargets(moves);
+
     const updateStmt = db.prepare(
       `UPDATE pages
        SET parent_id = ?,
@@ -318,10 +392,16 @@ export function applyPageMoves(moves: PageMoveInput[], dataDir?: string): PageRe
       if (row.deleted_at != null) {
         throw new Error(`Cannot move deleted page: ${move.id}`);
       }
+
       const currentRevision = Number(row.revision);
       if (currentRevision !== move.revision) {
         throw new RevisionConflictError(`Stale revision for page ${move.id}`);
       }
+
+      verifyTreeMove(move, allRows, moveTargetById);
+    }
+
+    for (const move of moves) {
       updateStmt.run(move.parentId, move.sortKey, now, move.id);
     }
 
@@ -356,12 +436,28 @@ export function updatePage(id: string, input: PageUpdate, dataDir?: string): Pag
       throw new RevisionConflictError('Stale revision supplied');
     }
 
+    const allRows = db.prepare('SELECT id, parent_id, deleted_at FROM pages').all() as DbRow[];
+    const allParentMap = new Map<string, string | null>(
+      allRows.map((row) => [String(row.id), (row.parent_id as string | null) ?? null]),
+    );
+
     const fields = [] as string[];
     const values: Array<string | number | null> = [];
 
     if (Object.hasOwn(input, 'parentId')) {
+      const parentId = input.parentId ?? null;
+      if (parentId && !allRows.some((row) => String(row.id) === parentId && row.deleted_at == null)) {
+        throw new Error('Target parent not found');
+      }
+
+      const candidate: Map<string, string | null> = new Map(allParentMap);
+      candidate.set(id, parentId);
+      if (wouldIntroduceCycle(id, parentId, candidate)) {
+        throw new Error('Update would create a cycle');
+      }
+
       fields.push('parent_id = ?');
-      values.push(input.parentId ?? null);
+      values.push(parentId);
     }
     if (input.sortKey !== undefined) {
       fields.push('sort_key = ?');
@@ -1043,10 +1139,11 @@ export function readBacklinks(targetPageId: string, dataDir?: string): PageRecor
   try {
     const rows = db
       .prepare(
-        `SELECT p.id, p.parent_id, p.sort_key, p.title, p.icon, p.cover_asset_id, p.content_json, p.revision, p.created_at, p.updated_at, p.deleted_at
+        `SELECT DISTINCT p.id, p.parent_id, p.sort_key, p.title, p.icon, p.cover_asset_id, p.content_json, p.revision, p.created_at, p.updated_at, p.deleted_at
          FROM page_links l
          JOIN pages p ON p.id = l.source_page_id
-         WHERE l.target_page_id = ? AND p.deleted_at IS NULL`,
+         WHERE l.target_page_id = ? AND p.deleted_at IS NULL
+         ORDER BY p.updated_at DESC`,
       )
       .all(targetPageId) as DbRow[];
     return rows.map(rowToPage);
@@ -1055,7 +1152,7 @@ export function readBacklinks(targetPageId: string, dataDir?: string): PageRecor
   }
 }
 
-function extractLinkedPageIds(contentJson: string): string[] {
+export function extractLinkedPageIds(contentJson: string): string[] {
   if (!contentJson) {
     return [];
   }
@@ -1063,14 +1160,12 @@ function extractLinkedPageIds(contentJson: string): string[] {
   try {
     const parsed = JSON.parse(contentJson) as unknown;
     const ids = new Set<string>();
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
 
     const walk = (node: unknown): void => {
       if (!node || typeof node !== 'object') {
         return;
       }
+
       if (Array.isArray(node)) {
         for (const child of node) {
           walk(child);
@@ -1079,24 +1174,33 @@ function extractLinkedPageIds(contentJson: string): string[] {
       }
 
       const obj = node as Record<string, unknown>;
-      if (typeof obj.pageId === 'string' && obj.pageId.length > 8) {
+
+      if (obj.type === 'pageLink' || obj.type === 'pageCard') {
+        const props = obj.props as Record<string, unknown> | undefined;
+        const explicit = props?.pageId;
+        if (typeof explicit === 'string' && isPageId(explicit)) {
+          ids.add(explicit);
+        }
+      }
+
+      if (obj.type === 'link' && typeof obj.href === 'string') {
+        const linkTarget = extractPageIdFromHref(obj.href);
+        if (linkTarget) {
+          ids.add(linkTarget);
+        }
+      }
+
+      if (typeof obj.pageId === 'string' && isPageId(obj.pageId)) {
         ids.add(obj.pageId);
       }
-      if (typeof obj.targetPageId === 'string' && obj.targetPageId.length > 8) {
+      if (typeof obj.targetPageId === 'string' && isPageId(obj.targetPageId)) {
         ids.add(obj.targetPageId);
       }
 
-      if (obj.children !== undefined) {
-        walk(obj.children);
-      }
-      if (obj.content !== undefined) {
-        walk(obj.content);
-      }
-      if (obj.text !== undefined) {
-        walk(obj.text);
-      }
-      if (obj.props !== undefined) {
-        walk(obj.props);
+      for (const key of ['children', 'content', 'text', 'props']) {
+        if (obj[key] !== undefined) {
+          walk(obj[key]);
+        }
       }
     };
 
