@@ -1,5 +1,23 @@
-import { expect, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+
+type MotionSample = {
+  tx: number;
+  opacity: number;
+};
+
+test.use({ video: 'on' });
+
+function parseDelayMs(rawDelay: string): number {
+  const trimmed = rawDelay.trim();
+  if (trimmed.endsWith('ms')) {
+    return parseFloat(trimmed);
+  }
+  if (trimmed.endsWith('s')) {
+    return parseFloat(trimmed) * 1_000;
+  }
+  return Number.parseFloat(trimmed);
+}
 
 const PASTE_PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
@@ -64,6 +82,17 @@ function blockSignature(block: PageBlock): string {
     return `image:${block.props.caption}`;
   }
   return block.type;
+}
+
+async function readMotion(locator: Locator): Promise<MotionSample> {
+  return locator.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const matrix = new DOMMatrixReadOnly(style.transform === 'none' ? 'matrix(1, 0, 0, 1, 0, 0)' : style.transform);
+    return {
+      tx: matrix.e,
+      opacity: Number(style.opacity),
+    };
+  });
 }
 
 async function loadPageBlocks(request: APIRequestContext, pageId: string): Promise<PageBlock[]> {
@@ -367,25 +396,56 @@ test.describe('cover controls and reference refresh', () => {
 test.describe('cover controls at 390px', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test('shows media controls in stacked layout at narrow widths', async ({ page, request }) => {
+  test('shows media controls in stacked layout at narrow widths', async ({ page, request }, testInfo: TestInfo) => {
     const createRootResponse = await request.post('/api/pages', { data: { title: 'Narrow root' } });
     expect(createRootResponse.ok()).toBeTruthy();
     const root = (await createRootResponse.json()).page as { id: string; revision: number };
 
     await page.goto(`/page/${root.id}`);
     await expect(page.getByRole('button', { name: 'Open navigation' })).toBeVisible();
+    const sidebar = page.locator('.sidebar');
+    const sidebarScrim = page.locator('.sidebar-scrim');
+    const actionsMenuButton = page.getByLabel('Actions for Narrow root');
+    const actionsMenu = actionsMenuButton.locator('xpath=ancestor::details[contains(@class, "tree-menu")]');
+    const actionsPanel = actionsMenu.locator('.tree-actions');
+
     await expect(page.locator('.sidebar')).toHaveAttribute('aria-hidden', 'true');
     await page.getByRole('button', { name: 'Open navigation' }).click();
-    await expect(page.locator('.sidebar')).toHaveClass(/open/);
-    await expect(page.getByLabel('Actions for Narrow root')).toBeVisible();
-    await page.getByLabel('Actions for Narrow root').click();
-    await expect(page.locator('.tree-actions').getByRole('button', { name: 'Duplicate' })).toBeVisible();
-    await page.locator('.sidebar').getByRole('button', { name: 'Close navigation' }).click();
-    await expect(page.locator('.sidebar')).toHaveAttribute('aria-hidden', 'true');
+    await expect(sidebar).toHaveClass(/open/);
+
+    const openSidebar = await readMotion(sidebar);
+
+    await expect(actionsMenuButton).toBeVisible();
+    await actionsMenuButton.click();
+    await expect(actionsMenu).toHaveAttribute('open');
+    const menuTransition = await actionsPanel.evaluate((element) => getComputedStyle(element).transitionDuration);
+    expect(parseDelayMs(menuTransition)).toBeGreaterThan(0);
+
+    await actionsMenuButton.click();
+    await page.waitForTimeout(40);
+    await expect(actionsMenu).not.toHaveAttribute('open');
+
+    const closeNav = sidebar.getByRole('button', { name: 'Close navigation' });
+    await closeNav.click();
+    await page.waitForTimeout(40);
+    const closingSidebar = await readMotion(sidebar);
+    const closingScrim = await readMotion(sidebarScrim);
+    expect(closingSidebar.tx).toBeLessThan(openSidebar.tx);
+    expect(closingSidebar.opacity).toBe(1);
+    expect(closingScrim.opacity).toBeLessThan(openSidebar.opacity);
+    expect(closingScrim.opacity).toBeGreaterThan(0);
+    await page.waitForTimeout(280);
+    const closedSidebar = await readMotion(sidebar);
+    const closedScrim = await readMotion(sidebarScrim);
+    expect(closedSidebar.tx).toBeLessThan(closingSidebar.tx);
+    expect(closedScrim.opacity).toBe(0);
+    await expect(sidebar).toHaveAttribute('aria-hidden', 'true');
     await expect(page.locator('.page-title')).toBeInViewport();
+    await page.screenshot({ path: testInfo.outputPath('narrow-mobile-layout.png'), fullPage: true });
     await page.getByText('Media & page details').click();
     const controls = page.locator('.media-controls');
     await expect(controls).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('narrow-mobile-menu-closed.png'), fullPage: true });
     const groups = controls.locator('.media-control-group');
     await expect(groups).toHaveCount(3);
 
@@ -397,6 +457,70 @@ test.describe('cover controls at 390px', () => {
     if (first && second && third) {
       expect(second.y).toBeGreaterThan(first.y + first.height - 4);
       expect(third.y).toBeGreaterThan(second.y + second.height - 4);
+    }
+  });
+});
+
+test.describe('motion reduced-motion behavior', () => {
+  test('disables collection stagger delays when reduced-motion is active', async ({ page, request }, testInfo: TestInfo) => {
+    const collectionResponse = await request.post('/api/collections', {
+      data: {
+        name: 'Reduced Motion Motion Collection',
+      },
+    });
+    expect(collectionResponse.ok()).toBeTruthy();
+    const collection = (await collectionResponse.json()).collection as { id: string };
+
+    for (let index = 0; index < 8; index += 1) {
+      const pageResponse = await request.post('/api/pages', {
+        data: { title: `Reduced Motion Page ${index + 1}` },
+      });
+      expect(pageResponse.ok()).toBeTruthy();
+      const pageRecord = (await pageResponse.json()).page as { id: string };
+
+      const addResponse = await request.post(`/api/collections/${collection.id}/items`, {
+        data: { pageId: pageRecord.id, properties: {} },
+      });
+      expect(addResponse.ok()).toBeTruthy();
+    }
+
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`/collections/${collection.id}`);
+
+    const viewSwitch = page.locator('.collection-viewbar .view-switch');
+    await expect(viewSwitch).toBeVisible();
+    const initialView = await viewSwitch.innerText();
+    if (initialView.includes('Gallery')) {
+      await viewSwitch.click();
+      await page.waitForTimeout(20);
+      await expect(viewSwitch).toHaveText('View: Table');
+    }
+
+    const tableRows = page.locator('.collection-table tbody tr');
+    await expect(tableRows).toHaveCount(8, { timeout: 15_000 });
+    const readTableDelays = await Promise.all(
+      Array.from({ length: 4 }, (_, index) =>
+        tableRows.nth(index).evaluate((row) => getComputedStyle(row).animationDelay),
+      ),
+    );
+    for (const delay of readTableDelays) {
+      expect(parseDelayMs(delay)).toBe(0);
+    }
+
+    await page.screenshot({ path: testInfo.outputPath('reduced-motion-table-start.png'), fullPage: true });
+    await viewSwitch.click();
+    await expect(viewSwitch).toHaveText('View: Gallery');
+    await page.waitForTimeout(120);
+    await page.screenshot({ path: testInfo.outputPath('reduced-motion-gallery-view.png'), fullPage: true });
+    const galleryCards = page.locator('.collection-gallery-item');
+    await expect(galleryCards).toHaveCount(8, { timeout: 15_000 });
+    const readGalleryDelays = await Promise.all(
+      Array.from({ length: 4 }, (_, index) =>
+        galleryCards.nth(index).evaluate((item) => getComputedStyle(item).animationDelay),
+      ),
+    );
+    for (const delay of readGalleryDelays) {
+      expect(parseDelayMs(delay)).toBe(0);
     }
   });
 });

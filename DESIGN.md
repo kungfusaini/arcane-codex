@@ -49,6 +49,24 @@ rounded:
   lg: 16px
   xl: 24px
 
+motion:
+  easing:
+    primary: "cubic-bezier(0.23, 1, 0.32, 1)"
+    secondary: "cubic-bezier(0.77, 0, 0.175, 1)"
+  duration:
+    fast: 120ms
+    standard: 180ms
+    slow: 230ms
+    title-entry-delay: 80ms
+    editor-entry-delay: 120ms
+  distance:
+    small: 2px
+    medium: 4px
+    large: 12px
+  stagger:
+    step: 45ms
+    max-items: 6
+
 elevation:
   sm: "0 1px 2px var(--shadow)"
   md: "0 8px 24px var(--shadow)"
@@ -88,6 +106,22 @@ components:
 ---
 
 # Arcane Codex Design System
+
+## Motion
+
+- **Primary intent:** Frequent, refined, spatially meaningful motion for feedback and continuity.
+- **Easing:** `cubic-bezier(0.23, 1, 0.32, 1)` for primary transitions.
+- **Motion durations:**
+  - fast: `var(--motion-fast)`
+  - standard: `var(--motion-base)`
+  - slow: `var(--motion-slow)`
+  - title entry offset: `var(--motion-enter-title-delay)`
+  - editor entry offset: `var(--motion-enter-editor-delay)`
+- **Distance scale:** small surface nudges use `var(--motion-small)` and `var(--motion-medium)`.
+- **Stagger:** table/gallery row reveals use `var(--motion-stagger-step)` with a max visible index of `var(--motion-stagger-max)`.
+- **Opacity/transform priority:** animate opacity and transform first; avoid `transition: all`.
+- **Reduced motion:** keep behavior but shorten to near-immediate transitions; reduced-motion removes stagger delays.
+
 
 ## Overview
 An editorial workspace with warm paper surfaces, charcoal reading content, and restrained moss accents.

@@ -18,14 +18,23 @@
   color: var(--color-accent);
   text-decoration: none;
   font-weight: 600;
-}
-
-.page-link-block:hover {
-  text-decoration: underline;
+  transition: transform var(--motion-fast) var(--ease-out), background-color var(--motion-fast) var(--ease-out), opacity var(--motion-fast) var(--ease-out);
 }
 
 .page-link-block:active {
-  background: var(--color-page);
+  transform: scale(0.97);
+}
+
+.page-link-block:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .page-link-block:hover {
+    text-decoration: none;
+    background: color-mix(in oklab, var(--color-page-muted) 55%, var(--color-card));
+  }
 }
 
 .editor-view .bn-file-block-content-wrapper,

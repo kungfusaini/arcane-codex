@@ -1,7 +1,15 @@
 "use client";
 
 import Link from 'next/link';
-import { FormEvent, useEffect, useMemo, useState, type ChangeEvent, type DragEvent } from 'react';
+import {
+  FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type DragEvent,
+} from 'react';
 import { buildTree, type PageTreeNode } from '@/lib/pageTree';
 
 type SidebarPage = {
@@ -112,9 +120,14 @@ export function WorkspaceSidebar({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragTargetId, setDragTargetId] = useState<string | null>(null);
+  const [dragTargetMode, setDragTargetMode] = useState<DropMode | null>(null);
+  const [recentPageId, setRecentPageId] = useState<string | null>(null);
   const [health, setHealth] = useState<WorkspaceHealth | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const sidebarRef = useRef<HTMLElement | null>(null);
+
 
   const fetchPages = async () => {
     setLoading(true);
@@ -167,7 +180,13 @@ export function WorkspaceSidebar({
       void fetchTrashPages();
     };
     const mobileQuery = window.matchMedia('(max-width: 64rem)');
-    const updateViewport = () => setIsMobile(mobileQuery.matches);
+    const updateViewport = () => {
+      const nextIsMobile = mobileQuery.matches;
+      setIsMobile(nextIsMobile);
+      if (!nextIsMobile) {
+        setDrawerOpen(false);
+      }
+    };
     updateViewport();
     refreshPageLists();
     void fetchHealth();
@@ -178,6 +197,25 @@ export function WorkspaceSidebar({
       window.removeEventListener('arcane-pages-changed', refreshPageLists);
     };
   }, []);
+
+  useEffect(() => {
+    if (!drawerOpen || !isMobile) {
+      return;
+    }
+
+    const focusTimer = window.setTimeout(() => {
+      const container = sidebarRef.current;
+      if (!container) {
+        return;
+      }
+      const focusTarget = container.querySelector<HTMLAnchorElement | HTMLButtonElement>('a[href], button');
+      focusTarget?.focus();
+    }, 120);
+
+    return () => {
+      clearTimeout(focusTimer);
+    };
+  }, [drawerOpen, isMobile]);
 
   const childrenByParent = useMemo(() => {
     const map = new Map<string | null, SidebarPage[]>();
@@ -385,6 +423,11 @@ export function WorkspaceSidebar({
       }
       await fetchPages();
       onCreated(payload.page);
+      setRecentPageId(payload.page.id);
+      window.setTimeout(() => {
+        setRecentPageId((current) => (current === payload.page?.id ? null : current));
+      }, 800);
+      setStatus('');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Page could not be created.');
     }
@@ -472,11 +515,13 @@ export function WorkspaceSidebar({
         });
 
         const moveTarget = item.parentId ?? '';
+        const isDropTarget = dragTargetId === item.id;
+        const moveModeClass = dragTargetMode === 'before' ? 'tree-item-drop-before' : dragTargetMode === 'after' ? 'tree-item-drop-after' : dragTargetMode === 'into' ? 'tree-item-drop-into' : '';
 
         return (
           <li key={item.id} className="tree-item-row">
             <div
-              className={`tree-item ${isCurrent ? 'active' : ''} ${draggingId === item.id ? 'dragging' : ''}`}
+              className={`tree-item ${isCurrent ? 'active' : ''} ${draggingId === item.id ? 'dragging' : ''} ${isDropTarget ? `tree-item-drop ${moveModeClass}` : ''} ${recentPageId === item.id ? 'tree-item-new' : ''}`}
               draggable
               onDragStart={(event) => {
                 setDraggingId(item.id);
@@ -485,23 +530,46 @@ export function WorkspaceSidebar({
               }}
               onDragEnd={() => {
                 setDraggingId(null);
+                setDragTargetId(null);
+                setDragTargetMode(null);
+              }}
+              onDragEnter={(event) => {
+                if (!draggingId) {
+                  return;
+                }
+                const mode = getDropMode(event);
+                setDragTargetId(item.id);
+                setDragTargetMode(mode);
               }}
               onDragOver={(event) => {
                 if (!draggingId) {
                   return;
                 }
                 event.preventDefault();
+                const mode = getDropMode(event);
+                setDragTargetId(item.id);
+                setDragTargetMode(mode);
                 event.dataTransfer.dropEffect = 'move';
+              }}
+              onDragLeave={() => {
+                if (isDropTarget) {
+                  setDragTargetId(null);
+                  setDragTargetMode(null);
+                }
               }}
               onDrop={(event) => {
                 event.preventDefault();
                 const draggingPageId = draggingId || event.dataTransfer.getData('text/plain');
+                const mode = dragTargetMode || getDropMode(event);
                 if (!draggingPageId) {
+                  setDragTargetId(null);
+                  setDragTargetMode(null);
                   return;
                 }
-                const mode = getDropMode(event);
                 void moveByDrag(draggingPageId, item.id, mode);
                 setDraggingId(null);
+                setDragTargetId(null);
+                setDragTargetMode(null);
               }}
             >
               <div className="tree-title-wrap">
@@ -625,15 +693,20 @@ export function WorkspaceSidebar({
         <Link href="/" className="mobile-brand">Arcane Codex</Link>
         <button type="button" className="mobile-new" onClick={() => onCreatePage(null)}>New</button>
       </header>
-      {drawerOpen ? (
-        <button
-          type="button"
-          className="sidebar-scrim"
-          aria-label="Close navigation"
-          onClick={() => setDrawerOpen(false)}
-        />
-      ) : null}
-      <aside id="workspace-navigation" className={`sidebar ${drawerOpen ? 'open' : ''}`} aria-hidden={isMobile && !drawerOpen ? true : undefined}>
+      <button
+        type="button"
+        className={`sidebar-scrim ${drawerOpen ? 'open' : ''}`}
+        aria-label="Close navigation"
+        aria-hidden={!drawerOpen}
+        onClick={() => setDrawerOpen(false)}
+        tabIndex={-1}
+      />
+      <aside
+        ref={sidebarRef}
+        id="workspace-navigation"
+        className={`sidebar ${drawerOpen ? 'open' : ''}`}
+        aria-hidden={isMobile && !drawerOpen ? true : undefined}
+      >
         <div className="sidebar-brand-row">
           <Link href="/" className="sidebar-brand">Arcane Codex</Link>
           <button type="button" className="sidebar-close" aria-label="Close navigation" onClick={() => setDrawerOpen(false)}>×</button>

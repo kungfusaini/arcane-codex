@@ -10,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from 'react';
 
@@ -58,6 +59,8 @@ type CollectionItem = {
 type ViewMode = 'table' | 'gallery';
 
 type SortDirection = 'asc' | 'desc';
+
+const MAX_COLLECTION_STAGGER_INDEX = 6;
 
 type CollectionViews = {
   mode: ViewMode;
@@ -965,7 +968,7 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
 
       {status ? <p className="status-note" role="status">{status}</p> : null}
 
-      <div className="collection-surface">
+      <div className="collection-surface collection-surface-stage">
         {isLoading ? (
           <p className="help collection-state">Loading entries…</p>
         ) : items.length === 0 ? (
@@ -974,11 +977,16 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
           <div className="no-results-state collection-state"><p className="help">No entries match your current filter.</p><button type="button" onClick={() => { setFilterBy(''); setFilterQuery(''); }}>Clear filter</button></div>
         ) : views.mode === 'gallery' ? (
           <section className="collection-gallery">
-            {ordered.map((item) => {
+            {ordered.map((item, itemIndex) => {
               const image = getFirstImageUrl(item.page);
               const values = parseProperties(item.propertiesJson);
+              const staggerIndex = Math.min(itemIndex, MAX_COLLECTION_STAGGER_INDEX);
               return (
-                <article key={item.pageId} className="collection-gallery-item">
+                <article
+                  key={item.pageId}
+                  className="collection-gallery-item"
+                  style={{ '--motion-stagger-index': `${staggerIndex}` } as CSSProperties}
+                >
                   <Link href={`/page/${item.pageId}`} className="collection-cover-link">
                     {image ? <Image src={image} alt={`Cover for ${item.page.title}`} className="collection-cover" width={640} height={360} unoptimized /> : <div className="collection-cover-blank" aria-hidden="true">{item.page.icon ?? '◆'}</div>}
                   </Link>
@@ -997,9 +1005,13 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
           <section className="collection-table-wrap">
             <table className="collection-table">
               <thead><tr><th>Page</th>{schema.properties.map((property) => <th key={property.id}>{property.name}</th>)}<th><span className="visually-hidden">Actions</span></th></tr></thead>
-              <tbody>{ordered.map((item) => {
+              <tbody>{ordered.map((item, itemIndex) => {
                 const properties = parseProperties(item.propertiesJson);
-                return <tr key={item.pageId}>
+                return <tr
+                  key={item.pageId}
+                  className="collection-row"
+                  style={{ '--motion-stagger-index': `${Math.min(itemIndex, MAX_COLLECTION_STAGGER_INDEX)}` } as CSSProperties}
+                >
                   <td><Link href={`/page/${item.pageId}`} className="text-link collection-page-title">{item.page.icon ? <span>{item.page.icon} </span> : null}{item.page.title || 'Untitled'}</Link></td>
                   {schema.properties.map((property) => <td key={property.id}>{renderPropertyControl(property, properties[property.id], (nextValue) => void updateEntryProperty(item.pageId, property.id, nextValue), false)}</td>)}
                   <td><details className="row-menu"><summary aria-label={`Actions for ${item.page.title}`}>•••</summary><div><button type="button" onClick={() => void reorderEntry(item.pageId, 'up')}>Move up</button><button type="button" onClick={() => void reorderEntry(item.pageId, 'down')}>Move down</button><button type="button" className="danger-action" onClick={() => void removeEntry(item.pageId)}>Remove</button></div></details></td>
