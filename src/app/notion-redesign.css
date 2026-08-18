@@ -239,9 +239,6 @@
   padding-block-end: var(--space-2);
 }
 .has-cover .page-identity {
-  margin-block-start: calc(var(--space-8) * -1);
-}
-.has-cover .page-identity:not(.has-icon) {
   margin-block-start: var(--space-0);
   padding-block-start: var(--space-6);
 }
@@ -731,9 +728,6 @@
     padding-block: var(--space-8) var(--space-12);
   }
   .has-cover .page-identity {
-    margin-block-start: calc(var(--space-6) * -1);
-  }
-  .has-cover .page-identity:not(.has-icon) {
     margin-block-start: var(--space-0);
     padding-block-start: var(--space-4);
   }
