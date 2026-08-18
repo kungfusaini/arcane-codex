@@ -287,6 +287,49 @@ test('core local workspace flows survive reload and remain recoverable', async (
   expect(signature).toBe('PK');
 });
 
+test('renders custom slash and mention suggestion menus without BlockNote UI context errors', async ({ page, request }) => {
+  const pageErrors: Error[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error));
+
+  const targetResponse = await request.post('/api/pages', { data: { title: 'Target reference', icon: '🎯' } });
+  expect(targetResponse.ok()).toBeTruthy();
+  const target = (await targetResponse.json()).page as PageRecord;
+
+  const slashSourceResponse = await request.post('/api/pages', { data: { title: 'Slash menu source' } });
+  expect(slashSourceResponse.ok()).toBeTruthy();
+  const slashSource = (await slashSourceResponse.json()).page as PageRecord;
+
+  await page.goto(`/page/${slashSource.id}`);
+  const slashEditor = page.locator('.editor-view .bn-editor[contenteditable="true"]');
+  await expect(slashEditor).toBeVisible();
+  await slashEditor.click();
+  await page.keyboard.type('/');
+  const slashMenu = page.getByRole('listbox', { name: 'Editor suggestions' });
+  await expect(slashMenu).toBeVisible();
+  expect(await slashMenu.getByRole('option').count()).toBeGreaterThan(0);
+  await page.keyboard.press('Enter');
+  await expect(slashMenu).toBeHidden();
+
+  const mentionSourceResponse = await request.post('/api/pages', { data: { title: 'Mention menu source' } });
+  expect(mentionSourceResponse.ok()).toBeTruthy();
+  const mentionSource = (await mentionSourceResponse.json()).page as PageRecord;
+
+  await page.goto(`/page/${mentionSource.id}`);
+  const mentionEditor = page.locator('.editor-view .bn-editor[contenteditable="true"]');
+  await expect(mentionEditor).toBeVisible();
+  await mentionEditor.click();
+  await page.keyboard.type('@Tar');
+  const mentionMenu = page.getByRole('listbox', { name: 'Editor suggestions' });
+  await expect(mentionMenu).toBeVisible();
+  const targetOption = mentionMenu.getByRole('option', { name: /Target reference/ });
+  await expect(targetOption).toBeVisible();
+  await targetOption.click();
+  await expect(mentionMenu).toBeHidden();
+  await expect(page.locator(`.editor-view a[href="/page/${target.id}"]`)).toBeVisible();
+
+  expect(pageErrors.map((error) => error.stack ?? error.message)).toEqual([]);
+});
+
 test.describe('cover controls and reference refresh', () => {
   test.use({ viewport: { width: 1280, height: 900 } });
 

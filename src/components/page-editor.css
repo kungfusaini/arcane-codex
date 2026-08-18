@@ -37,6 +37,95 @@
   }
 }
 
+.arcane-suggestion-menu {
+  min-width: calc(var(--space-12) * 6);
+  max-width: min(calc(var(--space-12) * 8), calc(100vw - var(--space-8)));
+  max-height: calc(var(--space-12) * 7);
+  overflow-y: auto;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  box-shadow: var(--elevation-md);
+  animation: arcane-suggestion-enter var(--motion-base) var(--ease-out);
+  transform-origin: top left;
+}
+
+.arcane-suggestion-entry + .arcane-suggestion-entry {
+  margin-top: var(--space-1);
+}
+
+.arcane-suggestion-group {
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  color: var(--color-muted);
+  font-size: var(--font-size-100);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.arcane-suggestion-item {
+  display: grid;
+  grid-template-columns: var(--space-8) minmax(0, 1fr);
+  width: 100%;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+}
+
+.arcane-suggestion-item[aria-selected='true'] {
+  background: var(--color-page-muted);
+  color: var(--color-ink);
+}
+
+.arcane-suggestion-icon {
+  display: grid;
+  place-items: center;
+  font-size: var(--font-size-400);
+}
+
+.arcane-suggestion-copy {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+.arcane-suggestion-copy strong,
+.arcane-suggestion-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arcane-suggestion-copy span,
+.arcane-suggestion-empty,
+.arcane-suggestion-loading {
+  color: var(--color-muted);
+  font-size: var(--font-size-200);
+}
+
+.arcane-suggestion-empty,
+.arcane-suggestion-loading {
+  padding: var(--space-3);
+}
+
+@keyframes arcane-suggestion-enter {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--motion-small) * -1)) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(var(--space-0)) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arcane-suggestion-menu {
+    animation: none;
+  }
+}
+
 .editor-view .bn-file-block-content-wrapper,
 .editor-view .bn-visual-media-wrapper,
 .editor-view .bn-file-caption {

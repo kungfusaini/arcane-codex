@@ -18,6 +18,7 @@ import {
   SuggestionMenuController,
   createReactBlockSpec,
   type DefaultReactSuggestionItem,
+  type SuggestionMenuProps,
   getDefaultReactSlashMenuItems,
   useCreateBlockNote,
   useEditorChange,
@@ -160,6 +161,51 @@ type MentionItem = DefaultReactSuggestionItem & {
   icon?: ReactElement;
   label: string;
 };
+
+function ArcaneSuggestionMenu<T extends DefaultReactSuggestionItem>({
+  items,
+  loadingState,
+  selectedIndex,
+  onItemClick,
+}: SuggestionMenuProps<T>) {
+  let activeGroup: string | undefined;
+
+  return (
+    <div id="bn-suggestion-menu" className="arcane-suggestion-menu" role="listbox" aria-label="Editor suggestions">
+      {items.map((item, index) => {
+        const groupChanged = item.group !== activeGroup;
+        activeGroup = item.group;
+
+        return (
+          <div className="arcane-suggestion-entry" key={`${item.title}-${index}`}>
+            {groupChanged && item.group ? <div className="arcane-suggestion-group">{item.group}</div> : null}
+            <button
+              id={`bn-suggestion-menu-item-${index}`}
+              className="arcane-suggestion-item"
+              type="button"
+              role="option"
+              aria-selected={index === selectedIndex}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => onItemClick?.(item)}
+            >
+              {item.icon ? <span className="arcane-suggestion-icon" aria-hidden="true">{item.icon}</span> : null}
+              <span className="arcane-suggestion-copy">
+                <strong>{item.title}</strong>
+                {item.subtext ? <span>{item.subtext}</span> : null}
+              </span>
+            </button>
+          </div>
+        );
+      })}
+      {items.length === 0 && loadingState === 'loaded' ? (
+        <div className="arcane-suggestion-empty">No matching suggestions</div>
+      ) : null}
+      {loadingState === 'loading' || loadingState === 'loading-initial' ? (
+        <div className="arcane-suggestion-loading" role="status">Loading suggestions…</div>
+      ) : null}
+    </div>
+  );
+}
 
 export function PageEditor({ pageId }: { pageId: string }) {
   const [page, setPage] = useState<PageRecord | null>(null);
@@ -941,11 +987,11 @@ export function PageEditor({ pageId }: { pageId: string }) {
 
   const insertMention = useCallback(
     (item: MentionItem) => {
-      editor.insertInlineContent({
+      editor.insertInlineContent([{
         type: 'link',
         href: `/page/${item.id}`,
         content: item.label,
-      } as unknown as Parameters<typeof editor.insertInlineContent>[0]);
+      }]);
     },
     [editor],
   );
@@ -1187,8 +1233,18 @@ export function PageEditor({ pageId }: { pageId: string }) {
 
         <div className="editor-view">
           <BlockNoteView editor={editor} slashMenu={false} editable={!isDeleted}>
-            <SuggestionMenuController triggerCharacter="/" getItems={getSlashMenuItems} />
-            <SuggestionMenuController triggerCharacter="@" minQueryLength={1} getItems={getMentionItems} onItemClick={(item) => insertMention(item as MentionItem)} />
+            <SuggestionMenuController
+              triggerCharacter="/"
+              getItems={getSlashMenuItems}
+              suggestionMenuComponent={ArcaneSuggestionMenu}
+            />
+            <SuggestionMenuController
+              triggerCharacter="@"
+              minQueryLength={1}
+              getItems={getMentionItems}
+              onItemClick={(item) => insertMention(item as MentionItem)}
+              suggestionMenuComponent={ArcaneSuggestionMenu}
+            />
           </BlockNoteView>
         </div>
 
