@@ -3,4 +3,4 @@
 	url = https://github.com/reliq-digital/suffer-for-your-art.git
 [submodule "codex-imagegen"]
 	path = codex-imagegen
-	url = https://github.com/reliq-digital/pi-codex-imagegen.git
+	url = https://github.com/kungfusaini/pi-codex-imagegen.git
