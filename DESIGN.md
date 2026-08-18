@@ -1,24 +1,24 @@
 ---
 colors:
-  neutral: "#f6f1e7"
-  neutral-ink: "#24211c"
-  neutral-muted: "#625d52"
-  neutral-border: "#d8d0c1"
-  accent: "#315d4a"
-  accent-on: "#fffaf0"
-  shadow: "rgba(36, 33, 28, 0.16)"
-  success: "#24543d"
-  warning: "#8a5a23"
-  danger: "#843b2c"
-  danger-muted: "#f1dfd8"
-  card: "#fffaf0"
-  page: "#eee8dc"
-  page-muted: "#e5ded1"
+  neutral: "#191919"
+  neutral-ink: "#f1f1ef"
+  neutral-muted: "#d2d2cf"
+  neutral-border: "#353535"
+  accent: "#1f78d1"
+  accent-on: "#ffffff"
+  shadow: "rgba(0, 0, 0, 0.34)"
+  success: "#4dab9a"
+  warning: "#dca65c"
+  danger: "#eb5757"
+  danger-muted: "#3a2426"
+  card: "#252525"
+  page: "#202020"
+  page-muted: "#2c2c2c"
 
 typography:
   family:
-    base: "ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif"
-    display: "Iowan Old Style, Palatino Linotype, Palatino, Georgia, serif"
+    base: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+    display: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
     mono: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
   scale:
     100: "12px"
@@ -38,36 +38,31 @@ spacing:
   4: 16px
   5: 20px
   6: 24px
-  7: 28px
   8: 32px
   10: 40px
   12: 48px
+  16: 64px
 
 rounded:
-  sm: 6px
-  md: 10px
-  lg: 16px
-  xl: 24px
+  sm: 4px
+  md: 6px
+  lg: 8px
+  xl: 8px
 
 motion:
   easing:
     primary: "cubic-bezier(0.23, 1, 0.32, 1)"
     secondary: "cubic-bezier(0.77, 0, 0.175, 1)"
   duration:
-    fast: 120ms
-    standard: 180ms
-    slow: 230ms
-    title-entry-delay: 80ms
-    editor-entry-delay: 120ms
+    fast: 100ms
+    standard: 150ms
+    slow: 200ms
   distance:
     small: 2px
     medium: 4px
-    large: 12px
-  stagger:
-    step: 45ms
-    max-items: 6
 
 elevation:
+  none: "none"
   sm: "0 1px 2px var(--shadow)"
   md: "0 8px 24px var(--shadow)"
   lg: "0 16px 40px var(--shadow)"
@@ -78,79 +73,75 @@ components:
     background: "var(--color-neutral)"
     color: "var(--color-ink)"
     font-family: "var(--font-base)"
-    line-height: 1.55
-  card:
-    background: "var(--color-card)"
-    border-radius: "var(--radius-md)"
-    box-shadow: "none"
+    line-height: 1.5
   sidebar:
-    width: "256px"
+    width: "264px"
     background: "var(--color-page)"
   button:
     background: "transparent"
     color: "var(--color-ink)"
     border: "none"
     border-radius: "var(--radius-sm)"
-    padding: "8px 12px"
-    font-size: "var(--font-size-300)"
+    padding: "4px 8px"
+    font-size: "var(--font-size-200)"
     line-height: 1.2
-
   link:
     color: "var(--color-accent)"
     hover: "var(--color-ink)"
-
   input:
-    background: "var(--color-page)"
-    border: "1px solid var(--color-border)"
+    background: "var(--color-page-muted)"
+    border: "1px solid transparent"
     border-radius: "var(--radius-sm)"
 ---
 
 # Arcane Codex Design System
 
-## Motion
-
-- **Primary intent:** Frequent, refined, spatially meaningful motion for feedback and continuity.
-- **Easing:** `cubic-bezier(0.23, 1, 0.32, 1)` for primary transitions.
-- **Motion durations:**
-  - fast: `var(--motion-fast)`
-  - standard: `var(--motion-base)`
-  - slow: `var(--motion-slow)`
-  - title entry offset: `var(--motion-enter-title-delay)`
-  - editor entry offset: `var(--motion-enter-editor-delay)`
-- **Distance scale:** small surface nudges use `var(--motion-small)` and `var(--motion-medium)`.
-- **Stagger:** table/gallery row reveals use `var(--motion-stagger-step)` with a max visible index of `var(--motion-stagger-max)`.
-- **Opacity/transform priority:** animate opacity and transform first; avoid `transition: all`.
-- **Reduced motion:** keep behavior but shorten to near-immediate transitions; reduced-motion removes stagger delays.
-
-
 ## Overview
-An editorial workspace with warm paper surfaces, charcoal reading content, and restrained moss accents.
+
+A dark, dense, content-first local workspace calibrated to the supplied Notion reference. The document, cover, and structured data carry the visual identity; application chrome stays quiet and contextual.
 
 ## Colors
-- **neutral**: paper-like base.
-- **neutral-ink**: high-contrast typographic color.
-- **neutral-muted**: secondary text.
-- **accent**: single interaction accent.
-- **card/page/page-muted**: canvas and surface layers.
+
+- `neutral` is the continuous document canvas.
+- `page` separates the navigation rail without a decorative border.
+- `card` is reserved for temporary raised surfaces such as menus and popovers.
+- `page-muted` provides hover and selected states.
+- `accent` is the only strong interface colour and is reserved for focus, links, selection, and primary creation.
+- Content images, emoji, and user-authored property values may carry their own semantic colour.
 
 ## Typography
-A restrained system sans handles navigation and controls. A local editorial serif stack gives page and collection titles a bookish voice without network fonts. The 8px-based rhythm and 768px reading measure keep long-form content calm.
+
+Use the system sans family throughout navigation, titles, editing, and collections. Hierarchy comes from weight, density, and placement rather than a contrasting display face. Page titles use the scale; controls never invent smaller or larger one-off sizes.
 
 ## Layout
-A quiet 256px desktop rail yields to the document. At narrow widths it becomes an off-canvas drawer behind a compact sticky top bar, so content always appears first. Page content uses a 768px reading measure; collections expand to a broad table surface.
+
+The 264px desktop rail is persistent and compact. The main canvas is continuous and unframed. Covers run full width; the page icon overlaps the cover edge; documents use a readable measure while hosted collections may expand to the available width. On narrow screens the rail becomes a focus-managed drawer and content remains primary.
 
 ## Elevation
-Use only named elevation levels `sm`, `md`, `lg`, `xl`.
+
+Use named elevation levels only. Core surfaces remain flat. Elevation is permitted for temporary menus, popovers, drawers, and recovery overlays; it is not texture.
 
 ## Shapes
-Rounded corners are tokenized by size; avoid hard-coded radius values.
 
-## Components
-Focus states and disabled states are required for all interactive controls. Empty/loading/error states always include recovery actions.
+Use small radii. Dense rows and the document canvas do not become cards. Hairline dividers are allowed for table structure and section boundaries only.
+
+## Motion
+
+- Use 100–200ms motion for drawer continuity, menu/popover opening, selection, drag/reorder feedback, and state changes.
+- High-frequency editor and table actions should feel immediate.
+- Prefer opacity and transform; never use `transition: all`.
+- No route-wide entrances, repeated row staggers, bounce, glow, or decorative animation.
+- `prefers-reduced-motion` preserves state while removing nonessential movement.
+
+## Components and States
+
+Every interactive element defines default, hover where applicable, focus-visible, active, and disabled states. Data surfaces also define loading, empty, no-results, error, populated, saving, and recovery states. Touch interactions must not depend on hover.
 
 ## Do's & Don'ts
-- Do not use gradients, glows, glass effects, decorative borders.
-- Do not introduce additional color accents.
-- Do not use non-token spacing or shadows outside the elevation palette.
-- Do disclose administration through contextual menus and settings regions.
-- Do not frame the editor, page, or collection work surface as a nested card.
+
+- Do let the cover, page icon, writing, and property values provide visual richness.
+- Do use progressive disclosure for media, administration, and destructive actions.
+- Do keep one obvious primary action per region.
+- Do not frame the editor, page, collection, or navigation groups as cards.
+- Do not use warm paper, serif display type, moss accents, gradients, glow, glass effects, decorative borders, fake metrics, or filler copy.
+- Do not expose raw administration forms in the primary work surface.

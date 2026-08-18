@@ -211,6 +211,20 @@ test('core local workspace flows survive reload and remain recoverable', async (
   await expect(page.locator('.page-title')).toHaveValue('Field Notes');
   await expect(page.locator('.cover-preview-image')).toBeVisible();
   await expect(page.getByRole('button', { name: '🧭' })).toBeVisible();
+  await page.keyboard.press('Control+k');
+  const workspaceSearch = page.getByRole('search').getByLabel('Search pages');
+  await expect(workspaceSearch).toBeFocused();
+  await workspaceSearch.fill('Field');
+  await page.keyboard.press('Escape');
+  await expect(workspaceSearch).toHaveValue('');
+
+  await page.getByRole('button', { name: 'Collapse sidebar' }).click();
+  await expect(page.locator('.sidebar')).toHaveAttribute('aria-hidden', 'true');
+  await expect(page.getByRole('button', { name: 'Open sidebar' })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Open sidebar' })).toBeVisible();
+  await page.getByRole('button', { name: 'Open sidebar' }).click();
+  await expect(page.locator('.sidebar')).not.toHaveAttribute('aria-hidden', 'true');
 
   let delayed = false;
   await page.route(`**/api/pages/${root.id}`, async (route) => {
@@ -223,7 +237,10 @@ test('core local workspace flows survive reload and remain recoverable', async (
   await page.locator('.page-title').fill('First queued title');
   await page.waitForTimeout(750);
   await page.locator('.page-title').fill('Latest queued title');
-  await expect(page.getByText('Saved', { exact: true })).toBeVisible({ timeout: 7_000 });
+  await expect.poll(async () => {
+    const response = await request.get(`/api/pages/${root.id}`);
+    return ((await response.json()).page as PageRecord).title;
+  }, { timeout: 7_000 }).toBe('Latest queued title');
   await page.unroute(`**/api/pages/${root.id}`);
   await page.reload();
   await expect(page.locator('.page-title')).toHaveValue('Latest queued title');
@@ -257,13 +274,14 @@ test('core local workspace flows survive reload and remain recoverable', async (
   await expect(page.locator('input[name="name"]')).toHaveValue('Research Threads');
   await page.locator('#filter-property').selectOption('status');
   await page.getByPlaceholder('Filter query').fill('No match');
-  await expect(page.getByText('No entries match your current filter.')).toBeVisible();
-  await page.getByRole('button', { name: 'Clear filter' }).click();
-  await page.getByRole('button', { name: 'View: Table' }).click();
-  await expect(page.getByRole('button', { name: 'View: Gallery' })).toBeVisible();
+  await expect(page.getByText('No entries match the current search or filter.')).toBeVisible();
+  await page.getByRole('button', { name: 'Clear search and filter' }).click();
+  const galleryTab = page.getByRole('tab', { name: /Gallery/ });
+  await galleryTab.click();
+  await expect(galleryTab).toHaveAttribute('aria-selected', 'true');
   await page.waitForTimeout(500);
   await page.reload();
-  await expect(page.getByRole('button', { name: 'View: Gallery' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: /Gallery/ })).toHaveAttribute('aria-selected', 'true');
 
   const temporaryResponse = await request.post('/api/pages', { data: { title: 'Temporary page' } });
   const temporary = (await temporaryResponse.json()).page as PageRecord;
@@ -330,6 +348,82 @@ test('renders custom slash and mention suggestion menus without BlockNote UI con
   expect(pageErrors.map((error) => error.stack ?? error.message)).toEqual([]);
 });
 
+test('rolls back a failed inline collection edit and recovers on retry', async ({ page, request }) => {
+  const pageResponse = await request.post('/api/pages', { data: { title: 'Inline edit row' } });
+  expect(pageResponse.ok()).toBeTruthy();
+  const pageRecord = (await pageResponse.json()).page as PageRecord;
+  const collectionResponse = await request.post('/api/collections', {
+    data: {
+      name: 'Inline edit collection',
+      schema: { properties: [{ id: 'notes', name: 'Notes', type: 'text' }] },
+    },
+  });
+  expect(collectionResponse.ok()).toBeTruthy();
+  const collection = (await collectionResponse.json()).collection as { id: string };
+  const addResponse = await request.post(`/api/collections/${collection.id}/items`, {
+    data: { pageId: pageRecord.id, properties: { notes: '' } },
+  });
+  expect(addResponse.ok()).toBeTruthy();
+
+  await page.goto(`/collections/${collection.id}`);
+  const field = page.getByPlaceholder('Notes');
+  await expect(field).toBeVisible();
+
+  let failNextPatch = true;
+  await page.route(`**/api/collections/${collection.id}/items`, async (route) => {
+    if (route.request().method() === 'PATCH' && failNextPatch) {
+      failNextPatch = false;
+      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Simulated failure' }) });
+      return;
+    }
+    await route.continue();
+  });
+
+  await field.fill('Draft value');
+  await field.press('Enter');
+  const cell = field.locator('xpath=ancestor::td[contains(@class, "collection-cell")]');
+  await expect(cell).toHaveClass(/is-error/);
+  await expect(field).toHaveValue('');
+  await expect(cell.getByText('Not saved')).toBeVisible();
+
+  await field.fill('Saved value');
+  await field.press('Enter');
+  await expect(cell).not.toHaveClass(/is-error/);
+  await expect.poll(async () => {
+    const response = await request.get(`/api/collections/${collection.id}`);
+    const payload = await response.json() as { items: Array<{ pageId: string; propertiesJson: string }> };
+    const item = payload.items.find((entry) => entry.pageId === pageRecord.id);
+    return item ? (JSON.parse(item.propertiesJson) as { notes?: string }).notes : undefined;
+  }).toBe('Saved value');
+  await page.unroute(`**/api/collections/${collection.id}/items`);
+});
+
+test('renders a hosted collection with the host page cover, icon, title, and focal point', async ({ page, request }) => {
+  const hostResponse = await request.post('/api/pages', { data: { title: 'Hosted library', icon: '📕' } });
+  expect(hostResponse.ok()).toBeTruthy();
+  const host = (await hostResponse.json()).page as PageRecord;
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+  const upload = await request.post('/api/assets', { multipart: { file: { name: 'host-cover.png', mimeType: 'image/png', buffer: png } } });
+  expect(upload.ok()).toBeTruthy();
+  const asset = (await upload.json()).asset as { id: string };
+  const hostPatch = await request.patch(`/api/pages/${host.id}`, {
+    data: { revision: host.revision, coverAssetId: asset.id, coverFocalX: 70, coverFocalY: 30 },
+  });
+  expect(hostPatch.ok()).toBeTruthy();
+  const collectionResponse = await request.post('/api/collections', {
+    data: { name: 'Books', hostPageId: host.id },
+  });
+  expect(collectionResponse.ok()).toBeTruthy();
+  const collection = (await collectionResponse.json()).collection as { id: string };
+
+  await page.goto(`/collections/${collection.id}`);
+  await expect(page.locator('.collection-host-cover-image')).toBeVisible();
+  await expect(page.locator('.collection-host-cover-image')).toHaveAttribute('style', /object-position:\s*70% 30%/);
+  await expect(page.locator('.collection-host-icon')).toHaveText('📕');
+  await expect(page.getByRole('main').getByRole('link', { name: 'Hosted library' })).toHaveAttribute('href', `/page/${host.id}`);
+  await expect(page.locator('input[name="name"]')).toHaveValue('Books');
+});
+
 test.describe('cover controls and reference refresh', () => {
   test.use({ viewport: { width: 1280, height: 900 } });
 
@@ -367,16 +461,39 @@ test.describe('cover controls and reference refresh', () => {
     expect(focalApply.ok()).toBeTruthy();
 
     await page.goto(`/page/${root.id}`);
+    const cover = page.locator('.cover-preview');
+    await expect(page.locator('.cover-preview-image')).toHaveAttribute('style', /object-position:\s*80% 20%/);
+    await cover.hover();
+    await page.getByRole('button', { name: 'Reposition cover' }).click();
     const xSlider = page.getByLabel('Horizontal');
     const ySlider = page.getByLabel('Vertical');
     await expect(xSlider).toHaveValue('80');
     await expect(ySlider).toHaveValue('20');
+    const coverBox = await cover.boundingBox();
+    expect(coverBox).not.toBeNull();
+    if (coverBox) {
+      await page.mouse.move(coverBox.x + coverBox.width / 2, coverBox.y + coverBox.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(coverBox.x + coverBox.width / 2 - 128, coverBox.y + coverBox.height / 2 + 40);
+      await page.mouse.up();
+    }
+    await expect(xSlider).not.toHaveValue('80');
+    await page.getByRole('button', { name: 'Cancel' }).click();
     await expect(page.locator('.cover-preview-image')).toHaveAttribute('style', /object-position:\s*80% 20%/);
+    await cover.hover();
+    await page.getByRole('button', { name: 'Reposition cover' }).click();
+    await xSlider.fill('60');
+    await ySlider.fill('40');
+    await expect(page.locator('.cover-preview-image')).toHaveAttribute('style', /object-position:\s*60% 40%/);
+    await page.getByRole('button', { name: 'Save position' }).click();
+    await expect(page.getByRole('button', { name: 'Reposition cover' })).toBeVisible();
 
     await page.reload();
-    await expect(page.getByLabel('Horizontal')).toHaveValue('80');
-    await expect(page.getByLabel('Vertical')).toHaveValue('20');
-    await expect(page.locator('.cover-preview-image')).toHaveAttribute('style', /object-position:\s*80% 20%/);
+    await expect(page.locator('.cover-preview-image')).toHaveAttribute('style', /object-position:\s*60% 40%/);
+    await page.locator('.cover-preview').hover();
+    await page.getByRole('button', { name: 'Reposition cover' }).click();
+    await expect(page.getByLabel('Horizontal')).toHaveValue('60');
+    await expect(page.getByLabel('Vertical')).toHaveValue('40');
   });
 
   test('refreshes inline and card references by stable page id when a target is renamed', async ({ page, request }) => {
@@ -439,7 +556,7 @@ test.describe('cover controls and reference refresh', () => {
 test.describe('cover controls at 390px', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test('shows media controls in stacked layout at narrow widths', async ({ page, request }, testInfo: TestInfo) => {
+  test('keeps navigation and page actions reachable at narrow widths', async ({ page, request }, testInfo: TestInfo) => {
     const createRootResponse = await request.post('/api/pages', { data: { title: 'Narrow root' } });
     expect(createRootResponse.ok()).toBeTruthy();
     const root = (await createRootResponse.json()).page as { id: string; revision: number };
@@ -453,6 +570,12 @@ test.describe('cover controls at 390px', () => {
     const actionsPanel = actionsMenu.locator('.tree-actions');
 
     await expect(page.locator('.sidebar')).toHaveAttribute('aria-hidden', 'true');
+    await page.keyboard.press('Control+k');
+    await expect(sidebar).toHaveClass(/open/);
+    await expect(sidebar.getByLabel('Search pages')).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(sidebar).toHaveAttribute('aria-hidden', 'true');
+
     await page.getByRole('button', { name: 'Open navigation' }).click();
     await expect(sidebar).toHaveClass(/open/);
 
@@ -485,22 +608,21 @@ test.describe('cover controls at 390px', () => {
     await expect(sidebar).toHaveAttribute('aria-hidden', 'true');
     await expect(page.locator('.page-title')).toBeInViewport();
     await page.screenshot({ path: testInfo.outputPath('narrow-mobile-layout.png'), fullPage: true });
-    await page.getByText('Media & page details').click();
-    const controls = page.locator('.media-controls');
-    await expect(controls).toBeVisible();
-    await page.screenshot({ path: testInfo.outputPath('narrow-mobile-menu-closed.png'), fullPage: true });
-    const groups = controls.locator('.media-control-group');
-    await expect(groups).toHaveCount(3);
 
-    const first = await groups.nth(0).boundingBox();
-    const second = await groups.nth(1).boundingBox();
-    const third = await groups.nth(2).boundingBox();
-    expect(first && second && third).toBeTruthy();
-
-    if (first && second && third) {
-      expect(second.y).toBeGreaterThan(first.y + first.height - 4);
-      expect(third.y).toBeGreaterThan(second.y + second.height - 4);
-    }
+    const pageActionsButton = page.getByRole('button', { name: 'Page actions' });
+    await pageActionsButton.click();
+    const pageActions = page.locator('.action-menu');
+    await expect(pageActions).toHaveAttribute('open');
+    await expect(page.getByRole('button', { name: 'Add cover' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Upload file' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Remove icon' })).toBeDisabled();
+    await page.screenshot({ path: testInfo.outputPath('narrow-mobile-page-actions.png'), fullPage: true });
+    await page.locator('.page-title').click();
+    await expect(pageActions).not.toHaveAttribute('open');
+    await pageActionsButton.click();
+    await page.keyboard.press('Escape');
+    await expect(pageActions).not.toHaveAttribute('open');
+    await expect(pageActionsButton).toBeFocused();
   });
 });
 
@@ -530,14 +652,14 @@ test.describe('motion reduced-motion behavior', () => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto(`/collections/${collection.id}`);
 
-    const viewSwitch = page.locator('.collection-viewbar .view-switch');
-    await expect(viewSwitch).toBeVisible();
-    const initialView = await viewSwitch.innerText();
-    if (initialView.includes('Gallery')) {
-      await viewSwitch.click();
+    const tableTab = page.getByRole('tab', { name: /Table/ });
+    const galleryTab = page.getByRole('tab', { name: /Gallery/ });
+    await expect(tableTab).toBeVisible();
+    if (await galleryTab.getAttribute('aria-selected') === 'true') {
+      await tableTab.click();
       await page.waitForTimeout(20);
-      await expect(viewSwitch).toHaveText('View: Table');
     }
+    await expect(tableTab).toHaveAttribute('aria-selected', 'true');
 
     const tableRows = page.locator('.collection-table tbody tr');
     await expect(tableRows).toHaveCount(8, { timeout: 15_000 });
@@ -551,8 +673,8 @@ test.describe('motion reduced-motion behavior', () => {
     }
 
     await page.screenshot({ path: testInfo.outputPath('reduced-motion-table-start.png'), fullPage: true });
-    await viewSwitch.click();
-    await expect(viewSwitch).toHaveText('View: Gallery');
+    await galleryTab.click();
+    await expect(galleryTab).toHaveAttribute('aria-selected', 'true');
     await page.waitForTimeout(120);
     await page.screenshot({ path: testInfo.outputPath('reduced-motion-gallery-view.png'), fullPage: true });
     const galleryCards = page.locator('.collection-gallery-item');

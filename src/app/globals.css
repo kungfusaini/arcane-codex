@@ -1,20 +1,21 @@
 :root {
-  --color-neutral: #f6f1e7;
-  --color-ink: #24211c;
-  --color-muted: #625d52;
-  --color-border: #d8d0c1;
-  --color-accent: #315d4a;
-  --color-accent-on: #fffaf0;
-  --color-shadow: rgba(36, 33, 28, 0.16);
-  --color-card: #fffaf0;
-  --color-page: #eee8dc;
-  --color-page-muted: #e5ded1;
-  --color-success: #24543d;
-  --color-danger: #843b2c;
-  --color-danger-muted: #f1dfd8;
+  --color-neutral: #191919;
+  --color-ink: #f1f1ef;
+  --color-muted: #d2d2cf;
+  --color-border: #353535;
+  --color-accent: #1f78d1;
+  --color-accent-on: #ffffff;
+  --color-shadow: rgba(0, 0, 0, 0.34);
+  --color-card: #252525;
+  --color-page: #202020;
+  --color-page-muted: #2c2c2c;
+  --color-success: #4dab9a;
+  --color-warning: #dca65c;
+  --color-danger: #eb5757;
+  --color-danger-muted: #3a2426;
 
-  --font-base: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-display: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+  --font-base: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: var(--font-base);
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   --space-0: 0px;
@@ -31,10 +32,10 @@
   --space-16: 64px;
   --space-20: 80px;
 
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 8px;
 
   --font-size-100: 12px;
   --font-size-200: 14px;
@@ -45,40 +46,41 @@
   --font-size-700: 32px;
   --font-size-800: 48px;
 
+  --elevation-none: none;
   --elevation-sm: 0 1px 2px var(--color-shadow);
   --elevation-md: 0 8px 24px var(--color-shadow);
   --elevation-lg: 0 16px 40px var(--color-shadow);
   --elevation-xl: 0 24px 64px var(--color-shadow);
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
-  --motion-fast: 120ms;
-  --motion-base: 180ms;
-  --motion-slow: 230ms;
-  --motion-enter-title-delay: 80ms;
-  --motion-enter-editor-delay: 120ms;
-  --motion-stagger-step: 45ms;
-  --motion-stagger-max: 6;
-  --motion-small: var(--space-1);
-  --motion-medium: var(--space-2);
-  --motion-large: var(--space-3);
-  --route-translate: 6px;
-  --rail-width: 256px;
+  --motion-fast: 100ms;
+  --motion-base: 150ms;
+  --motion-slow: 200ms;
+  --motion-enter-title-delay: 0ms;
+  --motion-enter-editor-delay: 0ms;
+  --motion-stagger-step: 0ms;
+  --motion-stagger-max: 0;
+  --motion-small: 2px;
+  --motion-medium: var(--space-1);
+  --motion-large: var(--space-2);
+  --route-translate: 0px;
+  --rail-width: 264px;
   --reading-width: 768px;
 }
 
 * { box-sizing: border-box; }
-html { background: var(--color-card); }
+html { background: var(--color-neutral); color-scheme: dark; }
 body {
   margin: var(--space-0);
   font-family: var(--font-base);
-  background: var(--color-card);
+  background: var(--color-neutral);
   color: var(--color-ink);
   font-size: var(--font-size-300);
-  line-height: 1.55;
+  line-height: 1.5;
 }
 button, input, select, textarea { font: inherit; }
 h1, h2, h3, h4, h5, p { margin: var(--space-0); }
-h1, h2 { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.02em; line-height: 1.08; }
+h1, h2 { font-family: var(--font-base); font-weight: 700; letter-spacing: -0.03em; line-height: 1.08; }
 h3, h4, h5 { line-height: 1.25; }
 ul { margin-block: var(--space-0); }
 
@@ -92,8 +94,8 @@ summary {
   transition-timing-function: var(--ease-out);
 }
 button {
-  min-height: var(--space-10);
-  padding: var(--space-2) var(--space-3);
+  min-height: var(--space-8);
+  padding: var(--space-1) var(--space-2);
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -123,12 +125,12 @@ textarea:disabled {
 input,
 textarea,
 select {
-  min-height: var(--space-10);
+  min-height: var(--space-8);
   width: 100%;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  background: var(--color-card);
+  background: var(--color-page-muted);
   color: var(--color-ink);
 }
 select { appearance: none; padding-inline-end: var(--space-8); }

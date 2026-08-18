@@ -10,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type PointerEvent as ReactPointerEvent,
   type ReactElement,
 } from 'react';
 import { BlockNoteSchema, PartialBlock, defaultBlockSpecs } from '@blocknote/core';
@@ -28,6 +29,7 @@ import {
   insertOrUpdateBlockForSlashMenu,
 } from '@blocknote/core/extensions';
 import { getBreadcrumbs } from '@/lib/pageTree';
+import { useDismissibleDetails } from '@/components/useDismissibleDetails';
 
 import './page-editor.css';
 
@@ -208,6 +210,8 @@ function ArcaneSuggestionMenu<T extends DefaultReactSuggestionItem>({
 }
 
 export function PageEditor({ pageId }: { pageId: string }) {
+  useDismissibleDetails('.action-menu');
+
   const [page, setPage] = useState<PageRecord | null>(null);
   const [backlinks, setBacklinks] = useState<PageRecord[]>([]);
   const [title, setTitle] = useState('');
@@ -220,6 +224,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
   const [uploadTasks, setUploadTasks] = useState<UploadTask[]>([]);
   const [conflictPage, setConflictPage] = useState<PageRecord | null>(null);
   const [recoveryDraft, setRecoveryDraft] = useState<RecoveryDraft | null>(null);
+  const [coverDraft, setCoverDraft] = useState<{ x: number; y: number } | null>(null);
 
   const referencedPages = useMemo(() => {
     const map = new Map<string, ReferencedPage>();
@@ -318,16 +323,19 @@ export function PageEditor({ pageId }: { pageId: string }) {
   const titleRef = useRef('');
   const bodyUploadRef = useRef<HTMLInputElement>(null);
   const coverUploadRef = useRef<HTMLInputElement>(null);
+  const coverDragRef = useRef<{ pointerId: number; clientX: number; clientY: number; x: number; y: number } | null>(null);
 
   const draftKey = `arcane-codex:draft:${pageId}`;
   const isDeleted = Boolean(page?.deletedAt);
 
-  const coverPositionPercent = page?.coverAssetId
+  const coverPositionPercent = useMemo(() => page?.coverAssetId
     ? {
         x: Number.isFinite(page.coverFocalX) ? Math.round(page.coverFocalX / COVER_FOCAL_STEP) * COVER_FOCAL_STEP : 50,
         y: Number.isFinite(page.coverFocalY) ? Math.round(page.coverFocalY / COVER_FOCAL_STEP) * COVER_FOCAL_STEP : 50,
       }
-    : null;
+    : null, [page?.coverAssetId, page?.coverFocalX, page?.coverFocalY]);
+
+  const displayedCoverPosition = coverDraft ?? coverPositionPercent;
 
   const clampCoverFocal = useCallback((value: number) => {
     if (!Number.isFinite(value)) {
@@ -600,7 +608,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
 
   const updateMetadata = useCallback(async (updates: { icon?: string | null; coverAssetId?: string | null; coverFocalX?: number; coverFocalY?: number }) => {
     if (!page || page.deletedAt) {
-      return;
+      return false;
     }
 
     if (hasPendingContent.current) {
@@ -610,7 +618,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
       await savePage();
       if (hasPendingContent.current) {
         setStatusMessage('Resolve the editor draft before changing page media.');
-        return;
+        return false;
       }
     }
 
@@ -627,12 +635,12 @@ export function PageEditor({ pageId }: { pageId: string }) {
       setConflictPage(payload.current ?? null);
       setStatus('conflict');
       setStatusMessage('Page details changed elsewhere. Your editor draft is preserved.');
-      return;
+      return false;
     }
     if (!response.ok || !payload.page) {
       setStatus('error');
       setStatusMessage(payload.error || 'Page details could not be saved');
-      return;
+      return false;
     }
 
     pendingRevision.current = payload.page.revision;
@@ -640,19 +648,70 @@ export function PageEditor({ pageId }: { pageId: string }) {
     window.dispatchEvent(new Event('arcane-pages-changed'));
     setStatus('saved');
     setStatusMessage('Page details saved');
+    return true;
   }, [page, pageId, savePage]);
 
   const updateCoverFocal = useCallback((axis: 'x' | 'y', value: number) => {
-    if (!page || !page.coverAssetId) {
+    setCoverDraft((current) => {
+      const base = current ?? coverPositionPercent;
+      if (!base) {
+        return current;
+      }
+      return axis === 'x'
+        ? { ...base, x: clampCoverFocal(value) }
+        : { ...base, y: clampCoverFocal(value) };
+    });
+  }, [clampCoverFocal, coverPositionPercent]);
+
+  const beginCoverReposition = useCallback(() => {
+    if (coverPositionPercent) {
+      setCoverDraft(coverPositionPercent);
+    }
+  }, [coverPositionPercent]);
+
+  const onCoverPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!coverDraft || (event.target as HTMLElement).closest('.cover-reposition-toolbar')) {
       return;
     }
-    const nextX = axis === 'x' ? clampCoverFocal(value) : page.coverFocalX;
-    const nextY = axis === 'y' ? clampCoverFocal(value) : page.coverFocalY;
-    void updateMetadata({
-      coverFocalX: nextX,
-      coverFocalY: nextY,
-    });
-  }, [clampCoverFocal, page, updateMetadata]);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    coverDragRef.current = {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      x: coverDraft.x,
+      y: coverDraft.y,
+    };
+  }, [coverDraft]);
+
+  const onCoverPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = coverDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const nextX = drag.x - ((event.clientX - drag.clientX) / Math.max(bounds.width, 1)) * 100;
+    const nextY = drag.y - ((event.clientY - drag.clientY) / Math.max(bounds.height, 1)) * 100;
+    setCoverDraft({ x: clampCoverFocal(nextX), y: clampCoverFocal(nextY) });
+  }, [clampCoverFocal]);
+
+  const finishCoverPointer = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (coverDragRef.current?.pointerId === event.pointerId) {
+      coverDragRef.current = null;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    }
+  }, []);
+
+  const saveCoverPosition = useCallback(async () => {
+    if (!coverDraft) {
+      return;
+    }
+    const saved = await updateMetadata({ coverFocalX: coverDraft.x, coverFocalY: coverDraft.y });
+    if (saved) {
+      setCoverDraft(null);
+    }
+  }, [coverDraft, updateMetadata]);
 
   const insertAsset = useCallback((asset: AssetRecord, blockId?: string) => {
     const url = `/api/assets/${asset.id}`;
@@ -1122,6 +1181,11 @@ export function PageEditor({ pageId }: { pageId: string }) {
           <div className="action-menu-panel">
             <button type="button" onClick={() => editor.undo()} disabled={isDeleted}>Undo</button>
             <button type="button" onClick={() => editor.redo()} disabled={isDeleted}>Redo</button>
+            {coverAsset ? <button type="button" disabled={isDeleted} onClick={beginCoverReposition}>Reposition cover</button> : null}
+            <button type="button" disabled={isDeleted} onClick={() => coverUploadRef.current?.click()}>{coverAsset ? 'Replace cover' : 'Add cover'}</button>
+            {coverAsset ? <button type="button" disabled={isDeleted} onClick={() => void updateMetadata({ coverAssetId: null })}>Remove cover</button> : null}
+            <button type="button" disabled={isDeleted} onClick={() => bodyUploadRef.current?.click()}>Upload file</button>
+            <button type="button" disabled={isDeleted || !page.icon} onClick={() => void updateMetadata({ icon: null })}>Remove icon</button>
             <button type="button" onClick={duplicate} disabled={isDeleted}>Duplicate</button>
             <button type="button" onClick={trash} className="danger-action">{page.deletedAt ? 'Restore' : 'Move to trash'}</button>
           </div>
@@ -1151,31 +1215,38 @@ export function PageEditor({ pageId }: { pageId: string }) {
       ) : null}
 
       {coverAsset ? (
-        <div className="cover-preview">
+        <div
+          className={`cover-preview ${coverDraft ? 'is-repositioning' : ''}`}
+          onPointerDown={onCoverPointerDown}
+          onPointerMove={onCoverPointerMove}
+          onPointerUp={finishCoverPointer}
+          onPointerCancel={finishCoverPointer}
+        >
           <Image
             src={`/api/assets/${coverAsset.id}`}
             alt={coverAsset.filename}
             width={1200}
             height={320}
             className="cover-preview-image"
-            style={coverPositionPercent ? { objectPosition: `${coverPositionPercent.x}% ${coverPositionPercent.y}%` } : undefined}
+            style={displayedCoverPosition ? { objectPosition: `${displayedCoverPosition.x}% ${displayedCoverPosition.y}%` } : undefined}
+            draggable={false}
             unoptimized
           />
-          <details className="cover-menu">
-            <summary>Reposition cover</summary>
-            <div className="cover-controls" role="group" aria-label="Cover focal point">
-              <label htmlFor="cover-focal-x">Horizontal
-                <input id="cover-focal-x" type="range" min={0} max={100} step={COVER_FOCAL_STEP} value={coverPositionPercent?.x ?? 50} onChange={(event) => updateCoverFocal('x', Number(event.currentTarget.value))} disabled={isDeleted} />
+          {coverDraft ? (
+            <div className="cover-reposition-toolbar" role="group" aria-label="Reposition cover">
+              <span>Drag the image to reposition</span>
+              <label htmlFor="cover-focal-x"><span className="visually-hidden">Horizontal</span>
+                <input id="cover-focal-x" aria-label="Horizontal" type="range" min={0} max={100} step={COVER_FOCAL_STEP} value={coverDraft.x} onChange={(event) => updateCoverFocal('x', Number(event.currentTarget.value))} disabled={isDeleted} />
               </label>
-              <label htmlFor="cover-focal-y">Vertical
-                <input id="cover-focal-y" type="range" min={0} max={100} step={COVER_FOCAL_STEP} value={coverPositionPercent?.y ?? 50} onChange={(event) => updateCoverFocal('y', Number(event.currentTarget.value))} disabled={isDeleted} />
+              <label htmlFor="cover-focal-y"><span className="visually-hidden">Vertical</span>
+                <input id="cover-focal-y" aria-label="Vertical" type="range" min={0} max={100} step={COVER_FOCAL_STEP} value={coverDraft.y} onChange={(event) => updateCoverFocal('y', Number(event.currentTarget.value))} disabled={isDeleted} />
               </label>
-              <div className="toolbar">
-                <button type="button" disabled={isDeleted} onClick={() => coverUploadRef.current?.click()}>Replace cover</button>
-                <button type="button" disabled={isDeleted} onClick={() => void updateMetadata({ coverAssetId: null })}>Remove cover</button>
-              </div>
+              <button type="button" onClick={() => setCoverDraft(null)}>Cancel</button>
+              <button type="button" className="primary-btn" onClick={() => void saveCoverPosition()}>Save position</button>
             </div>
-          </details>
+          ) : (
+            <button type="button" className="cover-reposition-trigger" disabled={isDeleted} onClick={beginCoverReposition}>Reposition cover</button>
+          )}
         </div>
       ) : null}
 
@@ -1198,24 +1269,6 @@ export function PageEditor({ pageId }: { pageId: string }) {
           </div>
         </div>
 
-        <details className="page-media-disclosure">
-          <summary>Media & page details</summary>
-          <section className="media-controls" aria-label="Page media">
-            <div className="media-control-group">
-              <span className="media-control-label">Icon</span>
-              <button type="button" disabled={isDeleted || !page.icon} onClick={() => void updateMetadata({ icon: null })}>Remove icon</button>
-            </div>
-            <div className="media-control-group">
-              <span className="media-control-label">Cover</span>
-              <button type="button" disabled={isDeleted} onClick={() => coverUploadRef.current?.click()}>{coverAsset ? 'Replace cover' : 'Upload cover'}</button>
-              {coverAsset ? <button type="button" disabled={isDeleted} onClick={() => void updateMetadata({ coverAssetId: null })}>Remove cover</button> : null}
-            </div>
-            <div className="media-control-group">
-              <span className="media-control-label">Page body</span>
-              <button type="button" disabled={isDeleted} onClick={() => bodyUploadRef.current?.click()}>Upload attachment</button>
-            </div>
-          </section>
-        </details>
         <input ref={coverUploadRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" onChange={(event) => chooseUpload(event, 'cover')} disabled={isDeleted} />
         <input ref={bodyUploadRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown" multiple onChange={(event) => chooseUpload(event, 'body')} disabled={isDeleted} />
 
@@ -1232,7 +1285,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
         ) : null}
 
         <div className="editor-view">
-          <BlockNoteView editor={editor} slashMenu={false} editable={!isDeleted}>
+          <BlockNoteView editor={editor} slashMenu={false} editable={!isDeleted} theme="dark">
             <SuggestionMenuController
               triggerCharacter="/"
               getItems={getSlashMenuItems}

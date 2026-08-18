@@ -300,8 +300,9 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
   const joinedPageIds = new Set(items.map((item) => item.pageId));
   const availablePages = allPages.filter((page) => !joinedPageIds.has(page.id));
+  const hostPage = collection.hostPageId ? pageById.get(collection.hostPageId) ?? null : null;
 
-  return NextResponse.json({ collection, items: ordered, availablePages, schema: parsedSchema, views: collection.viewsJson });
+  return NextResponse.json({ collection, hostPage, items: ordered, availablePages, schema: parsedSchema, views: collection.viewsJson });
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {

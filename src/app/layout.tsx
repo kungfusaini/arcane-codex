@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { RouteMotionShell } from '@/components/RouteMotionShell';
 import './globals.css';
+import './notion-redesign.css';
 
 export const metadata: Metadata = {
   title: 'Arcane Codex',

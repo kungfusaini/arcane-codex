@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import {
   FormEvent,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -11,6 +12,7 @@ import {
   type DragEvent,
 } from 'react';
 import { buildTree, type PageTreeNode } from '@/lib/pageTree';
+import { useDismissibleDetails } from '@/components/useDismissibleDetails';
 
 type SidebarPage = {
   id: string;
@@ -111,6 +113,8 @@ export function WorkspaceSidebar({
   currentPageId?: string;
   onCreated: (page?: SidebarPage) => void;
 }) {
+  useDismissibleDetails('.tree-menu');
+
   const [pages, setPages] = useState<SidebarPage[]>([]);
   const [trashPages, setTrashPages] = useState<SidebarPage[]>([]);
   const [query, setQuery] = useState('');
@@ -126,8 +130,11 @@ export function WorkspaceSidebar({
   const [health, setHealth] = useState<WorkspaceHealth | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(false);
   const sidebarRef = useRef<HTMLElement | null>(null);
-
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const navToggleRef = useRef<HTMLButtonElement | null>(null);
+  const focusSearchOnOpenRef = useRef(false);
 
   const fetchPages = async () => {
     setLoading(true);
@@ -175,6 +182,12 @@ export function WorkspaceSidebar({
   };
 
   useEffect(() => {
+    const storedRailState = window.localStorage.getItem('arcane-sidebar-collapsed');
+    if (storedRailState === 'true') {
+      setRailCollapsed(true);
+      document.documentElement.style.setProperty('--rail-width', '0px');
+    }
+
     const refreshPageLists = () => {
       void fetchPages();
       void fetchTrashPages();
@@ -198,6 +211,12 @@ export function WorkspaceSidebar({
     };
   }, []);
 
+  const setDesktopRailCollapsed = useCallback((collapsed: boolean) => {
+    setRailCollapsed(collapsed);
+    window.localStorage.setItem('arcane-sidebar-collapsed', String(collapsed));
+    document.documentElement.style.setProperty('--rail-width', collapsed ? '0px' : '264px');
+  }, []);
+
   useEffect(() => {
     if (!drawerOpen || !isMobile) {
       return;
@@ -208,6 +227,11 @@ export function WorkspaceSidebar({
       if (!container) {
         return;
       }
+      if (focusSearchOnOpenRef.current) {
+        focusSearchOnOpenRef.current = false;
+        searchRef.current?.focus();
+        return;
+      }
       const focusTarget = container.querySelector<HTMLAnchorElement | HTMLButtonElement>('a[href], button');
       focusTarget?.focus();
     }, 120);
@@ -216,6 +240,41 @@ export function WorkspaceSidebar({
       clearTimeout(focusTimer);
     };
   }, [drawerOpen, isMobile]);
+
+  useEffect(() => {
+    const onShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) {
+        return;
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        if (isMobile && !drawerOpen) {
+          focusSearchOnOpenRef.current = true;
+          setDrawerOpen(true);
+        } else if (!isMobile && railCollapsed) {
+          setDesktopRailCollapsed(false);
+          window.requestAnimationFrame(() => searchRef.current?.focus());
+        } else {
+          searchRef.current?.focus();
+        }
+        return;
+      }
+
+      if (event.key !== 'Escape') {
+        return;
+      }
+
+      if (drawerOpen) {
+        setDrawerOpen(false);
+        navToggleRef.current?.focus();
+      } else if (document.activeElement === searchRef.current && query) {
+        setQuery('');
+      }
+    };
+
+    window.addEventListener('keydown', onShortcut);
+    return () => window.removeEventListener('keydown', onShortcut);
+  }, [drawerOpen, isMobile, query, railCollapsed, setDesktopRailCollapsed]);
 
   const childrenByParent = useMemo(() => {
     const map = new Map<string | null, SidebarPage[]>();
@@ -679,8 +738,12 @@ export function WorkspaceSidebar({
 
   return (
     <>
+      {!isMobile && railCollapsed ? (
+        <button type="button" className="sidebar-reopen" aria-label="Open sidebar" onClick={() => setDesktopRailCollapsed(false)}>›</button>
+      ) : null}
       <header className="mobile-bar">
         <button
+          ref={navToggleRef}
           type="button"
           className="nav-toggle"
           aria-label="Open navigation"
@@ -704,11 +767,12 @@ export function WorkspaceSidebar({
       <aside
         ref={sidebarRef}
         id="workspace-navigation"
-        className={`sidebar ${drawerOpen ? 'open' : ''}`}
-        aria-hidden={isMobile && !drawerOpen ? true : undefined}
+        className={`sidebar ${drawerOpen ? 'open' : ''} ${railCollapsed && !isMobile ? 'desktop-collapsed' : ''}`}
+        aria-hidden={isMobile ? !drawerOpen : railCollapsed ? true : undefined}
       >
         <div className="sidebar-brand-row">
           <Link href="/" className="sidebar-brand">Arcane Codex</Link>
+          <button type="button" className="sidebar-collapse" aria-label="Collapse sidebar" onClick={() => setDesktopRailCollapsed(true)}>‹</button>
           <button type="button" className="sidebar-close" aria-label="Close navigation" onClick={() => setDrawerOpen(false)}>×</button>
         </div>
 
@@ -732,8 +796,9 @@ export function WorkspaceSidebar({
         <div className="sidebar-section">
           <form onSubmit={onSearchSubmit} role="search">
             <input
+              ref={searchRef}
               value={query}
-              placeholder={SEARCH_PLACEHOLDER}
+              placeholder={`${SEARCH_PLACEHOLDER} · ⌘K`}
               onChange={(event) => setQuery(event.target.value)}
               aria-label="Search pages"
             />

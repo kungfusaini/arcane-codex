@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import { useDismissibleDetails } from '@/components/useDismissibleDetails';
 import {
   ChangeEvent,
   FormEvent,
@@ -42,6 +43,11 @@ type PageForSelector = {
   coverAssetId: string | null;
 };
 
+type HostPage = PageForSelector & {
+  coverFocalX: number;
+  coverFocalY: number;
+};
+
 type CollectionItem = {
   collectionId: string;
   pageId: string;
@@ -76,6 +82,7 @@ type CollectionViews = {
 
 type ResponsePayload = {
   collection: CollectionRecord;
+  hostPage: HostPage | null;
   items: CollectionItem[];
   availablePages: Array<
     PageForSelector & {
@@ -99,6 +106,16 @@ const PROPERTY_TYPES: Array<{ value: CollectionPropertyType; label: string }> = 
   { value: 'date', label: 'Date' },
   { value: 'url', label: 'URL' },
 ];
+
+const PROPERTY_ICONS: Record<CollectionPropertyType, string> = {
+  text: 'Aa',
+  number: '#',
+  select: '⌄',
+  'multi-select': '≡',
+  checkbox: '☑',
+  date: '◷',
+  url: '↗',
+};
 
 function parseSchema(value: string): CollectionSchema {
   try {
@@ -414,21 +431,31 @@ function sortItems(items: CollectionItem[], schema: CollectionSchema, sortBy: st
   return copy;
 }
 
-function renderPropertyControl(
-  property: CollectionProperty,
-  value: unknown,
-  onChange: (next: unknown) => void,
-  disabled: boolean,
-): ReactNode {
+function CollectionPropertyControl({
+  property,
+  value,
+  onCommit,
+  disabled,
+}: {
+  property: CollectionProperty;
+  value: unknown;
+  onCommit: (next: unknown) => void;
+  disabled: boolean;
+}) {
+  const persistedValue = toInputValue(property.type, value);
+  const [draft, setDraft] = useState(persistedValue);
+
+  useEffect(() => {
+    setDraft(persistedValue);
+  }, [persistedValue]);
+
   if (property.type === 'checkbox') {
     return (
       <label className="collection-row-checkbox">
         <input
           type="checkbox"
           checked={Boolean(value)}
-          onChange={(event: ChangeEvent<HTMLInputElement>) => {
-            onChange(event.target.checked);
-          }}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => onCommit(event.target.checked)}
           disabled={disabled}
         />
       </label>
@@ -438,41 +465,42 @@ function renderPropertyControl(
   if (property.type === 'select') {
     return (
       <select
+        className="collection-cell-select"
+        data-tone={property.name.toLowerCase().includes('type') ? 'warm' : 'accent'}
         value={typeof value === 'string' ? value : ''}
-        onChange={(event: ChangeEvent<HTMLSelectElement>) => {
-          onChange(event.target.value);
-        }}
+        onChange={(event: ChangeEvent<HTMLSelectElement>) => onCommit(event.target.value)}
         disabled={disabled || !property.options?.length}
       >
         <option value="">Choose…</option>
-        {(property.options ?? []).map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
+        {(property.options ?? []).map((option) => <option key={option} value={option}>{option}</option>)}
       </select>
     );
   }
 
-  if (property.type === 'date') {
-    return (
-      <input
-        type="date"
-        value={toInputValue(property.type, value)}
-        onChange={(event: ChangeEvent<HTMLInputElement>) => {
-          onChange(parseInputValue(property.type, event.target.value));
-        }}
-        disabled={disabled}
-      />
-    );
-  }
+  const commitDraft = (raw: string) => {
+    const next = parseInputValue(property.type, raw);
+    if (JSON.stringify(next) !== JSON.stringify(value)) {
+      onCommit(next);
+    }
+  };
 
   return (
     <input
-      type={property.type === 'number' ? 'number' : property.type === 'url' ? 'url' : 'text'}
-      value={toInputValue(property.type, value)}
-      onChange={(event: ChangeEvent<HTMLInputElement>) => {
-        onChange(parseInputValue(property.type, event.target.value));
+      className={property.type === 'multi-select' ? 'collection-cell-tags' : undefined}
+      type={property.type === 'date' ? 'date' : property.type === 'number' ? 'number' : property.type === 'url' ? 'url' : 'text'}
+      value={draft}
+      onChange={(event: ChangeEvent<HTMLInputElement>) => setDraft(event.target.value)}
+      onBlur={(event) => commitDraft(event.currentTarget.value)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          event.currentTarget.blur();
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          event.currentTarget.value = persistedValue;
+          setDraft(persistedValue);
+          event.currentTarget.blur();
+        }
       }}
       placeholder={property.type === 'number' ? '0' : property.name}
       disabled={disabled}
@@ -498,14 +526,21 @@ function renderGalleryProperty(property: CollectionProperty, value: unknown): Re
 }
 
 export function CollectionEditor({ collectionId }: { collectionId: string }) {
+  useDismissibleDetails('.add-entry-menu, .row-menu');
+
   const [collection, setCollection] = useState<CollectionRecord | null>(null);
   const [schema, setSchema] = useState<CollectionSchema>({ properties: [] });
   const [views, setViews] = useState<CollectionViews>({ mode: 'table' });
   const [items, setItems] = useState<CollectionItem[]>([]);
   const [availablePages, setAvailablePages] = useState<PageForSelector[]>([]);
+  const [hostPage, setHostPage] = useState<HostPage | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [status, setStatus] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [cellStates, setCellStates] = useState<Record<string, 'saving' | 'error'>>({});
   const viewSaveTimerRef = useRef<number | null>(null);
+  const cellRequestVersions = useRef<Record<string, number>>({});
+  const reorderRequestVersion = useRef(0);
 
   const [newPropertyName, setNewPropertyName] = useState('');
   const [newPropertyType, setNewPropertyType] = useState<CollectionPropertyType>('text');
@@ -537,6 +572,7 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
       setViews(parsedViews);
       setItems(payload.items);
       setAvailablePages(payload.availablePages);
+      setHostPage(payload.hostPage);
       setSortBy(parsedViews.sort?.propertyId ?? 'sortKey');
       setSortDirection(parsedViews.sort?.direction ?? 'asc');
       setFilterBy(parsedViews.filter?.propertyId ?? '');
@@ -701,16 +737,22 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
   const persistItemOrder = useCallback(
     async (rows: CollectionItem[]) => {
       if (!collection) {
-        return;
+        return false;
       }
       const moves = rows.map((item, index) => ({ pageId: item.pageId, sortKey: index + 1 }));
-      const response = await fetch(`/api/collections/${collection.id}/items`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'reorder', moves }),
-      });
-      if (!response.ok) {
+      try {
+        const response = await fetch(`/api/collections/${collection.id}/items`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'reorder', moves }),
+        });
+        if (!response.ok) {
+          throw new Error('Reorder failed');
+        }
+        return true;
+      } catch {
         setStatusTemporarily('Could not reorder items');
+        return false;
       }
     },
     [collection, setStatusTemporarily],
@@ -736,8 +778,13 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
       sortKey: index + 1,
     }));
 
+    const requestVersion = reorderRequestVersion.current + 1;
+    reorderRequestVersion.current = requestVersion;
     setItems(next);
-    await persistItemOrder(next);
+    const saved = await persistItemOrder(next);
+    if (!saved && reorderRequestVersion.current === requestVersion) {
+      setItems(sorted);
+    }
   };
 
   const deleteCollection = async () => {
@@ -873,37 +920,75 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
     }
 
     const current = items.find((item) => item.pageId === pageId);
-    const parsed = parseProperties(current?.propertiesJson ?? '{}');
+    const previousProperties = current?.propertiesJson ?? '{}';
+    const parsed = parseProperties(previousProperties);
+    const hadPreviousValue = Object.hasOwn(parsed, propertyId);
+    const previousValue = parsed[propertyId];
     parsed[propertyId] = nextValue;
     const nextProperties = stringifyProperties(parsed);
+    const cellKey = `${pageId}:${propertyId}`;
+    const requestVersion = (cellRequestVersions.current[cellKey] ?? 0) + 1;
+    cellRequestVersions.current[cellKey] = requestVersion;
 
-    const response = await fetch(`/api/collections/${collection.id}/items`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ pageId, properties: { [propertyId]: nextValue } }),
-    });
+    setCellStates((previous) => ({ ...previous, [cellKey]: 'saving' }));
+    setItems((previous) => previous.map((item) => item.pageId === pageId ? { ...item, propertiesJson: nextProperties } : item));
 
-    if (!response.ok) {
+    try {
+      const response = await fetch(`/api/collections/${collection.id}/items`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pageId, properties: { [propertyId]: nextValue } }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Property update failed');
+      }
+      if (cellRequestVersions.current[cellKey] === requestVersion) {
+        setCellStates((previous) => {
+          const next = { ...previous };
+          delete next[cellKey];
+          return next;
+        });
+      }
+    } catch {
+      if (cellRequestVersions.current[cellKey] !== requestVersion) {
+        return;
+      }
+      setItems((previous) => previous.map((item) => {
+        if (item.pageId !== pageId) {
+          return item;
+        }
+        const currentProperties = parseProperties(item.propertiesJson);
+        if (JSON.stringify(currentProperties[propertyId]) !== JSON.stringify(nextValue)) {
+          return item;
+        }
+        if (hadPreviousValue) {
+          currentProperties[propertyId] = previousValue;
+        } else {
+          delete currentProperties[propertyId];
+        }
+        return { ...item, propertiesJson: stringifyProperties(currentProperties) };
+      }));
+      setCellStates((previous) => ({ ...previous, [cellKey]: 'error' }));
       setStatusTemporarily('Could not update property');
-      setItems((previous) => [...previous]);
-      await loadCollection();
-      return;
     }
-
-    setItems((previous) =>
-      previous.map((item) =>
-        item.pageId === pageId
-          ? {
-              ...item,
-              propertiesJson: nextProperties,
-            }
-          : item,
-      ),
-    );
   };
 
   const filtered = useMemo(() => filterItems(items, filterBy, filterQuery), [items, filterBy, filterQuery]);
-  const ordered = useMemo(() => sortItems(filtered, schema, sortBy, sortDirection), [filtered, schema, sortBy, sortDirection]);
+  const searched = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) {
+      return filtered;
+    }
+    return filtered.filter((item) => {
+      const values = parseProperties(item.propertiesJson);
+      return item.page.title.toLowerCase().includes(query) || Object.values(values).some((value) => {
+        const text = Array.isArray(value) ? value.join(' ') : String(value ?? '');
+        return text.toLowerCase().includes(query);
+      });
+    });
+  }, [filtered, searchQuery]);
+  const ordered = useMemo(() => sortItems(searched, schema, sortBy, sortDirection), [searched, schema, sortBy, sortDirection]);
 
   if (!collection) {
     return isLoading ? (
@@ -917,54 +1002,80 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
   }
 
   return (
-    <div className="collection-workspace">
-      <header className="collection-header">
-        <form onSubmit={setCollectionName} className="collection-name-form">
-          <input name="name" defaultValue={collection.name} aria-label="Collection name" placeholder="Collection name" />
-          <button type="submit" className="quiet-btn">Save name</button>
-        </form>
-        <span className="collection-count">{items.length} {items.length === 1 ? 'entry' : 'entries'}</span>
-      </header>
+    <div className={`collection-workspace ${hostPage ? 'has-host-page' : ''}`}>
+      {hostPage?.coverAssetId ? (
+        <div className="collection-host-cover">
+          <Image
+            src={`/api/assets/${hostPage.coverAssetId}`}
+            alt=""
+            width={1600}
+            height={320}
+            className="collection-host-cover-image"
+            style={{ objectPosition: `${hostPage.coverFocalX}% ${hostPage.coverFocalY}%` }}
+            unoptimized
+          />
+        </div>
+      ) : null}
 
-      <div className="collection-viewbar" aria-label="Collection view controls">
-        <button type="button" className="view-switch" onClick={() => {
-          const next: ViewMode = views.mode === 'table' ? 'gallery' : 'table';
-          setViews((current) => ({ ...current, mode: next }));
-        }}>View: {views.mode === 'table' ? 'Table' : 'Gallery'}</button>
-        <label className="compact-field" htmlFor="view-sort-by"><span>Sort</span>
-          <select id="view-sort-by" value={sortBy} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSortBy(event.target.value)}>
-            <option value="sortKey">Default order</option>
-            <option value="title">Page title</option>
-            {schema.properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
-          </select>
-        </label>
-        <select className="compact-select" aria-label="Sort direction" value={sortDirection} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSortDirection(event.target.value as SortDirection)}>
-          <option value="asc">Ascending</option><option value="desc">Descending</option>
-        </select>
-        <label className="compact-field" htmlFor="filter-property"><span>Filter</span>
-          <select id="filter-property" value={filterBy} onChange={(event: ChangeEvent<HTMLSelectElement>) => setFilterBy(event.target.value)}>
-            <option value="">No filter</option>
-            {schema.properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
-          </select>
-        </label>
-        {filterBy ? <input className="filter-query" placeholder="Filter query" value={filterQuery} onChange={(event: ChangeEvent<HTMLInputElement>) => setFilterQuery(event.target.value)} /> : null}
-        <details className="add-entry-menu">
-          <summary>New entry</summary>
-          <div className="add-entry-panel">
-            <form onSubmit={addNewEntry} className="entry-add-form">
-              <label>New page<input value={newPageTitle} onChange={(event: ChangeEvent<HTMLInputElement>) => setNewPageTitle(event.target.value)} placeholder="Page title" /></label>
-              <button type="submit" className="primary-btn">Create entry</button>
-            </form>
-            <form onSubmit={addExistingEntry} className="entry-add-form">
-              <label>Existing page<select value={existingPageId} onChange={(event: ChangeEvent<HTMLSelectElement>) => setExistingPageId(event.target.value)}>
-                <option value="">Choose a page…</option>
-                {availablePages.slice().sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })).map((page) => <option key={page.id} value={page.id}>{page.title}</option>)}
-              </select></label>
-              <button type="submit" disabled={!existingPageId}>Add page</button>
-            </form>
+      <div className="collection-content">
+        {hostPage ? (
+          <header className={`collection-host-identity ${hostPage.coverAssetId ? 'has-cover' : ''}`}>
+            <span className="collection-host-icon" aria-hidden="true">{hostPage.icon ?? '📄'}</span>
+            <Link href={`/page/${hostPage.id}`} className="text-link collection-host-title">{hostPage.title || 'Untitled'}</Link>
+          </header>
+        ) : null}
+
+        <header className="collection-header">
+          <form onSubmit={setCollectionName} className="collection-name-form">
+            <input name="name" defaultValue={collection.name} aria-label="Collection name" placeholder="Collection name" />
+            <button type="submit" className="quiet-btn">Save name</button>
+          </form>
+          <span className="collection-count">{items.length} {items.length === 1 ? 'entry' : 'entries'}</span>
+        </header>
+
+        <div className="collection-viewbar" aria-label="Collection view controls">
+          <div className="collection-view-tabs" role="tablist" aria-label="Collection views">
+            <button type="button" role="tab" aria-selected={views.mode === 'table'} onClick={() => setViews((current) => ({ ...current, mode: 'table' }))}>▦ Table</button>
+            <button type="button" role="tab" aria-selected={views.mode === 'gallery'} onClick={() => setViews((current) => ({ ...current, mode: 'gallery' }))}>▤ Gallery</button>
           </div>
-        </details>
-      </div>
+          <label className="collection-search">
+            <span className="visually-hidden">Search collection</span>
+            <input aria-label="Search collection" placeholder="Search" value={searchQuery} onChange={(event: ChangeEvent<HTMLInputElement>) => setSearchQuery(event.target.value)} />
+          </label>
+          <label className="compact-field" htmlFor="view-sort-by"><span>Sort</span>
+            <select id="view-sort-by" value={sortBy} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSortBy(event.target.value)}>
+              <option value="sortKey">Default order</option>
+              <option value="title">Page title</option>
+              {schema.properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
+            </select>
+          </label>
+          <select className="compact-select" aria-label="Sort direction" value={sortDirection} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSortDirection(event.target.value as SortDirection)}>
+            <option value="asc">Ascending</option><option value="desc">Descending</option>
+          </select>
+          <label className="compact-field" htmlFor="filter-property"><span>Filter</span>
+            <select id="filter-property" value={filterBy} onChange={(event: ChangeEvent<HTMLSelectElement>) => setFilterBy(event.target.value)}>
+              <option value="">No filter</option>
+              {schema.properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
+            </select>
+          </label>
+          {filterBy ? <input className="filter-query" aria-label="Filter query" placeholder="Filter query" value={filterQuery} onChange={(event: ChangeEvent<HTMLInputElement>) => setFilterQuery(event.target.value)} /> : null}
+          <details className="add-entry-menu">
+            <summary>New</summary>
+            <div className="add-entry-panel">
+              <form onSubmit={addNewEntry} className="entry-add-form">
+                <label>New page<input value={newPageTitle} onChange={(event: ChangeEvent<HTMLInputElement>) => setNewPageTitle(event.target.value)} placeholder="Page title" /></label>
+                <button type="submit" className="primary-btn">Create entry</button>
+              </form>
+              <form onSubmit={addExistingEntry} className="entry-add-form">
+                <label>Existing page<select value={existingPageId} onChange={(event: ChangeEvent<HTMLSelectElement>) => setExistingPageId(event.target.value)}>
+                  <option value="">Choose a page…</option>
+                  {availablePages.slice().sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })).map((page) => <option key={page.id} value={page.id}>{page.title}</option>)}
+                </select></label>
+                <button type="submit" disabled={!existingPageId}>Add page</button>
+              </form>
+            </div>
+          </details>
+        </div>
 
       {status ? <p className="status-note" role="status">{status}</p> : null}
 
@@ -974,7 +1085,7 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
         ) : items.length === 0 ? (
           <div className="collection-state"><h2>No entries yet</h2><p className="help">Create a page entry to begin this collection.</p></div>
         ) : ordered.length === 0 ? (
-          <div className="no-results-state collection-state"><p className="help">No entries match your current filter.</p><button type="button" onClick={() => { setFilterBy(''); setFilterQuery(''); }}>Clear filter</button></div>
+          <div className="no-results-state collection-state"><p className="help">No entries match the current search or filter.</p><button type="button" onClick={() => { setSearchQuery(''); setFilterBy(''); setFilterQuery(''); }}>Clear search and filter</button></div>
         ) : views.mode === 'gallery' ? (
           <section className="collection-gallery">
             {ordered.map((item, itemIndex) => {
@@ -1004,7 +1115,7 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
         ) : (
           <section className="collection-table-wrap">
             <table className="collection-table">
-              <thead><tr><th>Page</th>{schema.properties.map((property) => <th key={property.id}>{property.name}</th>)}<th><span className="visually-hidden">Actions</span></th></tr></thead>
+              <thead><tr><th><span className="property-icon" aria-hidden="true">Aa</span> Page</th>{schema.properties.map((property) => <th key={property.id}><span className="property-icon" aria-hidden="true">{PROPERTY_ICONS[property.type]}</span> {property.name}</th>)}<th><span className="visually-hidden">Actions</span></th></tr></thead>
               <tbody>{ordered.map((item, itemIndex) => {
                 const properties = parseProperties(item.propertiesJson);
                 return <tr
@@ -1013,7 +1124,14 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
                   style={{ '--motion-stagger-index': `${Math.min(itemIndex, MAX_COLLECTION_STAGGER_INDEX)}` } as CSSProperties}
                 >
                   <td><Link href={`/page/${item.pageId}`} className="text-link collection-page-title">{item.page.icon ? <span>{item.page.icon} </span> : null}{item.page.title || 'Untitled'}</Link></td>
-                  {schema.properties.map((property) => <td key={property.id}>{renderPropertyControl(property, properties[property.id], (nextValue) => void updateEntryProperty(item.pageId, property.id, nextValue), false)}</td>)}
+                  {schema.properties.map((property) => {
+                    const cellKey = `${item.pageId}:${property.id}`;
+                    const cellState = cellStates[cellKey];
+                    return <td key={property.id} className={`collection-cell ${cellState ? `is-${cellState}` : ''}`}>
+                      <CollectionPropertyControl property={property} value={properties[property.id]} onCommit={(nextValue) => void updateEntryProperty(item.pageId, property.id, nextValue)} disabled={false} />
+                      {cellState ? <span className="cell-state" role={cellState === 'error' ? 'alert' : 'status'}>{cellState === 'saving' ? 'Saving' : 'Not saved'}</span> : null}
+                    </td>;
+                  })}
                   <td><details className="row-menu"><summary aria-label={`Actions for ${item.page.title}`}>•••</summary><div><button type="button" onClick={() => void reorderEntry(item.pageId, 'up')}>Move up</button><button type="button" onClick={() => void reorderEntry(item.pageId, 'down')}>Move down</button><button type="button" className="danger-action" onClick={() => void removeEntry(item.pageId)}>Remove</button></div></details></td>
                 </tr>;
               })}</tbody>
@@ -1045,6 +1163,7 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
           <section className="danger-zone"><h2>Collection</h2><button type="button" onClick={deleteCollection} className="danger-btn">Delete collection</button></section>
         </div>
       </details>
+      </div>
     </div>
   );
 }

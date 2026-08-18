@@ -137,3 +137,42 @@
   max-width: 100% !important;
   height: auto;
 }
+
+.editor-view .bn-container {
+  --bn-colors-editor-text: var(--color-ink);
+  --bn-colors-editor-background: transparent;
+  --bn-colors-menu-text: var(--color-ink);
+  --bn-colors-menu-background: var(--color-card);
+  --bn-colors-tooltip-text: var(--color-ink);
+  --bn-colors-tooltip-background: var(--color-card);
+  --bn-colors-hovered-text: var(--color-ink);
+  --bn-colors-hovered-background: var(--color-page-muted);
+  --bn-colors-selected-text: var(--color-ink);
+  --bn-colors-selected-background: var(--color-page-muted);
+  --bn-colors-disabled-text: var(--color-muted);
+  --bn-colors-disabled-background: var(--color-page);
+  --bn-colors-shadow: var(--color-shadow);
+  --bn-colors-border: var(--color-border);
+  --bn-colors-side-menu: var(--color-muted);
+  color: var(--color-ink);
+}
+
+.editor-view .bn-editor {
+  padding-inline: var(--space-0) !important;
+  background: transparent !important;
+  color: var(--color-ink);
+}
+
+.editor-view .bn-block-outer,
+.editor-view .bn-block-content,
+.editor-view [contenteditable='true'] {
+  color: var(--color-ink);
+}
+
+.editor-view [data-placeholder]::before {
+  color: var(--color-muted) !important;
+}
+
+.editor-view ::selection {
+  background: color-mix(in oklab, var(--color-accent) 38%, transparent);
+}
