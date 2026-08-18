@@ -113,6 +113,8 @@ export function WorkspaceSidebar({
   const [editingTitle, setEditingTitle] = useState('');
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [health, setHealth] = useState<WorkspaceHealth | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   const fetchPages = async () => {
     setLoading(true);
@@ -164,10 +166,17 @@ export function WorkspaceSidebar({
       void fetchPages();
       void fetchTrashPages();
     };
+    const mobileQuery = window.matchMedia('(max-width: 64rem)');
+    const updateViewport = () => setIsMobile(mobileQuery.matches);
+    updateViewport();
     refreshPageLists();
     void fetchHealth();
+    mobileQuery.addEventListener('change', updateViewport);
     window.addEventListener('arcane-pages-changed', refreshPageLists);
-    return () => window.removeEventListener('arcane-pages-changed', refreshPageLists);
+    return () => {
+      mobileQuery.removeEventListener('change', updateViewport);
+      window.removeEventListener('arcane-pages-changed', refreshPageLists);
+    };
   }, []);
 
   const childrenByParent = useMemo(() => {
@@ -540,50 +549,53 @@ export function WorkspaceSidebar({
                 )}
               </div>
 
-              <div className="tree-actions">
-                <button type="button" className="mini-btn" onClick={() => {
-                  setEditingId(item.id);
-                  setEditingTitle(fullPage.title || 'Untitled');
-                }}>
-                  Rename
-                </button>
-                <button type="button" className="mini-btn" onClick={() => moveWithinSibling(item.id, 'up')}>
-                  Up
-                </button>
-                <button type="button" className="mini-btn" onClick={() => moveWithinSibling(item.id, 'down')}>
-                  Down
-                </button>
-                <button type="button" className="mini-btn" onClick={() => duplicatePage(item.id)}>
-                  Duplicate
-                </button>
-                <label className="nest-select-label" htmlFor={`move-${item.id}`}>
-                  Parent:
-                  <select
-                    id={`move-${item.id}`}
-                    className="tree-select"
-                    value={moveTarget}
-                    onChange={(event: ChangeEvent<HTMLSelectElement>) => {
-                      const nextParent = event.target.value || null;
-                      if (nextParent === item.parentId) {
-                        return;
-                      }
-                      void movePage(item.id, nextParent).catch((error) => {
-                        setStatus((error as Error).message);
-                      });
-                    }}
-                  >
-                    <option value="">Root</option>
-                    {potentialParents
-                      .slice()
-                      .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }))
-                      .map((option) => (
-                        <option key={option.id} value={option.id}>
-                          {option.title}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-              </div>
+              <details className="tree-menu">
+                <summary aria-label={`Actions for ${item.title}`}>•••</summary>
+                <div className="tree-actions">
+                  <button type="button" className="mini-btn" onClick={() => {
+                    setEditingId(item.id);
+                    setEditingTitle(fullPage.title || 'Untitled');
+                  }}>
+                    Rename
+                  </button>
+                  <button type="button" className="mini-btn" onClick={() => moveWithinSibling(item.id, 'up')}>
+                    Move up
+                  </button>
+                  <button type="button" className="mini-btn" onClick={() => moveWithinSibling(item.id, 'down')}>
+                    Move down
+                  </button>
+                  <button type="button" className="mini-btn" onClick={() => duplicatePage(item.id)}>
+                    Duplicate
+                  </button>
+                  <label className="nest-select-label" htmlFor={`move-${item.id}`}>
+                    Parent
+                    <select
+                      id={`move-${item.id}`}
+                      className="tree-select"
+                      value={moveTarget}
+                      onChange={(event: ChangeEvent<HTMLSelectElement>) => {
+                        const nextParent = event.target.value || null;
+                        if (nextParent === item.parentId) {
+                          return;
+                        }
+                        void movePage(item.id, nextParent).catch((error) => {
+                          setStatus((error as Error).message);
+                        });
+                      }}
+                    >
+                      <option value="">Root</option>
+                      {potentialParents
+                        .slice()
+                        .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }))
+                        .map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.title}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                </div>
+              </details>
             </div>
 
             {!isCollapsed && item.children.length > 0 ? (
@@ -598,82 +610,104 @@ export function WorkspaceSidebar({
   };
 
   return (
-    <aside className="sidebar">
-      <h1>Arcane Codex</h1>
-
-      <nav className="sidebar-nav" aria-label="Collections and content">
-        <Link href="/">Workspace</Link>
-        <Link href="/collections">Collections</Link>
-        <form action="/api/export" method="post">
-          <button type="submit">Export ZIP</button>
-        </form>
-      </nav>
-
-      {health && health.status !== 'ok' ? (
-        <section className={`health-notice ${health.status}`} role={health.status === 'error' ? 'alert' : 'status'}>
-          <strong>{health.status === 'error' ? 'Workspace needs recovery' : 'Workspace check found issues'}</strong>
-          <span>{health.issues[0]}</span>
-          {health.recovery[0] ? <span>{health.recovery[0]}</span> : null}
-          <button type="button" onClick={() => void fetchHealth()}>Run check again</button>
-        </section>
+    <>
+      <header className="mobile-bar">
+        <button
+          type="button"
+          className="nav-toggle"
+          aria-label="Open navigation"
+          aria-expanded={drawerOpen}
+          aria-controls="workspace-navigation"
+          onClick={() => setDrawerOpen(true)}
+        >
+          <span aria-hidden="true">☰</span>
+        </button>
+        <Link href="/" className="mobile-brand">Arcane Codex</Link>
+        <button type="button" className="mobile-new" onClick={() => onCreatePage(null)}>New</button>
+      </header>
+      {drawerOpen ? (
+        <button
+          type="button"
+          className="sidebar-scrim"
+          aria-label="Close navigation"
+          onClick={() => setDrawerOpen(false)}
+        />
       ) : null}
-
-      <div className="sidebar-section">
-        <form onSubmit={onSearchSubmit} className="grid" role="search">
-          <input
-            value={query}
-            placeholder={SEARCH_PLACEHOLDER}
-            onChange={(event) => setQuery(event.target.value)}
-            aria-label="Search pages"
-          />
-        </form>
-        <div className="toolbar">
-          <button type="button" onClick={() => onCreatePage(null)}>
-            New page
-          </button>
-          <button type="button" disabled={!currentPageId} onClick={() => onCreatePage(currentPageId ?? null)}>
-            New child page
-          </button>
+      <aside id="workspace-navigation" className={`sidebar ${drawerOpen ? 'open' : ''}`} aria-hidden={isMobile && !drawerOpen ? true : undefined}>
+        <div className="sidebar-brand-row">
+          <Link href="/" className="sidebar-brand">Arcane Codex</Link>
+          <button type="button" className="sidebar-close" aria-label="Close navigation" onClick={() => setDrawerOpen(false)}>×</button>
         </div>
-      </div>
 
-      <div className="workspace-title">Pages</div>
+        <nav className="sidebar-nav" aria-label="Collections and content">
+          <Link href="/">Workspace</Link>
+          <Link href="/collections">Collections</Link>
+          <form action="/api/export" method="post">
+            <button type="submit" aria-label="Export ZIP">Export</button>
+          </form>
+        </nav>
 
-      {isLoading ? (
-        <p className="help">Loading workspace…</p>
-      ) : tree.length ? (
-        <ul className="tree-level">{renderRows(tree)}</ul>
-      ) : status ? (
-        <div className="grid">
-          <p className="help status-note">{status}</p>
-          <button type="button" onClick={() => void fetchPages()}>Retry loading pages</button>
+        {health && health.status !== 'ok' ? (
+          <section className={`health-notice ${health.status}`} role={health.status === 'error' ? 'alert' : 'status'}>
+            <strong>{health.status === 'error' ? 'Workspace needs recovery' : 'Workspace check found issues'}</strong>
+            <span>{health.issues[0]}</span>
+            {health.recovery[0] ? <span>{health.recovery[0]}</span> : null}
+            <button type="button" onClick={() => void fetchHealth()}>Run check again</button>
+          </section>
+        ) : null}
+
+        <div className="sidebar-section">
+          <form onSubmit={onSearchSubmit} role="search">
+            <input
+              value={query}
+              placeholder={SEARCH_PLACEHOLDER}
+              onChange={(event) => setQuery(event.target.value)}
+              aria-label="Search pages"
+            />
+          </form>
+          <div className="sidebar-create-row">
+            <button type="button" className="primary-btn" onClick={() => onCreatePage(null)}>New page</button>
+            <button type="button" className="icon-btn" aria-label="New child page" disabled={!currentPageId} onClick={() => onCreatePage(currentPageId ?? null)}>＋</button>
+          </div>
         </div>
-      ) : query.trim() ? (
-        <div className="grid">
-          <p className="help">No pages match “{query.trim()}”.</p>
-          <button type="button" onClick={() => setQuery('')}>Clear search</button>
+
+        <div className="workspace-title">Pages</div>
+        <div className="sidebar-pages">
+          {isLoading ? (
+            <p className="help">Loading workspace…</p>
+          ) : tree.length ? (
+            <ul className="tree-level">{renderRows(tree)}</ul>
+          ) : status ? (
+            <div className="grid">
+              <p className="help status-note">{status}</p>
+              <button type="button" onClick={() => void fetchPages()}>Retry loading pages</button>
+            </div>
+          ) : query.trim() ? (
+            <div className="grid">
+              <p className="help">No pages match “{query.trim()}”.</p>
+              <button type="button" onClick={() => setQuery('')}>Clear search</button>
+            </div>
+          ) : (
+            <p className="help">No pages yet. Create one to begin.</p>
+          )}
         </div>
-      ) : (
-        <p className="help">No pages yet. Create one to begin.</p>
-      )}
 
-      {trashPages.length ? (
-        <section className="trash-section" aria-labelledby="trash-title">
-          <div className="workspace-title" id="trash-title">Trash</div>
-          <ul className="trash-list">
-            {trashPages.map((trashPage) => (
-              <li key={trashPage.id}>
-                <span>{trashPage.icon ?? '📄'} {trashPage.title || 'Untitled'}</span>
-                <button type="button" className="mini-btn" onClick={() => void restoreTrashPage(trashPage.id)}>
-                  Restore
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+        {trashPages.length ? (
+          <details className="trash-section">
+            <summary id="trash-title">Trash <span>{trashPages.length}</span></summary>
+            <ul className="trash-list">
+              {trashPages.map((trashPage) => (
+                <li key={trashPage.id}>
+                  <span>{trashPage.icon ?? '📄'} {trashPage.title || 'Untitled'}</span>
+                  <button type="button" className="mini-btn" onClick={() => void restoreTrashPage(trashPage.id)}>Restore</button>
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
 
-      {status && pages.length ? <p className="help status-note">{status}</p> : null}
-    </aside>
+        {status && pages.length ? <p className="help status-note" role="status">{status}</p> : null}
+      </aside>
+    </>
   );
 }

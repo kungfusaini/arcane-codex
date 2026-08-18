@@ -753,7 +753,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
     window.dispatchEvent(new Event('arcane-pages-changed'));
   };
 
-  const onTitleInput = (event: ChangeEvent<HTMLInputElement>) => {
+  const onTitleInput = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     titleRef.current = event.target.value;
     setTitle(event.target.value);
     requestSave();
@@ -1061,70 +1061,45 @@ export function PageEditor({ pageId }: { pageId: string }) {
   const coverAsset = assets.find((asset) => asset.id === page.coverAssetId) ?? null;
 
   return (
-    <section className="editor-shell" aria-live="polite">
-      <div className="editor-toolbar">
-        <div>
-          <div className="help">
-            {breadcrumbs.length > 0 ? (
-              breadcrumbs.map((crumb, index) => (
-                <span key={crumb.id}>
-                  <Link className="text-link" href={`/page/${crumb.id}`}>
-                    {crumb.title}
-                  </Link>
-                  {index + 1 < breadcrumbs.length ? ' / ' : ''}
-                </span>
-              ))
-            ) : null}
+    <section className="document-shell" aria-live="polite">
+      <header className="document-topbar">
+        <nav className="breadcrumbs" aria-label="Breadcrumbs">
+          {breadcrumbs.length > 0 ? breadcrumbs.map((crumb, index) => (
+            <span key={crumb.id}>
+              <Link className="text-link" href={`/page/${crumb.id}`}>{crumb.title}</Link>
+              {index + 1 < breadcrumbs.length ? <span aria-hidden="true"> / </span> : null}
+            </span>
+          )) : <Link className="text-link" href="/">Workspace</Link>}
+        </nav>
+        <details className="action-menu">
+          <summary role="button" aria-label="Page actions">•••</summary>
+          <div className="action-menu-panel">
+            <button type="button" onClick={() => editor.undo()} disabled={isDeleted}>Undo</button>
+            <button type="button" onClick={() => editor.redo()} disabled={isDeleted}>Redo</button>
+            <button type="button" onClick={duplicate} disabled={isDeleted}>Duplicate</button>
+            <button type="button" onClick={trash} className="danger-action">{page.deletedAt ? 'Restore' : 'Move to trash'}</button>
           </div>
-          <input
-            className="page-title"
-            value={title}
-            onChange={onTitleInput}
-            placeholder="Page title"
-            disabled={isDeleted}
-          />
-        </div>
-
-        <div className="toolbar">
-          <button type="button" onClick={duplicate} disabled={isDeleted}>
-            Duplicate
-          </button>
-          <button type="button" onClick={trash}>
-            {page.deletedAt ? 'Restore' : 'Move to trash'}
-          </button>
-          <button type="button" onClick={() => {
-            editor.undo();
-          }} disabled={isDeleted}>
-            Undo
-          </button>
-          <button type="button" onClick={() => {
-            editor.redo();
-          }} disabled={isDeleted}>
-            Redo
-          </button>
-        </div>
-      </div>
+        </details>
+      </header>
 
       {showTrashNotice}
-
       {recoveryDraft ? (
         <section className="recovery-notice" role="status">
           <strong>Unsaved browser draft found</strong>
           <span>Your saved page is intact. Restore this draft to review and save it, or discard the draft.</span>
           <div className="toolbar">
-            <button type="button" onClick={restoreLocalDraft}>Restore draft</button>
+            <button type="button" className="primary-btn" onClick={restoreLocalDraft}>Restore draft</button>
             <button type="button" onClick={discardLocalDraft}>Discard draft</button>
           </div>
         </section>
       ) : null}
-
       {conflictPage ? (
         <section className="recovery-notice error" role="alert">
           <strong>Newer saved changes detected</strong>
           <span>Your local draft has not been overwritten. Choose which revision to keep.</span>
           <div className="toolbar">
             <button type="button" onClick={reloadConflict}>Load latest saved page</button>
-            <button type="button" onClick={() => void overwriteConflict()}>Save my draft over latest</button>
+            <button type="button" className="primary-btn" onClick={() => void overwriteConflict()}>Save my draft over latest</button>
           </div>
         </section>
       ) : null}
@@ -1137,228 +1112,104 @@ export function PageEditor({ pageId }: { pageId: string }) {
             width={1200}
             height={320}
             className="cover-preview-image"
-            style={
-              coverPositionPercent
-                ? {
-                    objectPosition: `${coverPositionPercent.x}% ${coverPositionPercent.y}%`,
-                  }
-                : undefined
-            }
+            style={coverPositionPercent ? { objectPosition: `${coverPositionPercent.x}% ${coverPositionPercent.y}%` } : undefined}
             unoptimized
           />
-          {page?.coverAssetId ? (
+          <details className="cover-menu">
+            <summary>Reposition cover</summary>
             <div className="cover-controls" role="group" aria-label="Cover focal point">
-              <label htmlFor="cover-focal-x">
-                Horizontal
-                <input
-                  id="cover-focal-x"
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={COVER_FOCAL_STEP}
-                  value={coverPositionPercent?.x ?? 50}
-                  onChange={(event) => {
-                    updateCoverFocal('x', Number(event.currentTarget.value));
-                  }}
-                  disabled={isDeleted}
-                />
+              <label htmlFor="cover-focal-x">Horizontal
+                <input id="cover-focal-x" type="range" min={0} max={100} step={COVER_FOCAL_STEP} value={coverPositionPercent?.x ?? 50} onChange={(event) => updateCoverFocal('x', Number(event.currentTarget.value))} disabled={isDeleted} />
               </label>
-              <label htmlFor="cover-focal-y">
-                Vertical
-                <input
-                  id="cover-focal-y"
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={COVER_FOCAL_STEP}
-                  value={coverPositionPercent?.y ?? 50}
-                  onChange={(event) => {
-                    updateCoverFocal('y', Number(event.currentTarget.value));
-                  }}
-                  disabled={isDeleted}
-                />
+              <label htmlFor="cover-focal-y">Vertical
+                <input id="cover-focal-y" type="range" min={0} max={100} step={COVER_FOCAL_STEP} value={coverPositionPercent?.y ?? 50} onChange={(event) => updateCoverFocal('y', Number(event.currentTarget.value))} disabled={isDeleted} />
               </label>
+              <div className="toolbar">
+                <button type="button" disabled={isDeleted} onClick={() => coverUploadRef.current?.click()}>Replace cover</button>
+                <button type="button" disabled={isDeleted} onClick={() => void updateMetadata({ coverAssetId: null })}>Remove cover</button>
+              </div>
             </div>
-          ) : null}
+          </details>
         </div>
       ) : null}
 
-      <section className="media-controls" aria-label="Page media">
-        <div className="media-control-group">
-          <span className="media-control-label">Icon</span>
-          <div className="toolbar">
-            <button
-              type="button"
-              className="icon-display"
-              aria-haspopup="listbox"
-              aria-expanded={iconPickerOpen}
-              disabled={isDeleted}
-              onClick={() => setIconPickerOpen((open) => !open)}
-            >
-              {page.icon ?? '📄'}
-            </button>
-            <button type="button" disabled={isDeleted || !page.icon} onClick={() => void updateMetadata({ icon: null })}>
-              Remove icon
-            </button>
+      <div className={`document-content ${coverAsset ? 'has-cover' : ''}`}>
+        <div className="page-identity">
+          <div className="page-icon-wrap">
+            <button type="button" className="page-icon" aria-haspopup="listbox" aria-expanded={iconPickerOpen} disabled={isDeleted} onClick={() => setIconPickerOpen((open) => !open)}>{page.icon ?? '📄'}</button>
+            {iconPickerOpen ? (
+              <div className="emoji-picker" role="listbox" aria-label="Choose page icon">
+                {EMOJI_OPTIONS.map((emoji) => (
+                  <button type="button" role="option" aria-selected={page.icon === emoji} key={emoji} onClick={() => { setIconPickerOpen(false); void updateMetadata({ icon: emoji }); }}>{emoji}</button>
+                ))}
+              </div>
+            ) : null}
           </div>
-          {iconPickerOpen ? (
-            <div className="emoji-picker" role="listbox" aria-label="Choose page icon">
-              {EMOJI_OPTIONS.map((emoji) => (
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={page.icon === emoji}
-                  key={emoji}
-                  onClick={() => {
-                    setIconPickerOpen(false);
-                    void updateMetadata({ icon: emoji });
-                  }}
-                >
-                  {emoji}
-                </button>
-              ))}
+          <textarea className="page-title" rows={1} value={title} onChange={onTitleInput} placeholder="Untitled" disabled={isDeleted} />
+          <div className={`status ${status === 'saved' ? 'saved' : status === 'error' || status === 'conflict' ? 'error' : status === 'saving' ? 'saving' : ''}`} role="status">
+            <span>{statusMessage || 'Saved'}</span>
+            {status === 'error' && hasPendingContent.current ? <button type="button" className="mini-btn" onClick={() => void savePage()}>Retry save</button> : null}
+          </div>
+        </div>
+
+        <details className="page-media-disclosure">
+          <summary>Media & page details</summary>
+          <section className="media-controls" aria-label="Page media">
+            <div className="media-control-group">
+              <span className="media-control-label">Icon</span>
+              <button type="button" disabled={isDeleted || !page.icon} onClick={() => void updateMetadata({ icon: null })}>Remove icon</button>
             </div>
-          ) : null}
-        </div>
+            <div className="media-control-group">
+              <span className="media-control-label">Cover</span>
+              <button type="button" disabled={isDeleted} onClick={() => coverUploadRef.current?.click()}>{coverAsset ? 'Replace cover' : 'Upload cover'}</button>
+              {coverAsset ? <button type="button" disabled={isDeleted} onClick={() => void updateMetadata({ coverAssetId: null })}>Remove cover</button> : null}
+            </div>
+            <div className="media-control-group">
+              <span className="media-control-label">Page body</span>
+              <button type="button" disabled={isDeleted} onClick={() => bodyUploadRef.current?.click()}>Upload attachment</button>
+            </div>
+          </section>
+        </details>
+        <input ref={coverUploadRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" onChange={(event) => chooseUpload(event, 'cover')} disabled={isDeleted} />
+        <input ref={bodyUploadRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown" multiple onChange={(event) => chooseUpload(event, 'body')} disabled={isDeleted} />
 
-        <div className="media-control-group">
-          <span className="media-control-label">Cover</span>
-          <div className="toolbar">
-            <button type="button" disabled={isDeleted} onClick={() => coverUploadRef.current?.click()}>
-              {coverAsset ? 'Replace cover' : 'Upload cover'}
-            </button>
-            <button type="button" disabled={isDeleted || !coverAsset} onClick={() => void updateMetadata({ coverAssetId: null })}>
-              Remove cover
-            </button>
-          </div>
-          <input
-            ref={coverUploadRef}
-            className="visually-hidden"
-            type="file"
-            accept="image/png,image/jpeg,image/gif,image/webp"
-            onChange={(event) => chooseUpload(event, 'cover')}
-            disabled={isDeleted}
-          />
-        </div>
-
-        <div className="media-control-group">
-          <span className="media-control-label">Page body</span>
-          <button type="button" disabled={isDeleted} onClick={() => bodyUploadRef.current?.click()}>
-            Upload attachment
-          </button>
-          <input
-            ref={bodyUploadRef}
-            className="visually-hidden"
-            type="file"
-            accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown"
-            multiple
-            onChange={(event) => chooseUpload(event, 'body')}
-            disabled={isDeleted}
-          />
-        </div>
-      </section>
-
-      {uploadTasks.length ? (
-        <ul className="upload-task-list" aria-label="Uploads">
-          {uploadTasks.map((task) => (
-            <li key={task.id} className={task.status === 'error' ? 'error' : ''}>
-              <span>{task.file.name}</span>
-              <span>{task.status === 'uploading' ? 'Uploading…' : task.error}</span>
-              {task.status === 'error' ? (
-                <div className="toolbar">
-                  <button type="button" onClick={() => {
-                    retryUploadTask(task);
-                  }}>
-                    Retry
-                  </button>
-                  <button type="button" onClick={() => setUploadTasks((current) => current.filter((item) => item.id !== task.id))}>
-                    Dismiss
-                  </button>
-                </div>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-
-      <div className={`status ${status === 'idle' ? '' : status === 'saved' ? 'saved' : status === 'error' ? 'error' : status === 'conflict' ? 'error' : 'saving'}`}>
-        <span>{statusMessage || 'Saved'}</span>
-        {status === 'error' && hasPendingContent.current ? (
-          <button type="button" className="mini-btn" onClick={() => void savePage()}>
-            Retry save
-          </button>
+        {uploadTasks.length ? (
+          <ul className="upload-task-list" aria-label="Uploads">
+            {uploadTasks.map((task) => (
+              <li key={task.id} className={task.status === 'error' ? 'error' : ''}>
+                <span>{task.file.name}</span>
+                <span>{task.status === 'uploading' ? 'Uploading…' : task.error}</span>
+                {task.status === 'error' ? <div className="toolbar"><button type="button" onClick={() => retryUploadTask(task)}>Retry</button><button type="button" onClick={() => setUploadTasks((current) => current.filter((item) => item.id !== task.id))}>Dismiss</button></div> : null}
+              </li>
+            ))}
+          </ul>
         ) : null}
-      </div>
 
-      <div className="editor-view">
-        <BlockNoteView
-          editor={editor}
-          slashMenu={false}
-          editable={!isDeleted}
-        >
-          <SuggestionMenuController
-            triggerCharacter="/"
-            getItems={getSlashMenuItems}
-          />
-          <SuggestionMenuController
-            triggerCharacter="@"
-            minQueryLength={1}
-            getItems={getMentionItems}
-            onItemClick={(item) => {
-              insertMention(item as MentionItem);
-            }}
-          />
-        </BlockNoteView>
-      </div>
-
-      <section className="asset-library" aria-labelledby="asset-library-title">
-        <div className="asset-library-header">
-          <h3 id="asset-library-title">Media library</h3>
-          <span className="help">Insert an upload or reuse it as this page’s cover.</span>
+        <div className="editor-view">
+          <BlockNoteView editor={editor} slashMenu={false} editable={!isDeleted}>
+            <SuggestionMenuController triggerCharacter="/" getItems={getSlashMenuItems} />
+            <SuggestionMenuController triggerCharacter="@" minQueryLength={1} getItems={getMentionItems} onItemClick={(item) => insertMention(item as MentionItem)} />
+          </BlockNoteView>
         </div>
-        {assets.length ? (
-          <ul>
-            {assets.map((asset) => (
-              <li key={asset.id}>
-                <div>
-                  <strong>{asset.filename}</strong>
-                  <span className="help">{asset.mimeType} · {Math.max(1, Math.round(asset.size / 1024))} KB</span>
-                </div>
-                <div className="toolbar">
-                  <button type="button" disabled={isDeleted} onClick={() => insertAsset(asset)}>Insert</button>
-                  <button
-                    type="button"
-                    disabled={isDeleted || !asset.mimeType.startsWith('image/')}
-                    onClick={() => void updateMetadata({ coverAssetId: asset.id })}
-                  >
-                    Use as cover
-                  </button>
-                  <Link className="text-link" href={`/api/assets/${asset.id}`} target="_blank" rel="noreferrer">Open</Link>
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="help">No media yet. Upload an attachment to add one.</p>
-        )}
-      </section>
 
-      <section className="backlinks">
-        <h3>Backlinks</h3>
-        {backlinks.length ? (
-          <ul>
-            {backlinks.map((link) => (
-              <li key={link.id}>
-                <Link href={`/page/${link.id}`} className="text-link">
-                  {link.title}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="help">No inbound links yet.</p>
-        )}
-      </section>
+        <div className="document-footnotes">
+          <details className="asset-library">
+            <summary id="asset-library-title">Media library <span>{assets.length}</span></summary>
+            {assets.length ? (
+              <ul>{assets.map((asset) => (
+                <li key={asset.id}>
+                  <div><strong>{asset.filename}</strong><span className="help">{asset.mimeType} · {Math.max(1, Math.round(asset.size / 1024))} KB</span></div>
+                  <div className="toolbar"><button type="button" disabled={isDeleted} onClick={() => insertAsset(asset)}>Insert</button><button type="button" disabled={isDeleted || !asset.mimeType.startsWith('image/')} onClick={() => void updateMetadata({ coverAssetId: asset.id })}>Use as cover</button><Link className="text-link" href={`/api/assets/${asset.id}`} target="_blank" rel="noreferrer">Open</Link></div>
+                </li>
+              ))}</ul>
+            ) : <p className="help">No media yet. Upload an attachment to add one.</p>}
+          </details>
+          <details className="backlinks" open={backlinks.length > 0}>
+            <summary><h3>Backlinks</h3><span>{backlinks.length}</span></summary>
+            {backlinks.length ? <ul>{backlinks.map((link) => <li key={link.id}><Link href={`/page/${link.id}`} className="text-link">{link.title}</Link></li>)}</ul> : <p className="help">No inbound links yet.</p>}
+          </details>
+        </div>
+      </div>
     </section>
   );
 }

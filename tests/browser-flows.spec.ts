@@ -205,6 +205,7 @@ test('core local workspace flows survive reload and remain recoverable', async (
   const pagesAfter = (await (await request.get('/api/pages')).json()).pages as PageRecord[];
   const nested = pagesAfter.find((candidate) => !pagesBefore.some((before) => before.id === candidate.id));
   expect(nested?.parentId).toBe(root.id);
+  await page.waitForLoadState('networkidle');
 
   await page.goto(`/page/${child.id}`);
   await expect(page.getByRole('heading', { name: 'Backlinks' })).toBeVisible();
@@ -238,9 +239,11 @@ test('core local workspace flows survive reload and remain recoverable', async (
   const temporaryResponse = await request.post('/api/pages', { data: { title: 'Temporary page' } });
   const temporary = (await temporaryResponse.json()).page as PageRecord;
   await page.goto(`/page/${temporary.id}`);
+  await page.getByRole('button', { name: 'Page actions' }).click();
   page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: 'Move to trash' }).click();
   await expect(page.getByText('This page is in trash. Restore it before editing.')).toBeVisible();
+  await page.locator('.trash-section').getByText('Trash').click();
   await expect(page.locator('.trash-section').getByText('Temporary page')).toBeVisible();
   await page.locator('.trash-section').getByRole('button', { name: 'Restore' }).click();
   await expect(page.getByText('This page is in trash. Restore it before editing.')).toBeHidden();
@@ -370,6 +373,17 @@ test.describe('cover controls at 390px', () => {
     const root = (await createRootResponse.json()).page as { id: string; revision: number };
 
     await page.goto(`/page/${root.id}`);
+    await expect(page.getByRole('button', { name: 'Open navigation' })).toBeVisible();
+    await expect(page.locator('.sidebar')).toHaveAttribute('aria-hidden', 'true');
+    await page.getByRole('button', { name: 'Open navigation' }).click();
+    await expect(page.locator('.sidebar')).toHaveClass(/open/);
+    await expect(page.getByLabel('Actions for Narrow root')).toBeVisible();
+    await page.getByLabel('Actions for Narrow root').click();
+    await expect(page.locator('.tree-actions').getByRole('button', { name: 'Duplicate' })).toBeVisible();
+    await page.locator('.sidebar').getByRole('button', { name: 'Close navigation' }).click();
+    await expect(page.locator('.sidebar')).toHaveAttribute('aria-hidden', 'true');
+    await expect(page.locator('.page-title')).toBeInViewport();
+    await page.getByText('Media & page details').click();
     const controls = page.locator('.media-controls');
     await expect(controls).toBeVisible();
     const groups = controls.locator('.media-control-group');

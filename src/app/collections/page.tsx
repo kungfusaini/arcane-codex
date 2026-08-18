@@ -102,50 +102,28 @@ export default function CollectionsPage() {
           });
         }}
       />
-      <main className="main-column">
-        <h1>Collections</h1>
-
-        <section className="editor-shell">
-          <form onSubmit={onCreate} className="collections-create-form">
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="New collection name"
-              aria-label="Collection name"
-            />
-            <button type="submit" disabled={!name.trim()}>Create collection</button>
-          </form>
-
-          {status && status !== 'Failed to load collections' ? <p className="status-note">{status}</p> : null}
-
+      <main className="main-column collections-index-main">
+        <section className="collections-index">
+          <header className="index-header"><div><p className="eyebrow">Structured knowledge</p><h1>Collections</h1></div><details className="create-collection-menu"><summary>New collection</summary><form onSubmit={onCreate} className="collections-create-form"><label>Name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Collection name" aria-label="Collection name" /></label><button type="submit" className="primary-btn" disabled={!name.trim()}>Create</button></form></details></header>
+          {status && status !== 'Failed to load collections' ? <p className="status-note" role="status">{status}</p> : null}
           {isLoading ? (
             <p className="help">Loading collections…</p>
           ) : sorted.length ? (
             <ul className="collections-list">
               {sorted.map((collection) => (
-                <li key={collection.id} className="collection-card">
-                  <div>
-                    <Link href={`/collections/${collection.id}`} className="collection-title text-link">
-                      {collection.name}
-                    </Link>
-                    <p className="help">
-                      {collection.propertyCount} propert{collection.propertyCount === 1 ? 'y' : 'ies'} ·
-                      {collection.hostPageId ? ' linked to page' : ' standalone'}
-                    </p>
-                  </div>
-                  <Link href={`/collections/${collection.id}`} className="text-link mini-btn">
-                    Open
+                <li key={collection.id}>
+                  <Link href={`/collections/${collection.id}`} className="collection-index-row">
+                    <span className="collection-index-icon" aria-hidden="true">▦</span>
+                    <span><strong>{collection.name}</strong><small>{collection.propertyCount} propert{collection.propertyCount === 1 ? 'y' : 'ies'} · {collection.hostPageId ? 'linked' : 'standalone'}</small></span>
+                    <span aria-hidden="true">→</span>
                   </Link>
                 </li>
               ))}
             </ul>
           ) : status === 'Failed to load collections' ? (
-            <div className="recovery-notice error" role="alert">
-              <strong>{status}</strong>
-              <button type="button" onClick={() => void loadCollections()}>Retry loading collections</button>
-            </div>
+            <div className="recovery-notice error" role="alert"><strong>{status}</strong><button type="button" onClick={() => void loadCollections()}>Retry loading collections</button></div>
           ) : (
-            <p className="help">No collections yet. Create one to begin building structured tables.</p>
+            <div className="collection-state"><h2>No collections yet</h2><p className="help">Create one when a set of pages needs shared properties.</p></div>
           )}
         </section>
       </main>

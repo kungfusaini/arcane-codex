@@ -64,11 +64,10 @@ export default function HomePage() {
           await refreshPages();
         }}
       />
-      <main className="main-column">
-        <h1>Workspace</h1>
-        <section className="editor-shell">
+      <main className="main-column home-main">
+        <section className="home-workspace">
           {loading ? (
-            <p className="help">Loading workspace…</p>
+            <p className="help" role="status">Loading workspace…</p>
           ) : error ? (
             <div className="recovery-notice error" role="alert">
               <strong>{error}</strong>
@@ -76,24 +75,20 @@ export default function HomePage() {
             </div>
           ) : pages.length ? (
             <>
-              <p className="help">Your workspace has {pages.length} page{pages.length === 1 ? '' : 's'}.</p>
-              <div className="toolbar">
-                <Link href={`/page/${pages[0].id}`} className="text-link">
-                  Open first page
-                </Link>
-                <button type="button" onClick={createFirstPage}>
-                  Add another page
-                </button>
-              </div>
+              <header className="home-header"><div><p className="eyebrow">Private workspace</p><h1>Continue writing</h1></div><button type="button" className="primary-btn" onClick={createFirstPage}>New page</button></header>
+              <Link href={`/page/${pages[0].id}`} className="recent-page">
+                <span className="recent-page-icon">{pages[0].icon ?? '📄'}</span>
+                <span><strong>{pages[0].title || 'Untitled'}</strong><small>Open most recent page</small></span>
+                <span aria-hidden="true">→</span>
+              </Link>
             </>
           ) : (
-            <>
-              <h2>No pages yet</h2>
-              <p className="help">Create your first page to start a private workspace.</p>
-              <button type="button" onClick={createFirstPage}>
-                Create first page
-              </button>
-            </>
+            <div className="home-empty">
+              <span className="empty-mark" aria-hidden="true">✦</span>
+              <h1>Begin your codex</h1>
+              <p>Capture a note, then let pages grow into a connected workspace.</p>
+              <button type="button" className="primary-btn" onClick={createFirstPage}>Create first page</button>
+            </div>
           )}
         </section>
       </main>

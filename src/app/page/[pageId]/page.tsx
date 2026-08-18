@@ -19,8 +19,7 @@ export default function PageRoute({ params }: { params: { pageId: string } }) {
       <WorkspaceSidebar currentPageId={pageId} onCreated={() => {
         window.location.reload();
       }} />
-      <main className="main-column">
-        <h1>Arcane Codex</h1>
+      <main className="main-column page-main">
         <PageEditor pageId={pageId} />
       </main>
     </div>

@@ -1,22 +1,24 @@
 ---
 colors:
-  neutral: "#f4efe2"
-  neutral-ink: "#1f1d19"
-  neutral-muted: "#524d42"
-  neutral-border: "#d6d0c1"
-  accent: "#2f5a48"
-  accent-on: "#f4efe2"
-  shadow: "rgba(26, 24, 20, 0.24)"
-  success: "#0a4d2a"
+  neutral: "#f6f1e7"
+  neutral-ink: "#24211c"
+  neutral-muted: "#625d52"
+  neutral-border: "#d8d0c1"
+  accent: "#315d4a"
+  accent-on: "#fffaf0"
+  shadow: "rgba(36, 33, 28, 0.16)"
+  success: "#24543d"
   warning: "#8a5a23"
-  danger: "#7f2f1d"
-  card: "#f8f2e3"
-  page: "#efe7d6"
-  page-muted: "#e8dfce"
+  danger: "#843b2c"
+  danger-muted: "#f1dfd8"
+  card: "#fffaf0"
+  page: "#eee8dc"
+  page-muted: "#e5ded1"
 
 typography:
   family:
-    base: "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    base: "ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif"
+    display: "Iowan Old Style, Palatino Linotype, Palatino, Georgia, serif"
     mono: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
   scale:
     100: "12px"
@@ -25,8 +27,8 @@ typography:
     400: "18px"
     500: "20px"
     600: "24px"
-    700: "30px"
-    800: "36px"
+    700: "32px"
+    800: "48px"
 
 spacing:
   0: 0
@@ -42,16 +44,16 @@ spacing:
   12: 48px
 
 rounded:
-  sm: 8px
-  md: 12px
+  sm: 6px
+  md: 10px
   lg: 16px
-  xl: 20px
+  xl: 24px
 
 elevation:
-  sm: "0 1px 2px var(--shadow), 0 1px 2px var(--shadow)"
-  md: "0 6px 12px var(--shadow)"
-  lg: "0 12px 24px var(--shadow)"
-  xl: "0 18px 36px var(--shadow)"
+  sm: "0 1px 2px var(--shadow)"
+  md: "0 8px 24px var(--shadow)"
+  lg: "0 16px 40px var(--shadow)"
+  xl: "0 24px 64px var(--shadow)"
 
 components:
   body:
@@ -61,18 +63,17 @@ components:
     line-height: 1.55
   card:
     background: "var(--color-card)"
-    border: "1px solid var(--color-border)"
     border-radius: "var(--radius-md)"
-    box-shadow: "var(--elevation-sm)"
+    box-shadow: "none"
   sidebar:
-    width: "280px"
+    width: "256px"
     background: "var(--color-page)"
   button:
     background: "transparent"
     color: "var(--color-ink)"
-    border: "1px solid var(--color-border)"
+    border: "none"
     border-radius: "var(--radius-sm)"
-    padding: "6px 12px"
+    padding: "8px 12px"
     font-size: "var(--font-size-300)"
     line-height: 1.2
 
@@ -99,10 +100,10 @@ An editorial workspace with warm paper surfaces, charcoal reading content, and r
 - **card/page/page-muted**: canvas and surface layers.
 
 ## Typography
-8px-based rhythm with a modular scale from body text to heading sizes. Keep line lengths comfortable for long-form reading.
+A restrained system sans handles navigation and controls. A local editorial serif stack gives page and collection titles a bookish voice without network fonts. The 8px-based rhythm and 768px reading measure keep long-form content calm.
 
 ## Layout
-A dominant content work surface with a quiet sidebar for navigation and state.
+A quiet 256px desktop rail yields to the document. At narrow widths it becomes an off-canvas drawer behind a compact sticky top bar, so content always appears first. Page content uses a 768px reading measure; collections expand to a broad table surface.
 
 ## Elevation
 Use only named elevation levels `sm`, `md`, `lg`, `xl`.
@@ -117,3 +118,5 @@ Focus states and disabled states are required for all interactive controls. Empt
 - Do not use gradients, glows, glass effects, decorative borders.
 - Do not introduce additional color accents.
 - Do not use non-token spacing or shadows outside the elevation palette.
+- Do disclose administration through contextual menus and settings regions.
+- Do not frame the editor, page, or collection work surface as a nested card.

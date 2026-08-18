@@ -914,305 +914,125 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
   }
 
   return (
-    <div className="editor-shell collection-workspace">
-      <div className="collection-toolbar">
-        <section className="collection-toolbar-card">
-          <form onSubmit={setCollectionName} className="collection-name-form">
-            <input
-              name="name"
-              defaultValue={collection.name}
-              aria-label="Collection name"
-              placeholder="Collection name"
-            />
-            <button type="submit">Rename</button>
-          </form>
+    <div className="collection-workspace">
+      <header className="collection-header">
+        <form onSubmit={setCollectionName} className="collection-name-form">
+          <input name="name" defaultValue={collection.name} aria-label="Collection name" placeholder="Collection name" />
+          <button type="submit" className="quiet-btn">Save name</button>
+        </form>
+        <span className="collection-count">{items.length} {items.length === 1 ? 'entry' : 'entries'}</span>
+      </header>
 
-          <div className="toolbar">
-            <button type="button" onClick={() => {
-              const next: ViewMode = views.mode === 'table' ? 'gallery' : 'table';
-              setViews((current) => ({ ...current, mode: next }));
-            }}>
-              View: {views.mode === 'table' ? 'Table' : 'Gallery'}
-            </button>
-            <button type="button" onClick={deleteCollection} className="danger-btn">
-              Delete collection
-            </button>
-          </div>
-        </section>
-
-        <section className="collection-controls collection-toolbar-card">
-          <label htmlFor="view-sort-by">Sort</label>
-          <select
-            id="view-sort-by"
-            value={sortBy}
-            onChange={(event: ChangeEvent<HTMLSelectElement>) => {
-              setSortBy(event.target.value);
-            }}
-          >
+      <div className="collection-viewbar" aria-label="Collection view controls">
+        <button type="button" className="view-switch" onClick={() => {
+          const next: ViewMode = views.mode === 'table' ? 'gallery' : 'table';
+          setViews((current) => ({ ...current, mode: next }));
+        }}>View: {views.mode === 'table' ? 'Table' : 'Gallery'}</button>
+        <label className="compact-field" htmlFor="view-sort-by"><span>Sort</span>
+          <select id="view-sort-by" value={sortBy} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSortBy(event.target.value)}>
             <option value="sortKey">Default order</option>
             <option value="title">Page title</option>
-            {schema.properties.map((property) => (
-              <option key={property.id} value={property.id}>
-                {property.name}
-              </option>
-            ))}
+            {schema.properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
           </select>
-
-          <select
-            value={sortDirection}
-            onChange={(event: ChangeEvent<HTMLSelectElement>) => {
-              setSortDirection(event.target.value as SortDirection);
-            }}
-          >
-            <option value="asc">Asc</option>
-            <option value="desc">Desc</option>
+        </label>
+        <select className="compact-select" aria-label="Sort direction" value={sortDirection} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSortDirection(event.target.value as SortDirection)}>
+          <option value="asc">Ascending</option><option value="desc">Descending</option>
+        </select>
+        <label className="compact-field" htmlFor="filter-property"><span>Filter</span>
+          <select id="filter-property" value={filterBy} onChange={(event: ChangeEvent<HTMLSelectElement>) => setFilterBy(event.target.value)}>
+            <option value="">No filter</option>
+            {schema.properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
           </select>
-
-          <label htmlFor="filter-property">Filter</label>
-          <select
-            id="filter-property"
-            value={filterBy}
-            onChange={(event: ChangeEvent<HTMLSelectElement>) => {
-              setFilterBy(event.target.value);
-            }}
-          >
-            <option value="">None</option>
-            {schema.properties.map((property) => (
-              <option key={property.id} value={property.id}>
-                {property.name}
-              </option>
-            ))}
-          </select>
-          <input
-            placeholder="Filter query"
-            value={filterQuery}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => {
-              setFilterQuery(event.target.value);
-            }}
-          />
-        </section>
+        </label>
+        {filterBy ? <input className="filter-query" placeholder="Filter query" value={filterQuery} onChange={(event: ChangeEvent<HTMLInputElement>) => setFilterQuery(event.target.value)} /> : null}
+        <details className="add-entry-menu">
+          <summary>New entry</summary>
+          <div className="add-entry-panel">
+            <form onSubmit={addNewEntry} className="entry-add-form">
+              <label>New page<input value={newPageTitle} onChange={(event: ChangeEvent<HTMLInputElement>) => setNewPageTitle(event.target.value)} placeholder="Page title" /></label>
+              <button type="submit" className="primary-btn">Create entry</button>
+            </form>
+            <form onSubmit={addExistingEntry} className="entry-add-form">
+              <label>Existing page<select value={existingPageId} onChange={(event: ChangeEvent<HTMLSelectElement>) => setExistingPageId(event.target.value)}>
+                <option value="">Choose a page…</option>
+                {availablePages.slice().sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })).map((page) => <option key={page.id} value={page.id}>{page.title}</option>)}
+              </select></label>
+              <button type="submit" disabled={!existingPageId}>Add page</button>
+            </form>
+          </div>
+        </details>
       </div>
 
-      <section className="collection-properties collection-toolbar-card">
-        <h3>Properties</h3>
-        {schema.properties.length ? (
-          <ul className="collection-property-list">
-            {schema.properties.map((property, index) => (
-              <li key={property.id} className="collection-property-item">
-                <span>{property.name}</span>
-                <span className="help">{property.type}</span>
-                <div className="toolbar">
-                  <button type="button" className="mini-btn" onClick={() => reorderProperty(property.id, 'up')} disabled={index === 0}>
-                    Up
-                  </button>
-                  <button
-                    type="button"
-                    className="mini-btn"
-                    onClick={() => reorderProperty(property.id, 'down')}
-                    disabled={index === schema.properties.length - 1}
-                  >
-                    Down
-                  </button>
-                  <button type="button" className="mini-btn danger-btn" onClick={() => removeProperty(property.id)}>
-                    Remove
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="help">No properties yet. Add one so entries can track values.</p>
-        )}
+      {status ? <p className="status-note" role="status">{status}</p> : null}
 
-        <form onSubmit={addProperty} className="properties-form">
-          <input
-            value={newPropertyName}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => setNewPropertyName(event.target.value)}
-            placeholder="Property name"
-          />
-          <select
-            value={newPropertyType}
-            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-              setNewPropertyType(event.target.value as CollectionPropertyType)
-            }
-          >
-            {PROPERTY_TYPES.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          {(newPropertyType === 'select' || newPropertyType === 'multi-select') && (
-            <input
-              value={newPropertyOptions}
-              onChange={(event: ChangeEvent<HTMLInputElement>) => setNewPropertyOptions(event.target.value)}
-              placeholder="Options (comma-separated)"
-            />
-          )}
-          <button type="submit">Add property</button>
-        </form>
-      </section>
-
-      <section className="collection-properties collection-toolbar-card">
-        <h3>Entries</h3>
-        <div className="toolbar">
-          <form onSubmit={addExistingEntry} className="entry-add-form">
-            <select
-              value={existingPageId}
-              onChange={(event: ChangeEvent<HTMLSelectElement>) => setExistingPageId(event.target.value)}
-            >
-              <option value="">Add existing page</option>
-              {availablePages
-                .slice()
-                .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }))
-                .map((page) => (
-                  <option key={page.id} value={page.id}>
-                    {page.title}
-                  </option>
-                ))}
-            </select>
-            <button type="submit" disabled={!existingPageId}>
-              Add
-            </button>
-          </form>
-
-          <form onSubmit={addNewEntry} className="entry-add-form">
-            <input
-              value={newPageTitle}
-              onChange={(event: ChangeEvent<HTMLInputElement>) => setNewPageTitle(event.target.value)}
-              placeholder="New page title"
-            />
-            <button type="submit">Create new page entry</button>
-          </form>
-        </div>
-      </section>
-
-      {status ? <p className="status-note">{status}</p> : null}
-
-      {isLoading ? (
-        <p className="help">Loading entries…</p>
-      ) : items.length === 0 ? (
-        <p className="help">No entries yet. Add an existing page or create a new page entry above.</p>
-      ) : ordered.length === 0 ? (
-        <div className="no-results-state">
-          <p className="help">No entries match your current filter.</p>
-          <button type="button" onClick={() => {
-            setFilterBy('');
-            setFilterQuery('');
-          }}>
-            Clear filter
-          </button>
-        </div>
-      ) : views.mode === 'gallery' ? (
-        <section className="collection-gallery">
-          {ordered.map((item) => {
-            const image = getFirstImageUrl(item.page);
-            return (
-              <article key={item.pageId} className="collection-card collection-gallery-item">
-                <Link href={`/page/${item.pageId}`} className="collection-cover-link" style={{ gridArea: 'cover' }}>
-                  {image ? (
-                    <Image
-                      src={image}
-                      alt={`Cover for ${item.page.title}`}
-                      className="collection-cover"
-                      width={640}
-                      height={360}
-                      unoptimized
-                    />
-                  ) : (
-                    <div className="collection-cover-blank">No image</div>
-                  )}
-                </Link>
-                <div className="collection-card-body">
-                  <Link href={`/page/${item.pageId}`} className="text-link collection-page-title">
-                    {item.page.icon ? <span>{item.page.icon} </span> : null}
-                    {item.page.title || 'Untitled'}
+      <div className="collection-surface">
+        {isLoading ? (
+          <p className="help collection-state">Loading entries…</p>
+        ) : items.length === 0 ? (
+          <div className="collection-state"><h2>No entries yet</h2><p className="help">Create a page entry to begin this collection.</p></div>
+        ) : ordered.length === 0 ? (
+          <div className="no-results-state collection-state"><p className="help">No entries match your current filter.</p><button type="button" onClick={() => { setFilterBy(''); setFilterQuery(''); }}>Clear filter</button></div>
+        ) : views.mode === 'gallery' ? (
+          <section className="collection-gallery">
+            {ordered.map((item) => {
+              const image = getFirstImageUrl(item.page);
+              const values = parseProperties(item.propertiesJson);
+              return (
+                <article key={item.pageId} className="collection-gallery-item">
+                  <Link href={`/page/${item.pageId}`} className="collection-cover-link">
+                    {image ? <Image src={image} alt={`Cover for ${item.page.title}`} className="collection-cover" width={640} height={360} unoptimized /> : <div className="collection-cover-blank" aria-hidden="true">{item.page.icon ?? '◆'}</div>}
                   </Link>
-
-                  {schema.properties.length ? (
-                    <div className="collection-properties-grid">
-                      {schema.properties.map((property) => {
-                        const values = parseProperties(item.propertiesJson);
-                        return (
-                          <div key={property.id}>
-                            {renderGalleryProperty(property, values[property.id])}
-                          </div>
-                        );
-                      })}
+                  <div className="collection-card-body">
+                    <div className="collection-card-title-row">
+                      <Link href={`/page/${item.pageId}`} className="text-link collection-page-title">{item.page.icon ? <span>{item.page.icon} </span> : null}{item.page.title || 'Untitled'}</Link>
+                      <details className="row-menu"><summary aria-label={`Actions for ${item.page.title}`}>•••</summary><div><button type="button" onClick={() => void reorderEntry(item.pageId, 'up')}>Move up</button><button type="button" onClick={() => void reorderEntry(item.pageId, 'down')}>Move down</button><button type="button" className="danger-action" onClick={() => void removeEntry(item.pageId)}>Remove</button></div></details>
                     </div>
-                  ) : (
-                    <p className="help">No properties configured.</p>
-                  )}
-
-                  <div className="toolbar">
-                    <button type="button" onClick={() => void reorderEntry(item.pageId, 'up')} className="mini-btn">
-                      Move up
-                    </button>
-                    <button type="button" onClick={() => void reorderEntry(item.pageId, 'down')} className="mini-btn">
-                      Move down
-                    </button>
-                    <button type="button" onClick={() => void removeEntry(item.pageId)} className="mini-btn danger-btn">
-                      Remove
-                    </button>
+                    {schema.properties.length ? <div className="collection-properties-grid">{schema.properties.slice(0, 4).map((property) => <div key={property.id}>{renderGalleryProperty(property, values[property.id])}</div>)}</div> : <p className="help">No properties configured.</p>}
                   </div>
-                </div>
-              </article>
-            );
-          })}
-        </section>
-      ) : (
-        <section className="collection-table-wrap">
-          <table className="collection-table">
-            <thead>
-              <tr>
-                <th>Page</th>
-                {schema.properties.map((property) => (
-                  <th key={property.id}>{property.name}</th>
-                ))}
-                <th>Reorder</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ordered.map((item) => {
+                </article>
+              );
+            })}
+          </section>
+        ) : (
+          <section className="collection-table-wrap">
+            <table className="collection-table">
+              <thead><tr><th>Page</th>{schema.properties.map((property) => <th key={property.id}>{property.name}</th>)}<th><span className="visually-hidden">Actions</span></th></tr></thead>
+              <tbody>{ordered.map((item) => {
                 const properties = parseProperties(item.propertiesJson);
-                return (
-                  <tr key={item.pageId}>
-                    <td>
-                      <Link href={`/page/${item.pageId}`} className="text-link">
-                        {item.page.icon ? <span>{item.page.icon} </span> : null}
-                        {item.page.title || 'Untitled'}
-                      </Link>
-                    </td>
-                    {schema.properties.map((property) => (
-                      <td key={property.id}>
-                        {renderPropertyControl(property, properties[property.id], (nextValue) => {
-                          void updateEntryProperty(item.pageId, property.id, nextValue);
-                        }, false)}
-                      </td>
-                    ))}
-                    <td>
-                      <div className="toolbar">
-                        <button type="button" className="mini-btn" onClick={() => void reorderEntry(item.pageId, 'up')}>
-                          Up
-                        </button>
-                        <button type="button" className="mini-btn" onClick={() => void reorderEntry(item.pageId, 'down')}>
-                          Down
-                        </button>
-                      </div>
-                    </td>
-                    <td>
-                      <button type="button" className="mini-btn danger-btn" onClick={() => void removeEntry(item.pageId)}>
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </section>
-      )}
+                return <tr key={item.pageId}>
+                  <td><Link href={`/page/${item.pageId}`} className="text-link collection-page-title">{item.page.icon ? <span>{item.page.icon} </span> : null}{item.page.title || 'Untitled'}</Link></td>
+                  {schema.properties.map((property) => <td key={property.id}>{renderPropertyControl(property, properties[property.id], (nextValue) => void updateEntryProperty(item.pageId, property.id, nextValue), false)}</td>)}
+                  <td><details className="row-menu"><summary aria-label={`Actions for ${item.page.title}`}>•••</summary><div><button type="button" onClick={() => void reorderEntry(item.pageId, 'up')}>Move up</button><button type="button" onClick={() => void reorderEntry(item.pageId, 'down')}>Move down</button><button type="button" className="danger-action" onClick={() => void removeEntry(item.pageId)}>Remove</button></div></details></td>
+                </tr>;
+              })}</tbody>
+            </table>
+          </section>
+        )}
+      </div>
+
+      <details className="collection-settings">
+        <summary>Collection settings <span>{schema.properties.length} properties</span></summary>
+        <div className="settings-panel">
+          <section className="collection-properties">
+            <h2>Properties</h2>
+            {schema.properties.length ? (
+              <ul className="collection-property-list">{schema.properties.map((property, index) => (
+                <li key={property.id} className="collection-property-item">
+                  <div><strong>{property.name}</strong><span className="help">{property.type}</span></div>
+                  <div className="toolbar"><button type="button" className="mini-btn" onClick={() => reorderProperty(property.id, 'up')} disabled={index === 0}>Move up</button><button type="button" className="mini-btn" onClick={() => reorderProperty(property.id, 'down')} disabled={index === schema.properties.length - 1}>Move down</button><button type="button" className="mini-btn danger-action" onClick={() => removeProperty(property.id)}>Remove</button></div>
+                </li>
+              ))}</ul>
+            ) : <p className="help">No properties yet.</p>}
+            <form onSubmit={addProperty} className="properties-form">
+              <label>Name<input value={newPropertyName} onChange={(event: ChangeEvent<HTMLInputElement>) => setNewPropertyName(event.target.value)} placeholder="Property name" /></label>
+              <label>Type<select value={newPropertyType} onChange={(event: ChangeEvent<HTMLSelectElement>) => setNewPropertyType(event.target.value as CollectionPropertyType)}>{PROPERTY_TYPES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+              {(newPropertyType === 'select' || newPropertyType === 'multi-select') ? <label>Options<input value={newPropertyOptions} onChange={(event: ChangeEvent<HTMLInputElement>) => setNewPropertyOptions(event.target.value)} placeholder="Comma-separated" /></label> : null}
+              <button type="submit" className="primary-btn">Add property</button>
+            </form>
+          </section>
+          <section className="danger-zone"><h2>Collection</h2><button type="button" onClick={deleteCollection} className="danger-btn">Delete collection</button></section>
+        </div>
+      </details>
     </div>
   );
 }

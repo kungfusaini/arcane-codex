@@ -16,8 +16,7 @@ export default function CollectionRoute({ params }: { params: RouteParams }) {
           window.dispatchEvent(new Event('arcane-pages-changed'));
         }}
       />
-      <main className="main-column">
-        <h1>Collection</h1>
+      <main className="main-column collection-main">
         <CollectionEditor collectionId={params.collectionId} />
       </main>
     </div>
