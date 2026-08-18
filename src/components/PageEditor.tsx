@@ -34,6 +34,7 @@ import {
 import { getBreadcrumbs } from '@/lib/pageTree';
 import { PageEmojiPicker } from '@/components/PageEmojiPicker';
 import { useDismissibleDetails } from '@/components/useDismissibleDetails';
+import { PageEditorSkeleton } from '@/components/PageEditorSkeleton';
 
 import './page-editor.css';
 
@@ -256,7 +257,8 @@ export function PageEditor({ pageId }: { pageId: string }) {
   useDismissibleDetails('.action-menu');
 
   const [page, setPage] = useState<PageRecord | null>(null);
-  const [backlinks, setBacklinks] = useState<PageRecord[]>([]);
+  const [showLoadingSkeleton, setShowLoadingSkeleton] = useState(false);
+  const loadingTimerRef = useRef<number | null>(null);
   const [title, setTitle] = useState('');
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error' | 'conflict'>('idle');
   const [statusMessage, setStatusMessage] = useState('');
@@ -487,9 +489,8 @@ export function PageEditor({ pageId }: { pageId: string }) {
         throw new Error(response.status === 404 ? 'Page not found' : 'Page could not be loaded');
       }
 
-      const payload = (await response.json()) as { page: PageRecord; backlinks: PageRecord[] };
+      const payload = (await response.json()) as { page: PageRecord };
       setPage(payload.page);
-      setBacklinks(payload.backlinks);
       pendingRevision.current = payload.page.revision;
       editVersionRef.current = 0;
       saveQueuedRef.current = false;
@@ -508,6 +509,11 @@ export function PageEditor({ pageId }: { pageId: string }) {
       setRecoveryDraft(readRecoveryDraft(payload.page));
       setStatus('idle');
       setStatusMessage('');
+      setShowLoadingSkeleton(false);
+      if (loadingTimerRef.current !== null) {
+        window.clearTimeout(loadingTimerRef.current);
+        loadingTimerRef.current = null;
+      }
       setEditorReady(true);
     } catch (error) {
       setPage(null);
@@ -562,7 +568,6 @@ export function PageEditor({ pageId }: { pageId: string }) {
         });
         const payload = (await response.json().catch(() => ({}))) as {
           page?: PageRecord;
-          backlinks?: PageRecord[];
           current?: PageRecord;
           error?: string;
         };
@@ -580,7 +585,6 @@ export function PageEditor({ pageId }: { pageId: string }) {
         canFlushQueuedSave = true;
         pendingRevision.current = payload.page.revision;
         setPage(payload.page);
-        setBacklinks(payload.backlinks ?? []);
         setConflictPage(null);
         setRecoveryDraft(null);
         window.dispatchEvent(new Event('arcane-pages-changed'));
@@ -1400,6 +1404,17 @@ export function PageEditor({ pageId }: { pageId: string }) {
     };
   }, [loadAssets, loadPage, loadPageList, savePage]);
 
+  useEffect(() => {
+    setShowLoadingSkeleton(false);
+    loadingTimerRef.current = window.setTimeout(() => setShowLoadingSkeleton(true), 1000);
+    return () => {
+      if (loadingTimerRef.current !== null) {
+        window.clearTimeout(loadingTimerRef.current);
+        loadingTimerRef.current = null;
+      }
+    };
+  }, [pageId]);
+
   if (!page) {
     return status === 'error' ? (
       <section className="editor-shell recovery-notice error" role="alert">
@@ -1407,9 +1422,15 @@ export function PageEditor({ pageId }: { pageId: string }) {
         <span>Check the page link or retry after running the workspace health check.</span>
         <button type="button" onClick={() => void loadPage()}>Retry loading page</button>
       </section>
+    ) : showLoadingSkeleton ? (
+      <PageEditorSkeleton />
     ) : (
-      <div className="editor-shell help" role="status">Loading page…</div>
+      <div className="editor-shell page-transition-placeholder" aria-hidden="true" />
     );
+  }
+
+  if (showLoadingSkeleton) {
+    return <PageEditorSkeleton />;
   }
 
   const showTrashNotice = page.deletedAt ? (
@@ -1424,10 +1445,12 @@ export function PageEditor({ pageId }: { pageId: string }) {
       <header className="document-topbar">
         <nav className="breadcrumbs" aria-label="Breadcrumbs">
           {breadcrumbs.length > 0 ? breadcrumbs.map((crumb, index) => (
-            <span key={crumb.id} className="breadcrumb-entry">
-              {crumb.icon ? <span className="breadcrumb-icon" aria-hidden="true">{crumb.icon}</span> : null}
-              <Link className="text-link" href={`/page/${crumb.id}`}>{crumb.title}</Link>
-              {index + 1 < breadcrumbs.length ? <span aria-hidden="true"> / </span> : null}
+            <span key={crumb.id} className="breadcrumb-group">
+              <span className="breadcrumb-entry">
+                {crumb.icon ? <span className="breadcrumb-icon" aria-hidden="true">{crumb.icon}</span> : null}
+                <Link className="text-link" href={`/page/${crumb.id}`}>{crumb.title}</Link>
+              </span>
+              {index + 1 < breadcrumbs.length ? <span className="breadcrumb-separator" aria-hidden="true">/</span> : null}
             </span>
           )) : <Link className="text-link" href="/">Workspace</Link>}
         </nav>
@@ -1616,23 +1639,6 @@ export function PageEditor({ pageId }: { pageId: string }) {
           ) : null}
         </div>
 
-        <div className="document-footnotes">
-          <details className="asset-library">
-            <summary id="asset-library-title">Media library <span>{assets.length}</span></summary>
-            {assets.length ? (
-              <ul>{assets.map((asset) => (
-                <li key={asset.id}>
-                  <div><strong>{asset.filename}</strong><span className="help">{asset.mimeType} · {Math.max(1, Math.round(asset.size / 1024))} KB</span></div>
-                  <div className="toolbar"><button type="button" disabled={isDeleted} onClick={() => insertAsset(asset)}>Insert</button><button type="button" disabled={isDeleted || !asset.mimeType.startsWith('image/')} onClick={() => void updateMetadata({ coverAssetId: asset.id })}>Use as cover</button><Link className="text-link" href={`/api/assets/${asset.id}`} target="_blank" rel="noreferrer">Open</Link></div>
-                </li>
-              ))}</ul>
-            ) : <p className="help">No media yet. Upload an attachment to add one.</p>}
-          </details>
-          <details className="backlinks" open={backlinks.length > 0}>
-            <summary><h3>Backlinks</h3><span>{backlinks.length}</span></summary>
-            {backlinks.length ? <ul>{backlinks.map((link) => <li key={link.id}><Link href={`/page/${link.id}`} className="text-link">{link.title}</Link></li>)}</ul> : <p className="help">No inbound links yet.</p>}
-          </details>
-        </div>
       </div>
     </section>
   );

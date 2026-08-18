@@ -36,14 +36,51 @@
   box-shadow: var(--elevation-none);
 }
 .sidebar-brand-row {
-  min-height: var(--space-8);
+  min-height: var(--space-12);
   padding-inline: var(--space-2);
 }
 .sidebar-brand {
   margin-inline-end: auto;
-  font-family: var(--font-base);
-  font-size: var(--font-size-200);
-  font-weight: 650;
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+}
+.logo-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.site-title {
+  display: block;
+  font-size: var(--font-size-400);
+  line-height: 1;
+  white-space: nowrap;
+}
+.site-tagline {
+  display: block;
+  color: var(--color-muted);
+  font-family: var(--font-brand-mono);
+  font-size: var(--font-size-100);
+  line-height: 1.1;
+  max-width: 100%;
+}
+.arcane,
+.codex {
+  color: color-mix(in srgb, var(--color-danger) 72%, var(--color-ink));
+}
+.arcane {
+  font-family: var(--font-brand-display);
+  font-style: italic;
+  font-weight: 600;
+}
+.codex {
+  display: inline-block;
+  margin-inline-start: var(--space-2);
+  font-family: var(--font-brand-mono);
+  font-weight: 700;
+  letter-spacing: .04em;
+  transform: scaleX(1.12);
+  transform-origin: left center;
 }
 .sidebar-collapse,
 .sidebar-reopen {
@@ -171,13 +208,58 @@
   padding-inline: var(--space-3);
   background: var(--color-neutral);
 }
+.page-editor-skeleton {
+  min-height: 100vh;
+  padding-bottom: var(--space-12);
+  background: var(--color-neutral);
+}
+.page-editor-skeleton .skeleton-block {
+  background: var(--color-card);
+  border-radius: var(--radius-sm);
+  animation: skeleton-pulse 1.4s var(--ease-in-out) infinite;
+}
+.skeleton-breadcrumb {
+  width: 38%;
+  height: var(--space-4);
+  margin: var(--space-3);
+}
+.skeleton-cover {
+  width: 100%;
+  height: calc(var(--space-16) * 5);
+  border-radius: 0;
+}
+.skeleton-title {
+  width: min(42rem, 72%);
+  height: var(--space-10);
+  margin: var(--space-8) auto var(--space-4);
+}
+.skeleton-line {
+  height: var(--space-4);
+  margin: var(--space-3) auto;
+}
+.skeleton-line-wide { width: min(42rem, 72%); }
+.skeleton-line-medium { width: min(34rem, 58%); }
+.skeleton-line-short { width: min(24rem, 42%); }
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: .48; }
+  50% { opacity: .78; }
+}
 .breadcrumbs {
+  display: flex;
+  align-items: center;
   font-size: var(--font-size-200);
 }
+.breadcrumb-group,
 .breadcrumb-entry {
   display: inline-flex;
   align-items: center;
+}
+.breadcrumb-entry {
   gap: var(--space-1);
+}
+.breadcrumb-separator {
+  margin-inline: var(--space-2);
+  line-height: 1;
 }
 .breadcrumb-icon {
   line-height: 1;

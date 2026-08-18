@@ -23,7 +23,6 @@ export function RouteMotionShell({ children }: { children: ReactNode }) {
 
   return (
     <div
-      key={routePath}
       className={`route-motion-shell ${isEntering ? 'route-motion-shell--active' : 'route-motion-shell--inactive'}`}
       data-route={routePath}
       data-route-motion={isEntering ? 'entered' : 'entering'}

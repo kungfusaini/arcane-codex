@@ -771,7 +771,12 @@ export function WorkspaceSidebar({
         aria-hidden={isMobile ? !drawerOpen : railCollapsed ? true : undefined}
       >
         <div className="sidebar-brand-row">
-          <Link href="/" className="sidebar-brand">Arcane Codex</Link>
+          <Link href="/" className="sidebar-brand" title="Arcane Codex">
+            <span className="logo-content">
+              <span className="site-title"><span className="arcane">ARCANE</span><span className="codex">CODEX</span></span>
+              <span className="site-tagline">Compiled Texts for the Modern Mage</span>
+            </span>
+          </Link>
           <button type="button" className="sidebar-collapse" aria-label="Collapse sidebar" onClick={() => setDesktopRailCollapsed(true)}>‹</button>
           <button type="button" className="sidebar-close" aria-label="Close navigation" onClick={() => setDrawerOpen(false)}>×</button>
         </div>
