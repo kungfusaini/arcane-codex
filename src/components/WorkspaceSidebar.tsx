@@ -776,14 +776,6 @@ export function WorkspaceSidebar({
           <button type="button" className="sidebar-close" aria-label="Close navigation" onClick={() => setDrawerOpen(false)}>×</button>
         </div>
 
-        <nav className="sidebar-nav" aria-label="Collections and content">
-          <Link href="/">Workspace</Link>
-          <Link href="/collections">Collections</Link>
-          <form action="/api/export" method="post">
-            <button type="submit" aria-label="Export ZIP">Export</button>
-          </form>
-        </nav>
-
         {health && health.status !== 'ok' ? (
           <section className={`health-notice ${health.status}`} role={health.status === 'error' ? 'alert' : 'status'}>
             <strong>{health.status === 'error' ? 'Workspace needs recovery' : 'Workspace check found issues'}</strong>
@@ -798,7 +790,7 @@ export function WorkspaceSidebar({
             <input
               ref={searchRef}
               value={query}
-              placeholder={`${SEARCH_PLACEHOLDER} · ⌘K`}
+              placeholder={SEARCH_PLACEHOLDER}
               onChange={(event) => setQuery(event.target.value)}
               aria-label="Search pages"
             />

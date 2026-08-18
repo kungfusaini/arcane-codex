@@ -4,12 +4,15 @@ import Image from 'next/image';
 import Link from 'next/link';
 import {
   ChangeEvent,
+  FormEvent,
   MouseEvent,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
+  type ClipboardEvent as ReactClipboardEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactElement,
 } from 'react';
@@ -43,6 +46,7 @@ type PageRecord = {
   coverAssetId: string | null;
   coverFocalX: number;
   coverFocalY: number;
+  coverScale: number;
   contentJson: string;
   revision: number;
   createdAt: number;
@@ -59,6 +63,7 @@ type SidebarPage = {
 };
 
 const COVER_FOCAL_STEP = 5;
+const COVER_SCALE_STEP = 5;
 
 type AssetRecord = {
   id: string;
@@ -99,32 +104,59 @@ function isSupportedUpload(file: File): boolean {
   return file.size <= 20 * 1024 * 1024 && ALLOWED_UPLOAD_TYPES.includes(file.type.toLowerCase());
 }
 
+function getPastedUrl(value: string): string | null {
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function getUrlTitle(value: string): string {
+  try {
+    return new URL(value).hostname.replace(/^www\./, '');
+  } catch {
+    return value;
+  }
+}
+
+function isImageUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return /\.(?:png|jpe?g|gif|webp)(?:$|[?#])/i.test(url.pathname + url.search);
+  } catch {
+    return false;
+  }
+}
+
 type ReferencedPage = {
   title: string;
   icon: string | null;
 };
 
 function createPageLinkBlockSpec(referencedPages: Map<string, ReferencedPage>) {
-  const getReference = (pageId: string): ReferencedPage => {
-    return referencedPages.get(pageId) || { title: 'Page', icon: null };
-  };
-
   return createReactBlockSpec(
     {
       type: 'pageLink',
       propSchema: {
         pageId: { default: '' },
         title: { default: '' },
+        icon: { default: '' },
+        url: { default: '' },
       },
       content: 'none',
     },
     {
       render: (props) => {
-        const propsByType = props.block.props as { pageId?: string; title?: string };
+        const propsByType = props.block.props as { pageId?: string; title?: string; icon?: string; url?: string };
         const pageId = String(propsByType.pageId || '');
-        const reference = pageId ? getReference(pageId) : { title: String(propsByType.title || 'Page'), icon: null };
+        const externalUrl = String(propsByType.url || '');
+        const reference = pageId
+          ? referencedPages.get(pageId) ?? { title: propsByType.icon ? String(propsByType.title || 'Page').replace(/^\S+\s/, '') : String(propsByType.title || 'Page'), icon: propsByType.icon || null }
+          : { title: propsByType.title || (externalUrl ? getUrlTitle(externalUrl) : 'Page'), icon: propsByType.icon || null };
         const label = `${reference.icon ? `${reference.icon} ` : ''}${reference.title || String(propsByType.title || 'Page')}`;
-        const href = pageId ? `/page/${pageId}` : '#';
+        const href = externalUrl || (pageId ? `/page/${pageId}` : '#');
 
         const openPage = (event: MouseEvent<HTMLAnchorElement>) => {
           if (!pageId) {
@@ -138,20 +170,31 @@ function createPageLinkBlockSpec(referencedPages: Map<string, ReferencedPage>) {
           <a
             className="page-link-block"
             href={href}
+            aria-label={`Open ${label}`}
             onClick={openPage}
+            target={externalUrl ? '_blank' : undefined}
+            rel={externalUrl ? 'noreferrer' : undefined}
             contentEditable={false}
             draggable={false}
           >
-            {label}
+            <span className="page-link-icon" aria-hidden="true">{reference.icon || '📄'}</span>
+            <span className="page-link-title">{reference.title || String(propsByType.title || 'Page')}</span>
           </a>
         );
       },
       toExternalHTML: (props) => {
-        const propsByType = props.block.props as { pageId?: string; title?: string };
+        const propsByType = props.block.props as { pageId?: string; title?: string; icon?: string; url?: string };
         const pageId = String(propsByType.pageId || '');
-        const reference = pageId ? getReference(pageId) : { title: String(propsByType.title || 'Page'), icon: null };
-        const label = `${reference.icon ? `${reference.icon} ` : ''}${reference.title || String(propsByType.title || 'Page')}`;
-        return <a href={pageId ? `/page/${pageId}` : '#'}>{label}</a>;
+        const externalUrl = String(propsByType.url || '');
+        const reference = pageId
+          ? referencedPages.get(pageId) ?? { title: propsByType.icon ? String(propsByType.title || 'Page').replace(/^\S+\s/, '') : String(propsByType.title || 'Page'), icon: propsByType.icon || null }
+          : { title: propsByType.title || (externalUrl ? getUrlTitle(externalUrl) : 'Page'), icon: propsByType.icon || null };
+        return (
+          <a href={externalUrl || (pageId ? `/page/${pageId}` : '#')} target={externalUrl ? '_blank' : undefined} rel={externalUrl ? 'noreferrer' : undefined}>
+            <span aria-hidden="true">{reference.icon || '📄'}</span>
+            <span>{reference.title || String(propsByType.title || 'Page')}</span>
+          </a>
+        );
       },
     },
   );
@@ -183,7 +226,7 @@ function ArcaneSuggestionMenu<T extends DefaultReactSuggestionItem>({
             {groupChanged && item.group ? <div className="arcane-suggestion-group">{item.group}</div> : null}
             <button
               id={`bn-suggestion-menu-item-${index}`}
-              className="arcane-suggestion-item"
+              className={`arcane-suggestion-item ${item.icon ? '' : 'without-icon'}`}
               type="button"
               role="option"
               aria-selected={index === selectedIndex}
@@ -219,12 +262,20 @@ export function PageEditor({ pageId }: { pageId: string }) {
   const [statusMessage, setStatusMessage] = useState('');
   const [allPages, setAllPages] = useState<SidebarPage[]>([]);
   const [editorReady, setEditorReady] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [assets, setAssets] = useState<AssetRecord[]>([]);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [uploadTasks, setUploadTasks] = useState<UploadTask[]>([]);
+  const [coverUrlOpen, setCoverUrlOpen] = useState(false);
+  const [coverUrl, setCoverUrl] = useState('');
+  const [imageUrlOpen, setImageUrlOpen] = useState(false);
+  const [imageUrlPosition, setImageUrlPosition] = useState<{ top: number; left: number } | null>(null);
+  const [imageUrl, setImageUrl] = useState('');
+  const [imageHover, setImageHover] = useState<{ blockId: string; top: number; left: number; caption: string } | null>(null);
+  const [captionEditor, setCaptionEditor] = useState<{ blockId: string; top: number; left: number; value: string } | null>(null);
   const [conflictPage, setConflictPage] = useState<PageRecord | null>(null);
   const [recoveryDraft, setRecoveryDraft] = useState<RecoveryDraft | null>(null);
-  const [coverDraft, setCoverDraft] = useState<{ x: number; y: number } | null>(null);
+  const [coverDraft, setCoverDraft] = useState<{ x: number; y: number; scale: number } | null>(null);
 
   const referencedPages = useMemo(() => {
     const map = new Map<string, ReferencedPage>();
@@ -254,6 +305,20 @@ export function PageEditor({ pageId }: { pageId: string }) {
 
   const removeUploadTask = useCallback((taskId: string) => {
     setUploadTasks((current) => current.filter((task) => task.id !== taskId));
+  }, []);
+
+  const importAssetFromUrl = useCallback(async (url: string): Promise<AssetRecord> => {
+    const response = await fetch('/api/assets/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    const payload = (await response.json().catch(() => ({}))) as { asset?: AssetRecord; error?: string };
+    if (!response.ok || !payload.asset) {
+      throw new Error(payload.error || 'Image import failed');
+    }
+    setAssets((current) => [payload.asset!, ...current.filter((existing) => existing.id !== payload.asset!.id)]);
+    return payload.asset;
   }, []);
 
   const uploadAssetRecord = useCallback(async (file: File): Promise<AssetRecord> => {
@@ -298,7 +363,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
           props: {
             url: `/api/assets/${asset.id}`,
             name: asset.filename,
-            caption: asset.filename,
+            caption: '',
           },
         };
       } catch (error) {
@@ -334,10 +399,24 @@ export function PageEditor({ pageId }: { pageId: string }) {
     ? {
         x: Number.isFinite(page.coverFocalX) ? Math.round(page.coverFocalX / COVER_FOCAL_STEP) * COVER_FOCAL_STEP : 50,
         y: Number.isFinite(page.coverFocalY) ? Math.round(page.coverFocalY / COVER_FOCAL_STEP) * COVER_FOCAL_STEP : 50,
+        scale: Number.isFinite(page.coverScale) ? Math.round(page.coverScale / COVER_SCALE_STEP) * COVER_SCALE_STEP : 100,
       }
-    : null, [page?.coverAssetId, page?.coverFocalX, page?.coverFocalY]);
+    : null, [page?.coverAssetId, page?.coverFocalX, page?.coverFocalY, page?.coverScale]);
 
   const displayedCoverPosition = coverDraft ?? coverPositionPercent;
+
+  const clampCoverScale = useCallback((value: number) => {
+    if (!Number.isFinite(value)) {
+      return 100;
+    }
+    if (value <= 100) {
+      return 100;
+    }
+    if (value >= 200) {
+      return 200;
+    }
+    return Math.round(value / COVER_SCALE_STEP) * COVER_SCALE_STEP;
+  }, []);
 
   const clampCoverFocal = useCallback((value: number) => {
     if (!Number.isFinite(value)) {
@@ -608,7 +687,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
     setStatusMessage('Discarded browser recovery draft');
   }, [draftKey]);
 
-  const updateMetadata = useCallback(async (updates: { icon?: string | null; coverAssetId?: string | null; coverFocalX?: number; coverFocalY?: number }) => {
+  const updateMetadata = useCallback(async (updates: { icon?: string | null; coverAssetId?: string | null; coverFocalX?: number; coverFocalY?: number; coverScale?: number }) => {
     if (!page || page.deletedAt) {
       return false;
     }
@@ -680,17 +759,12 @@ export function PageEditor({ pageId }: { pageId: string }) {
     void updateMetadata({ icon: null });
   }, [updateMetadata]);
 
-  const updateCoverFocal = useCallback((axis: 'x' | 'y', value: number) => {
+  const updateCoverScale = useCallback((value: number) => {
     setCoverDraft((current) => {
       const base = current ?? coverPositionPercent;
-      if (!base) {
-        return current;
-      }
-      return axis === 'x'
-        ? { ...base, x: clampCoverFocal(value) }
-        : { ...base, y: clampCoverFocal(value) };
+      return base ? { ...base, scale: clampCoverScale(value) } : current;
     });
-  }, [clampCoverFocal, coverPositionPercent]);
+  }, [clampCoverScale, coverPositionPercent]);
 
   const beginCoverReposition = useCallback(() => {
     if (coverPositionPercent) {
@@ -714,14 +788,14 @@ export function PageEditor({ pageId }: { pageId: string }) {
 
   const onCoverPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = coverDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) {
+    if (!drag || !coverDraft || drag.pointerId !== event.pointerId) {
       return;
     }
     const bounds = event.currentTarget.getBoundingClientRect();
     const nextX = drag.x - ((event.clientX - drag.clientX) / Math.max(bounds.width, 1)) * 100;
     const nextY = drag.y - ((event.clientY - drag.clientY) / Math.max(bounds.height, 1)) * 100;
-    setCoverDraft({ x: clampCoverFocal(nextX), y: clampCoverFocal(nextY) });
-  }, [clampCoverFocal]);
+    setCoverDraft({ x: clampCoverFocal(nextX), y: clampCoverFocal(nextY), scale: coverDraft.scale });
+  }, [clampCoverFocal, coverDraft]);
 
   const finishCoverPointer = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (coverDragRef.current?.pointerId === event.pointerId) {
@@ -736,7 +810,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
     if (!coverDraft) {
       return;
     }
-    const saved = await updateMetadata({ coverFocalX: coverDraft.x, coverFocalY: coverDraft.y });
+    const saved = await updateMetadata({ coverFocalX: coverDraft.x, coverFocalY: coverDraft.y, coverScale: coverDraft.scale });
     if (saved) {
       setCoverDraft(null);
     }
@@ -745,7 +819,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
   const insertAsset = useCallback((asset: AssetRecord, blockId?: string) => {
     const url = `/api/assets/${asset.id}`;
     const block = asset.mimeType.startsWith('image/')
-      ? { type: 'image', props: { url, name: asset.filename, caption: asset.filename } }
+      ? { type: 'image', props: { url, name: asset.filename, caption: '' } }
       : { type: 'file', props: { url, name: asset.filename, caption: asset.filename } };
 
     if (blockId) {
@@ -816,7 +890,50 @@ export function PageEditor({ pageId }: { pageId: string }) {
     void uploadAndHandleTask(task.file, task.target, task.blockId);
   }, [uploadAndHandleTask]);
 
+  const addCoverFromUrl = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const url = getPastedUrl(coverUrl);
+    if (!url) {
+      setStatus('error');
+      setStatusMessage('Enter a valid HTTP(S) image URL.');
+      return;
+    }
+    try {
+      const asset = await importAssetFromUrl(url);
+      await updateMetadata({ coverAssetId: asset.id });
+      setCoverUrl('');
+      setCoverUrlOpen(false);
+    } catch (error) {
+      setStatus('error');
+      setStatusMessage(error instanceof Error ? error.message : 'Image import failed');
+    }
+  }, [coverUrl, importAssetFromUrl, updateMetadata]);
+
+  const addImageFromUrl = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const url = getPastedUrl(imageUrl);
+    if (!url) {
+      setStatus('error');
+      setStatusMessage('Enter a valid HTTP(S) image URL.');
+      return;
+    }
+    try {
+      const asset = await importAssetFromUrl(url);
+      insertAsset(asset);
+      setImageUrl('');
+      setImageUrlOpen(false);
+      setImageUrlPosition(null);
+    } catch (error) {
+      setStatus('error');
+      setStatusMessage(error instanceof Error ? error.message : 'Image import failed');
+    }
+  }, [imageUrl, importAssetFromUrl, insertAsset]);
+
   const chooseUpload = (event: ChangeEvent<HTMLInputElement>, target: 'body' | 'cover') => {
+    if (target === 'body') {
+      setImageUrlOpen(false);
+      setImageUrlPosition(null);
+    }
     const files = Array.from(event.currentTarget.files ?? []);
     for (const file of files) {
       void uploadAndHandleTask(file, target);
@@ -1023,6 +1140,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
       props: {
         pageId: targetPage.id,
         title: label,
+        icon: targetPage.icon ?? '',
       },
     });
   }, [editor, labelForPage]);
@@ -1047,8 +1165,19 @@ export function PageEditor({ pageId }: { pageId: string }) {
     setStatusMessage('Child page created; saving page card');
   }, [insertPageCard, pageId]);
 
+  const openImageUrlPicker = useCallback(() => {
+    const selection = editor.getSelectionBoundingBox();
+    setImageUrlPosition(selection ? {
+      top: Math.min(selection.bottom + 8, window.innerHeight - 180),
+      left: Math.min(selection.left, window.innerWidth - 460),
+    } : null);
+    setImageUrlOpen(true);
+  }, [editor]);
+
   const getSlashMenuItems = useCallback(async (query: string): Promise<(DefaultReactSuggestionItem & { pageId?: string })[]> => {
-    const defaultItems = filterSuggestionItems(getDefaultReactSlashMenuItems(editor), query);
+    const defaultItems = filterSuggestionItems(getDefaultReactSlashMenuItems(editor), query).map((item) => (item as DefaultReactSuggestionItem & { key?: string }).key === 'image'
+      ? { ...item, onItemClick: openImageUrlPicker }
+      : item);
     const normalized = query.trim().toLowerCase();
     const createChildItem = !normalized || 'new child page'.includes(normalized)
       ? [{
@@ -1060,9 +1189,18 @@ export function PageEditor({ pageId }: { pageId: string }) {
           group: 'Pages',
         }]
       : [];
+    const imageUrlItem = !normalized || 'image from url'.includes(normalized)
+      ? [{
+          title: 'Image from URL',
+          subtext: 'Download an image into the media library',
+          onItemClick: openImageUrlPicker,
+          group: 'Media',
+        }]
+      : [];
     const pages = pageSuggestions(query).map((item) => ({
-      title: `Page: ${item.title || 'Untitled'}`,
+      title: item.title || 'Untitled',
       subtext: 'Insert page card',
+      icon: <span aria-hidden="true">{item.icon || '📄'}</span>,
       onItemClick: () => {
         insertPageCard(item);
       },
@@ -1070,8 +1208,8 @@ export function PageEditor({ pageId }: { pageId: string }) {
       group: 'Pages',
     }));
 
-    return [...defaultItems, ...createChildItem, ...pages];
-  }, [createChildPageCard, editor, insertPageCard, pageSuggestions]);
+    return [...defaultItems, ...imageUrlItem, ...createChildItem, ...pages];
+  }, [createChildPageCard, editor, insertPageCard, openImageUrlPicker, pageSuggestions]);
 
   const insertMention = useCallback(
     (item: MentionItem) => {
@@ -1124,6 +1262,93 @@ export function PageEditor({ pageId }: { pageId: string }) {
     requestSave();
   }, editor);
 
+  const enterEditing = useCallback(() => {
+    if (isDeleted) {
+      return;
+    }
+    setIsEditing(true);
+    window.requestAnimationFrame(() => editor.focus());
+  }, [editor, isDeleted]);
+
+  const onEditorViewClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest('a, button, input, textarea, [contenteditable="true"]')) {
+      return;
+    }
+    enterEditing();
+  }, [enterEditing]);
+
+  const onEditorViewKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!isEditing && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+      enterEditing();
+    }
+  }, [enterEditing, isEditing]);
+
+  const onEditorViewPaste = useCallback((event: ReactClipboardEvent<HTMLDivElement>) => {
+    if (!isEditing) {
+      return;
+    }
+    const pastedUrl = getPastedUrl(event.clipboardData.getData('text/plain'));
+    if (!pastedUrl) {
+      return;
+    }
+    event.preventDefault();
+    if (isImageUrl(pastedUrl)) {
+      void importAssetFromUrl(pastedUrl)
+        .then((asset) => insertAsset(asset))
+        .catch((error) => {
+          setStatus('error');
+          setStatusMessage(error instanceof Error ? error.message : 'Image import failed');
+        });
+      return;
+    }
+    insertOrUpdateBlockForSlashMenu(editor, {
+      type: 'pageLink',
+      props: {
+        url: pastedUrl,
+        title: getUrlTitle(pastedUrl),
+      },
+    });
+  }, [editor, importAssetFromUrl, insertAsset, isEditing]);
+
+  const onEditorMouseMove = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    if (!isEditing) {
+      return;
+    }
+    const content = (event.target as HTMLElement).closest<HTMLElement>('.bn-block-content[data-content-type="image"]');
+    const outer = content?.closest<HTMLElement>('.bn-block-outer');
+    const blockId = outer?.dataset.id;
+    if (!content || !outer || !blockId) {
+      return;
+    }
+    const editorBox = event.currentTarget.getBoundingClientRect();
+    const blockBox = outer.getBoundingClientRect();
+    const block = editor.getBlock(blockId);
+    const props = block?.props as { caption?: string } | undefined;
+    setImageHover({
+      blockId,
+      top: Math.max(0, blockBox.top - editorBox.top + 4),
+      left: Math.max(0, blockBox.right - editorBox.left - 112),
+      caption: String(props?.caption || ''),
+    });
+  }, [editor, isEditing]);
+
+  const openCaptionEditor = useCallback(() => {
+    if (!imageHover) {
+      return;
+    }
+    setCaptionEditor({ ...imageHover, value: imageHover.caption });
+  }, [imageHover]);
+
+  const saveCaption = useCallback((event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!captionEditor) {
+      return;
+    }
+    editor.updateBlock(captionEditor.blockId, { props: { caption: captionEditor.value.trim() } });
+    setCaptionEditor(null);
+  }, [captionEditor, editor]);
+
   const breadcrumbs = useMemo(() => {
     type BreadcrumbEntry = {
       id: string;
@@ -1139,8 +1364,8 @@ export function PageEditor({ pageId }: { pageId: string }) {
           id: item.id,
           parentId: item.parentId,
           title: item.title,
-          icon: null,
-          sortKey: 0,
+          icon: item.icon ?? null,
+          sortKey: item.sortKey,
         },
       ]),
     );
@@ -1199,7 +1424,8 @@ export function PageEditor({ pageId }: { pageId: string }) {
       <header className="document-topbar">
         <nav className="breadcrumbs" aria-label="Breadcrumbs">
           {breadcrumbs.length > 0 ? breadcrumbs.map((crumb, index) => (
-            <span key={crumb.id}>
+            <span key={crumb.id} className="breadcrumb-entry">
+              {crumb.icon ? <span className="breadcrumb-icon" aria-hidden="true">{crumb.icon}</span> : null}
               <Link className="text-link" href={`/page/${crumb.id}`}>{crumb.title}</Link>
               {index + 1 < breadcrumbs.length ? <span aria-hidden="true"> / </span> : null}
             </span>
@@ -1212,6 +1438,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
             <button type="button" onClick={() => editor.redo()} disabled={isDeleted}>Redo</button>
             {coverAsset ? <button type="button" disabled={isDeleted} onClick={beginCoverReposition}>Reposition cover</button> : null}
             <button type="button" disabled={isDeleted} onClick={() => coverUploadRef.current?.click()}>{coverAsset ? 'Replace cover' : 'Add cover'}</button>
+            <button type="button" disabled={isDeleted} onClick={() => setCoverUrlOpen(true)}>{coverAsset ? 'Replace cover from URL' : 'Add cover from URL'}</button>
             {coverAsset ? <button type="button" disabled={isDeleted} onClick={() => void updateMetadata({ coverAssetId: null })}>Remove cover</button> : null}
             <button type="button" disabled={isDeleted} onClick={() => bodyUploadRef.current?.click()}>Upload file</button>
             <button type="button" disabled={isDeleted || !page.icon} onClick={() => void updateMetadata({ icon: null })}>Remove icon</button>
@@ -1257,21 +1484,21 @@ export function PageEditor({ pageId }: { pageId: string }) {
             width={1200}
             height={320}
             className="cover-preview-image"
-            style={displayedCoverPosition ? { objectPosition: `${displayedCoverPosition.x}% ${displayedCoverPosition.y}%` } : undefined}
+            style={displayedCoverPosition ? {
+              objectPosition: `${displayedCoverPosition.x}% ${displayedCoverPosition.y}%`,
+              transform: `scale(${displayedCoverPosition.scale / 100})`,
+            } : undefined}
             draggable={false}
             unoptimized
           />
           {coverDraft ? (
             <div className="cover-reposition-toolbar" role="group" aria-label="Reposition cover">
               <span>Drag the image to reposition</span>
-              <label htmlFor="cover-focal-x"><span className="visually-hidden">Horizontal</span>
-                <input id="cover-focal-x" aria-label="Horizontal" type="range" min={0} max={100} step={COVER_FOCAL_STEP} value={coverDraft.x} onChange={(event) => updateCoverFocal('x', Number(event.currentTarget.value))} disabled={isDeleted} />
-              </label>
-              <label htmlFor="cover-focal-y"><span className="visually-hidden">Vertical</span>
-                <input id="cover-focal-y" aria-label="Vertical" type="range" min={0} max={100} step={COVER_FOCAL_STEP} value={coverDraft.y} onChange={(event) => updateCoverFocal('y', Number(event.currentTarget.value))} disabled={isDeleted} />
+              <label htmlFor="cover-size"><span>Size</span>
+                <input id="cover-size" aria-label="Cover size" type="range" min={100} max={200} step={COVER_SCALE_STEP} value={coverDraft.scale} onChange={(event) => updateCoverScale(Number(event.currentTarget.value))} disabled={isDeleted} />
               </label>
               <button type="button" onClick={() => setCoverDraft(null)}>Cancel</button>
-              <button type="button" className="primary-btn" onClick={() => void saveCoverPosition()}>Save position</button>
+              <button type="button" className="primary-btn" onClick={() => void saveCoverPosition()}>Save</button>
             </div>
           ) : (
             <button type="button" className="cover-reposition-trigger" disabled={isDeleted} onClick={beginCoverReposition}>Reposition cover</button>
@@ -1286,7 +1513,10 @@ export function PageEditor({ pageId }: { pageId: string }) {
               {!page.icon ? (
                 <button ref={setIconTrigger} key="add-icon" type="button" aria-haspopup="dialog" aria-expanded={iconPickerOpen} disabled={isDeleted} onClick={() => setIconPickerOpen(true)}>Add icon</button>
               ) : null}
-              {!coverAsset ? <button type="button" disabled={isDeleted} onClick={() => coverUploadRef.current?.click()}>Add cover</button> : null}
+              {!coverAsset ? <>
+                <button type="button" disabled={isDeleted} onClick={() => coverUploadRef.current?.click()}>Add cover</button>
+                <button type="button" disabled={isDeleted} onClick={() => setCoverUrlOpen(true)}>Add cover from URL</button>
+              </> : null}
             </div>
           ) : null}
           <div className="page-title-row">
@@ -1309,6 +1539,28 @@ export function PageEditor({ pageId }: { pageId: string }) {
         <input ref={coverUploadRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" onChange={(event) => chooseUpload(event, 'cover')} disabled={isDeleted} />
         <input ref={bodyUploadRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown" multiple onChange={(event) => chooseUpload(event, 'body')} disabled={isDeleted} />
 
+        {coverUrlOpen ? (
+          <form className="media-url-form" aria-label="Add cover from URL" onSubmit={(event) => void addCoverFromUrl(event)}>
+            <label htmlFor="cover-image-url">Cover image URL<input id="cover-image-url" type="url" value={coverUrl} onChange={(event) => setCoverUrl(event.target.value)} placeholder="https://example.com/image.jpg" /></label>
+            <button type="submit" className="primary-btn" disabled={isDeleted || !coverUrl.trim()}>Use image</button>
+            <button type="button" onClick={() => { setCoverUrl(''); setCoverUrlOpen(false); }}>Cancel</button>
+          </form>
+        ) : null}
+
+        {imageUrlOpen ? (
+          <form
+            className="media-url-form image-url-popover"
+            aria-label="Insert image from URL"
+            style={imageUrlPosition ? { top: imageUrlPosition.top, left: imageUrlPosition.left } : undefined}
+            onSubmit={(event) => void addImageFromUrl(event)}
+          >
+            <label htmlFor="editor-image-url">Image URL<input id="editor-image-url" type="url" autoFocus value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="https://example.com/image.jpg" /></label>
+            <button type="submit" className="primary-btn" disabled={isDeleted || !imageUrl.trim()}>Insert image</button>
+            <button type="button" disabled={isDeleted} onClick={() => bodyUploadRef.current?.click()}>Choose file</button>
+            <button type="button" onClick={() => { setImageUrl(''); setImageUrlOpen(false); setImageUrlPosition(null); }}>Cancel</button>
+          </form>
+        ) : null}
+
         {uploadTasks.length ? (
           <ul className="upload-task-list" aria-label="Uploads">
             {uploadTasks.map((task) => (
@@ -1321,8 +1573,17 @@ export function PageEditor({ pageId }: { pageId: string }) {
           </ul>
         ) : null}
 
-        <div className="editor-view">
-          <BlockNoteView editor={editor} slashMenu={false} editable={!isDeleted} theme="dark">
+        <div
+          className={`editor-view ${isEditing ? 'is-editing' : 'is-reading'}`}
+          onClick={onEditorViewClick}
+          onKeyDown={onEditorViewKeyDown}
+          onPaste={onEditorViewPaste}
+          onMouseMove={onEditorMouseMove}
+          onMouseLeave={() => { if (!captionEditor) setImageHover(null); }}
+          tabIndex={isEditing || isDeleted ? -1 : 0}
+          aria-label={isEditing ? undefined : 'Page content. Click to edit.'}
+        >
+          <BlockNoteView editor={editor} slashMenu={false} editable={isEditing && !isDeleted} theme="dark">
             <SuggestionMenuController
               triggerCharacter="/"
               getItems={getSlashMenuItems}
@@ -1336,6 +1597,23 @@ export function PageEditor({ pageId }: { pageId: string }) {
               suggestionMenuComponent={ArcaneSuggestionMenu}
             />
           </BlockNoteView>
+          {imageHover && !captionEditor ? (
+            <button
+              type="button"
+              className="image-caption-trigger"
+              style={{ top: imageHover.top, left: imageHover.left }}
+              onClick={openCaptionEditor}
+            >
+              {imageHover.caption ? 'Edit caption' : 'Add caption'}
+            </button>
+          ) : null}
+          {captionEditor ? (
+            <form className="image-caption-editor" style={{ top: captionEditor.top, left: captionEditor.left }} onSubmit={saveCaption}>
+              <label htmlFor="image-caption-input" className="visually-hidden">Image caption</label>
+              <input id="image-caption-input" autoFocus value={captionEditor.value} onChange={(event) => setCaptionEditor((current) => current ? { ...current, value: event.target.value } : current)} placeholder="Add a caption" />
+              <button type="submit" className="primary-btn">Save</button>
+            </form>
+          ) : null}
         </div>
 
         <div className="document-footnotes">

@@ -46,6 +46,7 @@ type PageForSelector = {
 type HostPage = PageForSelector & {
   coverFocalX: number;
   coverFocalY: number;
+  coverScale: number;
 };
 
 type CollectionItem = {
@@ -1011,7 +1012,10 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
             width={1600}
             height={320}
             className="collection-host-cover-image"
-            style={{ objectPosition: `${hostPage.coverFocalX}% ${hostPage.coverFocalY}%` }}
+            style={{
+              objectPosition: `${hostPage.coverFocalX}% ${hostPage.coverFocalY}%`,
+              transform: `scale(${hostPage.coverScale / 100})`,
+            }}
             unoptimized
           />
         </div>

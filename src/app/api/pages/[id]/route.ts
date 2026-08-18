@@ -9,6 +9,7 @@ type PageUpdatePayload = {
   coverAssetId?: string | null;
   coverFocalX?: number;
   coverFocalY?: number;
+  coverScale?: number;
   parentId?: string | null;
   sortKey?: number;
   contentJson?: string;
@@ -23,6 +24,19 @@ function clampFocal(value: unknown): number | undefined {
   }
   if (value > 100) {
     return 100;
+  }
+  return value;
+}
+
+function clampCoverScale(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return undefined;
+  }
+  if (value < 100) {
+    return 100;
+  }
+  if (value > 200) {
+    return 200;
   }
   return value;
 }
@@ -55,6 +69,9 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   }
   if (Object.hasOwn(payload, 'coverFocalY') && clampFocal(payload.coverFocalY) === undefined) {
     return NextResponse.json({ error: 'coverFocalY must be a finite number between 0 and 100.' }, { status: 400 });
+  }
+  if (Object.hasOwn(payload, 'coverScale') && clampCoverScale(payload.coverScale) === undefined) {
+    return NextResponse.json({ error: 'coverScale must be a finite number between 100 and 200.' }, { status: 400 });
   }
   if (typeof payload.contentJson === 'string') {
     if (Buffer.byteLength(payload.contentJson, 'utf8') > 5 * 1024 * 1024) {
@@ -97,6 +114,9 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     }
     if (Object.hasOwn(payload, 'coverFocalY')) {
       updates.coverFocalY = clampFocal(payload.coverFocalY);
+    }
+    if (Object.hasOwn(payload, 'coverScale')) {
+      updates.coverScale = clampCoverScale(payload.coverScale);
     }
     if (Object.hasOwn(payload, 'parentId')) {
       updates.parentId = payload.parentId ?? null;

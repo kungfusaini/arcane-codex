@@ -61,10 +61,12 @@ describe('workspace bootstrap', () => {
       const pageColumns = migrated.prepare("PRAGMA table_info(pages)").all() as Array<{ name: string }>;
       const columnX = pageColumns.find((row) => row.name === 'cover_focal_x');
       const columnY = pageColumns.find((row) => row.name === 'cover_focal_y');
-      assert.equal(version.user_version, 3);
+      const columnScale = pageColumns.find((row) => row.name === 'cover_scale');
+      assert.equal(version.user_version, 4);
       assert.ok(assetIndex);
       assert.ok(columnX);
       assert.ok(columnY);
+      assert.ok(columnScale);
       migrated.exec('PRAGMA user_version = 99;');
       migrated.close();
 

@@ -1,5 +1,4 @@
 import { expect, test, type APIRequestContext, type Locator, type Page, type TestInfo } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
 
 type MotionSample = {
   tx: number;
@@ -172,7 +171,7 @@ type PageRecord = {
   revision: number;
 };
 
-test('core local workspace flows survive reload and remain recoverable', async ({ page, request }, testInfo) => {
+test('core local workspace flows survive reload and remain recoverable', async ({ page, request }) => {
   const createRootResponse = await request.post('/api/pages', { data: { title: 'Field Notes' } });
   expect(createRootResponse.ok()).toBeTruthy();
   const root = (await createRootResponse.json()).page as PageRecord;
@@ -295,14 +294,6 @@ test('core local workspace flows survive reload and remain recoverable', async (
   await page.locator('.trash-section').getByRole('button', { name: 'Restore' }).click();
   await expect(page.getByText('This page is in trash. Restore it before editing.')).toBeHidden();
 
-  const [download] = await Promise.all([
-    page.waitForEvent('download'),
-    page.getByRole('button', { name: 'Export ZIP' }).click(),
-  ]);
-  const exportPath = testInfo.outputPath('workspace.zip');
-  await download.saveAs(exportPath);
-  const signature = (await readFile(exportPath)).subarray(0, 2).toString('ascii');
-  expect(signature).toBe('PK');
 });
 
 test('shows page appearance affordances and selects a searchable emoji icon', async ({ page, request }) => {
@@ -314,9 +305,9 @@ test('shows page appearance affordances and selects a searchable emoji icon', as
   const identity = page.locator('.page-identity');
   await identity.hover();
   await expect(page.getByRole('button', { name: 'Add icon' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Add cover' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add cover', exact: true })).toBeVisible();
   const coverChooser = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: 'Add cover' }).click();
+  await page.getByRole('button', { name: 'Add cover', exact: true }).click();
   await (await coverChooser).setFiles({
     name: 'fresh-cover.png',
     mimeType: 'image/png',
@@ -362,6 +353,7 @@ test('renders custom slash and mention suggestion menus without BlockNote UI con
   const slashSource = (await slashSourceResponse.json()).page as PageRecord;
 
   await page.goto(`/page/${slashSource.id}`);
+  await page.locator('.editor-view').click();
   const slashEditor = page.locator('.editor-view .bn-editor[contenteditable="true"]');
   await expect(slashEditor).toBeVisible();
   await slashEditor.click();
@@ -377,6 +369,7 @@ test('renders custom slash and mention suggestion menus without BlockNote UI con
   const mentionSource = (await mentionSourceResponse.json()).page as PageRecord;
 
   await page.goto(`/page/${mentionSource.id}`);
+  await page.locator('.editor-view').click();
   const mentionEditor = page.locator('.editor-view .bn-editor[contenteditable="true"]');
   await expect(mentionEditor).toBeVisible();
   await mentionEditor.click();
@@ -509,10 +502,8 @@ test.describe('cover controls and reference refresh', () => {
     await expect(page.locator('.cover-preview-image')).toHaveAttribute('style', /object-position:\s*80% 20%/);
     await cover.hover();
     await page.getByRole('button', { name: 'Reposition cover' }).click();
-    const xSlider = page.getByLabel('Horizontal');
-    const ySlider = page.getByLabel('Vertical');
-    await expect(xSlider).toHaveValue('80');
-    await expect(ySlider).toHaveValue('20');
+    const sizeSlider = page.getByLabel('Cover size');
+    await expect(sizeSlider).toHaveValue('100');
     const coverBox = await cover.boundingBox();
     expect(coverBox).not.toBeNull();
     if (coverBox) {
@@ -521,23 +512,21 @@ test.describe('cover controls and reference refresh', () => {
       await page.mouse.move(coverBox.x + coverBox.width / 2 - 128, coverBox.y + coverBox.height / 2 + 40);
       await page.mouse.up();
     }
-    await expect(xSlider).not.toHaveValue('80');
+    await expect(page.locator('.cover-preview-image')).not.toHaveAttribute('style', /object-position:\s*80% 20%/);
     await page.getByRole('button', { name: 'Cancel' }).click();
     await expect(page.locator('.cover-preview-image')).toHaveAttribute('style', /object-position:\s*80% 20%/);
     await cover.hover();
     await page.getByRole('button', { name: 'Reposition cover' }).click();
-    await xSlider.fill('60');
-    await ySlider.fill('40');
-    await expect(page.locator('.cover-preview-image')).toHaveAttribute('style', /object-position:\s*60% 40%/);
-    await page.getByRole('button', { name: 'Save position' }).click();
+    await sizeSlider.fill('150');
+    await expect(page.locator('.cover-preview-image')).toHaveAttribute('style', /transform:\s*scale\(1\.5\)/);
+    await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByRole('button', { name: 'Reposition cover' })).toBeVisible();
 
     await page.reload();
-    await expect(page.locator('.cover-preview-image')).toHaveAttribute('style', /object-position:\s*60% 40%/);
+    await expect(page.locator('.cover-preview-image')).toHaveAttribute('style', /transform:\s*scale\(1\.5\)/);
     await page.locator('.cover-preview').hover();
     await page.getByRole('button', { name: 'Reposition cover' }).click();
-    await expect(page.getByLabel('Horizontal')).toHaveValue('60');
-    await expect(page.getByLabel('Vertical')).toHaveValue('40');
+    await expect(page.getByLabel('Cover size')).toHaveValue('150');
   });
 
   test('refreshes inline and card references by stable page id when a target is renamed', async ({ page, request }) => {
@@ -657,7 +646,7 @@ test.describe('cover controls at 390px', () => {
     await pageActionsButton.click();
     const pageActions = page.locator('.action-menu');
     await expect(pageActions).toHaveAttribute('open');
-    await expect(pageActions.getByRole('button', { name: 'Add cover' })).toBeVisible();
+    await expect(pageActions.getByRole('button', { name: 'Add cover', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Upload file' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Remove icon' })).toBeDisabled();
     await page.screenshot({ path: testInfo.outputPath('narrow-mobile-page-actions.png'), fullPage: true });
@@ -757,6 +746,7 @@ test.describe('body uploads from paste and drop', () => {
     });
 
     await page.goto(`/page/${root.id}`);
+    await page.locator('.editor-view').click();
     await expect(page.locator(editorSelector)).toBeVisible();
 
     const initialBlocks = await loadPageBlocks(request, root.id);
@@ -833,6 +823,7 @@ test.describe('body uploads from paste and drop', () => {
     expect(patchResponse.ok()).toBeTruthy();
 
     await page.goto(`/page/${root.id}`);
+    await page.locator('.editor-view').click();
     await expect(page.locator(editorSelector)).toBeVisible();
 
     const initialBlocks = await loadPageBlocks(request, root.id);

@@ -7,6 +7,7 @@ export type PageRecord = {
   coverAssetId: string | null;
   coverFocalX: number;
   coverFocalY: number;
+  coverScale: number;
   contentJson: string;
   revision: number;
   createdAt: number;
@@ -22,11 +23,12 @@ export type NewPage = {
   coverAssetId?: string | null;
   coverFocalX?: number;
   coverFocalY?: number;
+  coverScale?: number;
   contentJson?: string;
 };
 
 export type PageUpdate = Partial<
-  Pick<PageRecord, 'parentId' | 'sortKey' | 'title' | 'icon' | 'coverAssetId' | 'coverFocalX' | 'coverFocalY' | 'contentJson'>
+  Pick<PageRecord, 'parentId' | 'sortKey' | 'title' | 'icon' | 'coverAssetId' | 'coverFocalX' | 'coverFocalY' | 'coverScale' | 'contentJson'>
 > & {
   revision: number;
 };
