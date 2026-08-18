@@ -15,6 +15,19 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ pages });
 }
 
+function clampFocal(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return undefined;
+  }
+  if (value < 0) {
+    return 0;
+  }
+  if (value > 100) {
+    return 100;
+  }
+  return value;
+}
+
 export async function POST(request: NextRequest) {
   const payload = await request.json().catch(() => ({}));
   const title = String(payload.title ?? '').trim() || 'Untitled';
@@ -31,6 +44,8 @@ export async function POST(request: NextRequest) {
     title,
     icon: payload.icon ?? null,
     coverAssetId: payload.coverAssetId ?? null,
+    coverFocalX: clampFocal(payload.coverFocalX),
+    coverFocalY: clampFocal(payload.coverFocalY),
     contentJson: payload.contentJson ?? '[]',
   });
 

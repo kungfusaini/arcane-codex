@@ -1,5 +1,140 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+
+const PASTE_PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+
+type ClipboardUploadFile = {
+  name: string;
+  mimeType: string;
+  base64: string;
+};
+
+type PageBlock = {
+  type: string;
+  content?: unknown[];
+  props?: {
+    caption?: string;
+    [key: string]: unknown;
+  };
+};
+
+function parsePageBlocks(contentJson: string): PageBlock[] {
+  try {
+    const parsed = JSON.parse(contentJson) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed as PageBlock[];
+    }
+  } catch {
+    // keep empty on malformed payloads
+  }
+  return [];
+}
+
+function blockText(block: PageBlock): string {
+  if (block.type !== 'paragraph' || !Array.isArray(block.content)) {
+    return '';
+  }
+  return block.content
+    .map((item) => {
+      if (item && typeof item === 'object' && 'type' in item && 'text' in item) {
+        const text = (item as { text?: unknown }).text;
+        return typeof text === 'string' ? text : '';
+      }
+      return '';
+    })
+    .join('');
+}
+
+function findTopLevelParagraph(blocks: PageBlock[], text: string): number {
+  return blocks.findIndex((block) => blockText(block) === text);
+}
+
+function findTopLevelImage(blocks: PageBlock[], caption: string): number {
+  return blocks.findIndex(
+    (block) => block.type === 'image' && typeof block.props?.caption === 'string' && block.props.caption === caption,
+  );
+}
+
+function blockSignature(block: PageBlock): string {
+  if (block.type === 'paragraph') {
+    return `paragraph:${blockText(block)}`;
+  }
+  if (block.type === 'image' && typeof block.props?.caption === 'string') {
+    return `image:${block.props.caption}`;
+  }
+  return block.type;
+}
+
+async function loadPageBlocks(request: APIRequestContext, pageId: string): Promise<PageBlock[]> {
+  const response = await request.get(`/api/pages/${pageId}`);
+  const payload = (await response.json()) as { page?: { contentJson: string } };
+  return parsePageBlocks(payload.page?.contentJson ?? '[]');
+}
+
+async function dispatchPasteIntoEditor(page: Page, editorSelector: string, file: ClipboardUploadFile) {
+  await page.evaluate(({ selector, name, mimeType, base64 }) => {
+    const editor = document.querySelector(selector);
+    if (!(editor instanceof HTMLElement)) {
+      return;
+    }
+
+    const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+    const uploadFile = new File([bytes], name, { type: mimeType });
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(uploadFile);
+
+    const event = new ClipboardEvent('paste', {
+      bubbles: true,
+      cancelable: true,
+    });
+    Object.defineProperty(event, 'clipboardData', { value: dataTransfer });
+    editor.dispatchEvent(event);
+  }, {
+    selector: editorSelector,
+    name: file.name,
+    mimeType: file.mimeType,
+    base64: file.base64,
+  });
+}
+
+async function dispatchDropIntoEditor(page: Page, editorSelector: string, file: ClipboardUploadFile, x: number, y: number) {
+  await page.evaluate(({ selector, name, mimeType, base64, x, y }) => {
+    const editor = document.querySelector(selector);
+    if (!(editor instanceof HTMLElement)) {
+      return;
+    }
+
+    const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+    const uploadFile = new File([bytes], name, { type: mimeType });
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(uploadFile);
+    dataTransfer.effectAllowed = 'copy';
+
+    const createDragEvent = (type: 'dragenter' | 'dragover' | 'drop' | 'dragleave') => {
+      const event = new DragEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: x,
+        clientY: y,
+      });
+      Object.defineProperty(event, 'dataTransfer', { value: dataTransfer });
+      return event;
+    };
+
+    editor.dispatchEvent(createDragEvent('dragenter'));
+    editor.dispatchEvent(createDragEvent('dragover'));
+    editor.dispatchEvent(createDragEvent('drop'));
+    editor.dispatchEvent(createDragEvent('dragleave'));
+  }, {
+    selector: editorSelector,
+    name: file.name,
+    mimeType: file.mimeType,
+    base64: file.base64,
+    x,
+    y,
+  });
+}
 
 type PageRecord = {
   id: string;
@@ -118,4 +253,292 @@ test('core local workspace flows survive reload and remain recoverable', async (
   await download.saveAs(exportPath);
   const signature = (await readFile(exportPath)).subarray(0, 2).toString('ascii');
   expect(signature).toBe('PK');
+});
+
+test.describe('cover controls and reference refresh', () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+
+  test('applies and persists cover focal point values on reload', async ({ page, request }) => {
+    const createRootResponse = await request.post('/api/pages', { data: { title: 'Cover root' } });
+    expect(createRootResponse.ok()).toBeTruthy();
+    const root = (await createRootResponse.json()).page as { id: string; revision: number };
+
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+    const upload = await request.post('/api/assets', {
+      multipart: {
+        file: { name: 'cover.png', mimeType: 'image/png', buffer: png },
+      },
+    });
+    expect(upload.ok()).toBeTruthy();
+    const asset = (await upload.json()).asset as { id: string };
+
+    const coverApply = await request.patch(`/api/pages/${root.id}`, {
+      data: {
+        revision: root.revision,
+        title: 'Cover root',
+        coverAssetId: asset.id,
+      },
+    });
+    expect(coverApply.ok()).toBeTruthy();
+    const coverPage = (await coverApply.json()).page as { revision: number };
+
+    const focalApply = await request.patch(`/api/pages/${root.id}`, {
+      data: {
+        revision: coverPage.revision,
+        coverFocalX: 80,
+        coverFocalY: 20,
+      },
+    });
+    expect(focalApply.ok()).toBeTruthy();
+
+    await page.goto(`/page/${root.id}`);
+    const xSlider = page.getByLabel('Horizontal');
+    const ySlider = page.getByLabel('Vertical');
+    await expect(xSlider).toHaveValue('80');
+    await expect(ySlider).toHaveValue('20');
+    await expect(page.locator('.cover-preview-image')).toHaveAttribute('style', /object-position:\s*80% 20%/);
+
+    await page.reload();
+    await expect(page.getByLabel('Horizontal')).toHaveValue('80');
+    await expect(page.getByLabel('Vertical')).toHaveValue('20');
+    await expect(page.locator('.cover-preview-image')).toHaveAttribute('style', /object-position:\s*80% 20%/);
+  });
+
+  test('refreshes inline and card references by stable page id when a target is renamed', async ({ page, request }) => {
+    const rootResponse = await request.post('/api/pages', { data: { title: 'Source root' } });
+    expect(rootResponse.ok()).toBeTruthy();
+    const root = (await rootResponse.json()).page as { id: string; revision: number };
+
+    const targetResponse = await request.post('/api/pages', { data: { title: 'Target old', parentId: root.id } });
+    expect(targetResponse.ok()).toBeTruthy();
+    const target = (await targetResponse.json()).page as { id: string; revision: number };
+
+    const contentJson = JSON.stringify([
+      {
+        type: 'paragraph',
+        content: [
+          {
+            type: 'link',
+            href: `/page/${target.id}`,
+            content: [{ type: 'text', text: 'Target old', styles: {} }],
+          },
+        ],
+      },
+      {
+        type: 'pageLink',
+        props: {
+          pageId: target.id,
+          title: 'Target old',
+        },
+      },
+    ]);
+
+    await request.patch(`/api/pages/${root.id}`, {
+      data: {
+        revision: root.revision,
+        title: 'Source root',
+        contentJson,
+      },
+    });
+
+    await page.goto(`/page/${root.id}`);
+    await expect(page.getByRole('link', { name: 'Target old' }).first()).toBeVisible();
+
+    const rename = await request.patch(`/api/pages/${target.id}`, {
+      data: {
+        revision: target.revision,
+        title: 'Target renamed',
+      },
+    });
+    expect(rename.ok()).toBeTruthy();
+
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event('arcane-pages-changed'));
+    });
+
+    await expect(page.getByRole('link', { name: 'Target renamed' }).first()).toBeVisible();
+  });
+});
+
+
+test.describe('cover controls at 390px', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('shows media controls in stacked layout at narrow widths', async ({ page, request }) => {
+    const createRootResponse = await request.post('/api/pages', { data: { title: 'Narrow root' } });
+    expect(createRootResponse.ok()).toBeTruthy();
+    const root = (await createRootResponse.json()).page as { id: string; revision: number };
+
+    await page.goto(`/page/${root.id}`);
+    const controls = page.locator('.media-controls');
+    await expect(controls).toBeVisible();
+    const groups = controls.locator('.media-control-group');
+    await expect(groups).toHaveCount(3);
+
+    const first = await groups.nth(0).boundingBox();
+    const second = await groups.nth(1).boundingBox();
+    const third = await groups.nth(2).boundingBox();
+    expect(first && second && third).toBeTruthy();
+
+    if (first && second && third) {
+      expect(second.y).toBeGreaterThan(first.y + first.height - 4);
+      expect(third.y).toBeGreaterThan(second.y + second.height - 4);
+    }
+  });
+});
+
+
+test.describe('body uploads from paste and drop', () => {
+  const editorSelector = '.editor-view .bn-editor[contenteditable="true"]';
+
+  test('pastes image through clipboard into body, retries on transient failure, and saves at active caret location', async ({ page, request }, testInfo: TestInfo) => {
+    const rootResponse = await request.post('/api/pages', { data: { title: 'Paste upload test' } });
+    expect(rootResponse.ok()).toBeTruthy();
+    const root = (await rootResponse.json()).page as PageRecord;
+
+    const initialContent = JSON.stringify([
+      { type: 'paragraph', content: [{ type: 'text', text: 'Paste start', styles: {} }] },
+      { type: 'paragraph', content: [{ type: 'text', text: 'Paste end', styles: {} }] },
+    ]);
+
+    await request.patch(`/api/pages/${root.id}`, {
+      data: {
+        revision: root.revision,
+        title: 'Paste upload test',
+        contentJson: initialContent,
+      },
+    });
+
+    await page.goto(`/page/${root.id}`);
+    await expect(page.locator(editorSelector)).toBeVisible();
+
+    const initialBlocks = await loadPageBlocks(request, root.id);
+    expect(initialBlocks.map(blockSignature)).toEqual([
+      'paragraph:Paste start',
+      'paragraph:Paste end',
+    ]);
+
+    const firstParagraph = page.locator('.editor-view .bn-block-content[data-content-type="paragraph"]', { hasText: 'Paste start' }).first();
+    await firstParagraph.click();
+    await page.keyboard.press('End');
+
+    const uploadFile: ClipboardUploadFile = {
+      name: 'paste-upload.png',
+      mimeType: 'image/png',
+      base64: PASTE_PNG_BASE64,
+    };
+
+    let blockedFirstAttempt = false;
+    await page.route('**/api/assets', async (route) => {
+      if (route.request().method() === 'POST' && !blockedFirstAttempt) {
+        blockedFirstAttempt = true;
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'Simulated transient upload failure' }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await dispatchPasteIntoEditor(page, editorSelector, uploadFile);
+
+    const uploads = page.locator('.upload-task-list');
+    await expect(uploads).toBeVisible();
+    await expect(uploads.getByText('paste-upload.png')).toBeVisible();
+    await expect(uploads).toContainText('Simulated transient upload failure');
+
+    await page.screenshot({ path: testInfo.outputPath('paste-upload-failure.png'), fullPage: true });
+
+    await page.unroute('**/api/assets');
+    await uploads.getByRole('button', { name: 'Retry' }).click();
+    await expect.poll(async () => page.locator('.upload-task-list').count(), { timeout: 10_000 }).toBe(0);
+    await expect.poll(async () => {
+      const blocks = await loadPageBlocks(request, root.id);
+      const imageIndex = blocks.findIndex((block) => block.type === 'image');
+      const beforeIndex = findTopLevelParagraph(blocks, 'Paste start');
+      const afterIndex = findTopLevelParagraph(blocks, 'Paste end');
+      return imageIndex > beforeIndex && imageIndex > -1 && beforeIndex > -1 && afterIndex > imageIndex;
+    }, { timeout: 20_000 }).toBeTruthy();
+
+    await page.screenshot({ path: testInfo.outputPath('paste-upload-success.png'), fullPage: true });
+  });
+
+  test('drops image into body at target paragraph and inserts near active cursor region', async ({ page, request }, testInfo: TestInfo) => {
+    const rootResponse = await request.post('/api/pages', { data: { title: 'Drop upload test' } });
+    expect(rootResponse.ok()).toBeTruthy();
+    const root = (await rootResponse.json()).page as PageRecord;
+
+    const initialContent = JSON.stringify([
+      { type: 'paragraph', content: [{ type: 'text', text: 'Drop top', styles: {} }] },
+      { type: 'paragraph', content: [{ type: 'text', text: 'Drop middle', styles: {} }] },
+      { type: 'paragraph', content: [{ type: 'text', text: 'Drop bottom', styles: {} }] },
+    ]);
+
+    const patchResponse = await request.patch(`/api/pages/${root.id}`, {
+      data: {
+        revision: root.revision,
+        title: 'Drop upload test',
+        contentJson: initialContent,
+      },
+    });
+    expect(patchResponse.ok()).toBeTruthy();
+
+    await page.goto(`/page/${root.id}`);
+    await expect(page.locator(editorSelector)).toBeVisible();
+
+    const initialBlocks = await loadPageBlocks(request, root.id);
+    expect(initialBlocks.map(blockSignature)).toEqual([
+      'paragraph:Drop top',
+      'paragraph:Drop middle',
+      'paragraph:Drop bottom',
+    ]);
+
+    const targetParagraph = page.locator('.editor-view .bn-block-content[data-content-type="paragraph"]', { hasText: 'Drop middle' }).first();
+    await targetParagraph.click();
+
+    const targetBox = await targetParagraph.boundingBox();
+    expect(targetBox).not.toBeNull();
+
+    const uploadFile: ClipboardUploadFile = {
+      name: 'drop-upload.png',
+      mimeType: 'image/png',
+      base64: PASTE_PNG_BASE64,
+    };
+
+    if (!targetBox) {
+      throw new Error('Could not locate drop target paragraph.');
+    }
+
+    let dropUploads = 0;
+    const dropUploadFilenames: string[] = [];
+    await page.route('**/api/assets', async (route) => {
+      if (route.request().method() === 'POST') {
+        dropUploads += 1;
+        const postData = route.request().postData() || '';
+        const filenameMatch = /filename="([^"]+)"/.exec(postData);
+        if (filenameMatch) {
+          dropUploadFilenames.push(filenameMatch[1]);
+        }
+      }
+      await route.continue();
+    });
+
+    await dispatchDropIntoEditor(page, editorSelector, uploadFile, targetBox.x + targetBox.width * 0.5, targetBox.y + targetBox.height - 1);
+
+    await expect.poll(async () => dropUploads, { timeout: 10_000 }).toBeGreaterThan(0);
+    await expect.poll(async () => dropUploadFilenames.includes('drop-upload.png'), { timeout: 10_000 }).toBeTruthy();
+    await page.unroute('**/api/assets');
+
+    await expect.poll(async () => {
+      const blocks = await loadPageBlocks(request, root.id);
+      const imageIndex = blocks.findIndex((block) => block.type === 'image');
+      const beforeIndex = findTopLevelParagraph(blocks, 'Drop middle');
+      const afterIndex = findTopLevelParagraph(blocks, 'Drop bottom');
+      return imageIndex > beforeIndex && imageIndex > -1 && beforeIndex > -1 && afterIndex > imageIndex;
+    }, { timeout: 10_000 }).toBeTruthy();
+
+    await page.screenshot({ path: testInfo.outputPath('drop-upload-success.png'), fullPage: true });
+  });
 });

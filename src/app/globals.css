@@ -396,6 +396,26 @@ select {
   font-weight: 600;
 }
 
+.cover-controls {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+}
+
+.cover-controls label {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--color-muted);
+  font-size: var(--font-size-200);
+  font-weight: 600;
+}
+
+@media (max-width: 740px) {
+  .media-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .icon-display {
   min-width: var(--space-10);
 }

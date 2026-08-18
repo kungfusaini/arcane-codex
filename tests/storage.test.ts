@@ -58,8 +58,13 @@ describe('workspace bootstrap', () => {
       const migrated = createStorageConnection(base);
       const version = migrated.prepare('PRAGMA user_version').get() as { user_version: number };
       const assetIndex = migrated.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_assets_sha256'").get();
-      assert.equal(version.user_version, 2);
+      const pageColumns = migrated.prepare("PRAGMA table_info(pages)").all() as Array<{ name: string }>;
+      const columnX = pageColumns.find((row) => row.name === 'cover_focal_x');
+      const columnY = pageColumns.find((row) => row.name === 'cover_focal_y');
+      assert.equal(version.user_version, 3);
       assert.ok(assetIndex);
+      assert.ok(columnX);
+      assert.ok(columnY);
       migrated.exec('PRAGMA user_version = 99;');
       migrated.close();
 
@@ -178,11 +183,18 @@ describe('pages CRUD and ordering', () => {
         revision: childA.revision,
         title: 'Renamed Child A',
         contentJson: '[{"type":"paragraph","content":"Hello"}]',
+        coverFocalX: 12,
+        coverFocalY: 88,
       },
       workspace,
     );
     assert.equal(updated.title, 'Renamed Child A');
+    assert.equal(updated.coverFocalX, 12);
+    assert.equal(updated.coverFocalY, 88);
 
+    const reloaded = getPage(childA.id, workspace);
+    assert.equal(reloaded?.coverFocalX, 12);
+    assert.equal(reloaded?.coverFocalY, 88);
     assert.throws(
       () =>
         updatePage(

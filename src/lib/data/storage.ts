@@ -24,7 +24,9 @@ import {
   getWorkspaceBaseDir,
 } from './workspace';
 
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 3;
+
+const DEFAULT_COVER_FOCAL_PERCENT = 50;
 
 export type StorageHandle = {
   dbPath: string;
@@ -122,6 +124,8 @@ function runMigrations(db: DatabaseSync): void {
         title TEXT NOT NULL DEFAULT '',
         icon TEXT,
         cover_asset_id TEXT REFERENCES assets(id) ON DELETE SET NULL,
+        cover_focal_x REAL NOT NULL DEFAULT 50,
+        cover_focal_y REAL NOT NULL DEFAULT 50,
         content_json TEXT NOT NULL DEFAULT '[]',
         revision INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
@@ -186,6 +190,17 @@ function runMigrations(db: DatabaseSync): void {
     // uploads are serialized and deduplicated in createAsset.
     db.exec('CREATE INDEX IF NOT EXISTS idx_assets_sha256 ON assets(sha256);');
     db.exec('PRAGMA user_version = 2;');
+  }
+
+  if (currentVersion < 3) {
+    const pageColumns = db.prepare('PRAGMA table_info(pages);').all() as Array<{ name: string }>;
+    if (!pageColumns.some((column) => column.name === 'cover_focal_x')) {
+      db.exec('ALTER TABLE pages ADD COLUMN cover_focal_x REAL NOT NULL DEFAULT 50;');
+    }
+    if (!pageColumns.some((column) => column.name === 'cover_focal_y')) {
+      db.exec('ALTER TABLE pages ADD COLUMN cover_focal_y REAL NOT NULL DEFAULT 50;');
+    }
+    db.exec('PRAGMA user_version = 3;');
   }
 
   if (currentVersion !== CURRENT_SCHEMA_VERSION) {
@@ -293,6 +308,21 @@ export function inspectWorkspaceHealth(dataDir?: string): WorkspaceHealth {
   };
 }
 
+function sanitizeFocal(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  if (Number.isFinite(parsed)) {
+    if (parsed < 0) {
+      return 0;
+    }
+    if (parsed > 100) {
+      return 100;
+    }
+    return parsed;
+  }
+
+  return fallback;
+}
+
 function rowToPage(row: DbRow): PageRecord {
   return {
     id: String(row.id),
@@ -301,6 +331,8 @@ function rowToPage(row: DbRow): PageRecord {
     title: String(row.title),
     icon: (row.icon as string | null) ?? null,
     coverAssetId: (row.cover_asset_id as string | null) ?? null,
+    coverFocalX: sanitizeFocal(row.cover_focal_x, DEFAULT_COVER_FOCAL_PERCENT),
+    coverFocalY: sanitizeFocal(row.cover_focal_y, DEFAULT_COVER_FOCAL_PERCENT),
     contentJson: String(row.content_json),
     revision: Number(row.revision),
     createdAt: Number(row.created_at),
@@ -355,7 +387,7 @@ export function listPages(dataDir?: string): PageRecord[] {
   try {
     const rows = db
       .prepare(
-        `SELECT id, parent_id, sort_key, title, icon, cover_asset_id, content_json, revision, created_at, updated_at, deleted_at
+        `SELECT id, parent_id, sort_key, title, icon, cover_asset_id, cover_focal_x, cover_focal_y, content_json, revision, created_at, updated_at, deleted_at
          FROM pages
          WHERE deleted_at IS NULL
          ORDER BY parent_id IS NULL DESC, sort_key ASC, title COLLATE NOCASE ASC`,
@@ -372,7 +404,7 @@ export function listTrashPages(dataDir?: string): PageRecord[] {
   try {
     const rows = db
       .prepare(
-        `SELECT id, parent_id, sort_key, title, icon, cover_asset_id, content_json, revision, created_at, updated_at, deleted_at
+        `SELECT id, parent_id, sort_key, title, icon, cover_asset_id, cover_focal_x, cover_focal_y, content_json, revision, created_at, updated_at, deleted_at
          FROM pages
          WHERE deleted_at IS NOT NULL
          ORDER BY updated_at DESC`,
@@ -389,7 +421,7 @@ export function getPage(id: string, dataDir?: string): PageRecord | null {
   try {
     const row = db
       .prepare(
-        `SELECT id, parent_id, sort_key, title, icon, cover_asset_id, content_json, revision, created_at, updated_at, deleted_at
+        `SELECT id, parent_id, sort_key, title, icon, cover_asset_id, cover_focal_x, cover_focal_y, content_json, revision, created_at, updated_at, deleted_at
          FROM pages
          WHERE id = ?`,
       )
@@ -411,8 +443,8 @@ export function createPage(input: NewPage, dataDir?: string): PageRecord {
     db.exec('BEGIN IMMEDIATE');
     inTransaction = true;
     const stmt = db.prepare(`
-      INSERT INTO pages (id, parent_id, sort_key, title, icon, cover_asset_id, content_json, revision, created_at, updated_at, deleted_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
+      INSERT INTO pages (id, parent_id, sort_key, title, icon, cover_asset_id, cover_focal_x, cover_focal_y, content_json, revision, created_at, updated_at, deleted_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
     `);
     stmt.run(
       pageId,
@@ -421,6 +453,8 @@ export function createPage(input: NewPage, dataDir?: string): PageRecord {
       input.title,
       input.icon ?? null,
       input.coverAssetId ?? null,
+      sanitizeFocal(input.coverFocalX, DEFAULT_COVER_FOCAL_PERCENT),
+      sanitizeFocal(input.coverFocalY, DEFAULT_COVER_FOCAL_PERCENT),
       input.contentJson ?? '[]',
       now,
       now,
@@ -428,7 +462,7 @@ export function createPage(input: NewPage, dataDir?: string): PageRecord {
     rebuildBacklinks(db, pageId);
 
     const row = db.prepare(
-      `SELECT id, parent_id, sort_key, title, icon, cover_asset_id, content_json, revision, created_at, updated_at, deleted_at
+      `SELECT id, parent_id, sort_key, title, icon, cover_asset_id, cover_focal_x, cover_focal_y, content_json, revision, created_at, updated_at, deleted_at
        FROM pages WHERE id = ?`,
     ).get(pageId) as DbRow | undefined;
     if (!row) {
@@ -546,7 +580,7 @@ export function applyPageMoves(moves: PageMoveInput[], dataDir?: string): PageRe
        WHERE id = ? AND revision = ? AND deleted_at IS NULL`,
     );
     const updatedPageStmt = db.prepare(
-      `SELECT id, parent_id, sort_key, title, icon, cover_asset_id, content_json, revision, created_at, updated_at, deleted_at
+      `SELECT id, parent_id, sort_key, title, icon, cover_asset_id, cover_focal_x, cover_focal_y, content_json, revision, created_at, updated_at, deleted_at
        FROM pages WHERE id = ?`,
     );
 
@@ -606,7 +640,7 @@ export function updatePage(id: string, input: PageUpdate, dataDir?: string): Pag
     db.exec('BEGIN IMMEDIATE');
     inTransaction = true;
     const current = db.prepare(
-      `SELECT id, parent_id, sort_key, title, icon, cover_asset_id, content_json, revision, created_at, updated_at, deleted_at
+      `SELECT id, parent_id, sort_key, title, icon, cover_asset_id, cover_focal_x, cover_focal_y, content_json, revision, created_at, updated_at, deleted_at
        FROM pages WHERE id = ? AND deleted_at IS NULL`,
     ).get(id) as DbRow | undefined;
 
@@ -658,6 +692,14 @@ export function updatePage(id: string, input: PageUpdate, dataDir?: string): Pag
       fields.push('cover_asset_id = ?');
       values.push(input.coverAssetId ?? null);
     }
+    if (Object.hasOwn(input, 'coverFocalX')) {
+      fields.push('cover_focal_x = ?');
+      values.push(sanitizeFocal(input.coverFocalX, currentPage.coverFocalX));
+    }
+    if (Object.hasOwn(input, 'coverFocalY')) {
+      fields.push('cover_focal_y = ?');
+      values.push(sanitizeFocal(input.coverFocalY, currentPage.coverFocalY));
+    }
     if (input.contentJson !== undefined) {
       fields.push('content_json = ?');
       values.push(input.contentJson);
@@ -681,7 +723,7 @@ export function updatePage(id: string, input: PageUpdate, dataDir?: string): Pag
 
     rebuildBacklinks(db, id);
     const updated = db.prepare(
-      `SELECT id, parent_id, sort_key, title, icon, cover_asset_id, content_json, revision, created_at, updated_at, deleted_at
+      `SELECT id, parent_id, sort_key, title, icon, cover_asset_id, cover_focal_x, cover_focal_y, content_json, revision, created_at, updated_at, deleted_at
        FROM pages WHERE id = ?`,
     ).get(id) as DbRow | undefined;
     if (!updated) {
@@ -733,6 +775,8 @@ export function duplicatePage(id: string, dataDir?: string): PageRecord | null {
       title: `${source.title} Copy`,
       icon: source.icon,
       coverAssetId: source.coverAssetId,
+      coverFocalX: source.coverFocalX,
+      coverFocalY: source.coverFocalY,
       contentJson: source.contentJson,
       sortKey: normalizeSortKey(source.sortKey, 1),
     },
@@ -747,7 +791,7 @@ export function searchPages(query: string, dataDir?: string): PageRecord[] {
     const pattern = `%${trimmed.replace(/[%_]/g, '\\$&')}%`;
     const rows = db
       .prepare(
-        `SELECT id, parent_id, sort_key, title, icon, cover_asset_id, content_json, revision, created_at, updated_at, deleted_at
+        `SELECT id, parent_id, sort_key, title, icon, cover_asset_id, cover_focal_x, cover_focal_y, content_json, revision, created_at, updated_at, deleted_at
          FROM pages
          WHERE deleted_at IS NULL AND title LIKE ?
          ORDER BY updated_at DESC`,
@@ -1391,7 +1435,7 @@ export function readBacklinks(targetPageId: string, dataDir?: string): PageRecor
   try {
     const rows = db
       .prepare(
-        `SELECT DISTINCT p.id, p.parent_id, p.sort_key, p.title, p.icon, p.cover_asset_id, p.content_json, p.revision, p.created_at, p.updated_at, p.deleted_at
+        `SELECT DISTINCT p.id, p.parent_id, p.sort_key, p.title, p.icon, p.cover_asset_id, p.cover_focal_x, p.cover_focal_y, p.content_json, p.revision, p.created_at, p.updated_at, p.deleted_at
          FROM page_links l
          JOIN pages p ON p.id = l.source_page_id
          WHERE l.target_page_id = ? AND p.deleted_at IS NULL

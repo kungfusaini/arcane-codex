@@ -7,10 +7,25 @@ type PageUpdatePayload = {
   title?: string;
   icon?: string | null;
   coverAssetId?: string | null;
+  coverFocalX?: number;
+  coverFocalY?: number;
   parentId?: string | null;
   sortKey?: number;
   contentJson?: string;
 };
+
+function clampFocal(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return undefined;
+  }
+  if (value < 0) {
+    return 0;
+  }
+  if (value > 100) {
+    return 100;
+  }
+  return value;
+}
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   const page = getPage(params.id);
@@ -34,6 +49,12 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   }
   if (payload.icon != null && (typeof payload.icon !== 'string' || payload.icon.length > 32)) {
     return NextResponse.json({ error: 'Page icons must be a short text or emoji value.' }, { status: 400 });
+  }
+  if (Object.hasOwn(payload, 'coverFocalX') && clampFocal(payload.coverFocalX) === undefined) {
+    return NextResponse.json({ error: 'coverFocalX must be a finite number between 0 and 100.' }, { status: 400 });
+  }
+  if (Object.hasOwn(payload, 'coverFocalY') && clampFocal(payload.coverFocalY) === undefined) {
+    return NextResponse.json({ error: 'coverFocalY must be a finite number between 0 and 100.' }, { status: 400 });
   }
   if (typeof payload.contentJson === 'string') {
     if (Buffer.byteLength(payload.contentJson, 'utf8') > 5 * 1024 * 1024) {
@@ -70,6 +91,12 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     }
     if (Object.hasOwn(payload, 'coverAssetId')) {
       updates.coverAssetId = payload.coverAssetId ?? null;
+    }
+    if (Object.hasOwn(payload, 'coverFocalX')) {
+      updates.coverFocalX = clampFocal(payload.coverFocalX);
+    }
+    if (Object.hasOwn(payload, 'coverFocalY')) {
+      updates.coverFocalY = clampFocal(payload.coverFocalY);
     }
     if (Object.hasOwn(payload, 'parentId')) {
       updates.parentId = payload.parentId ?? null;

@@ -46,14 +46,27 @@ describe('page API endpoints', () => {
       const createRes = await pagesRoute.POST(
         new NextRequest('http://localhost/api/pages', {
           method: 'POST',
-          body: JSON.stringify({ title: 'Restart-safe page' }),
+          body: JSON.stringify({
+            title: 'Restart-safe page',
+            coverFocalX: 25,
+            coverFocalY: 75,
+          }),
           headers: { 'content-type': 'application/json' },
         }),
       );
       const created = (await callJson(createRes)) as {
-        page: { id: string; revision: number; contentJson: string; title: string };
+        page: {
+          id: string;
+          revision: number;
+          contentJson: string;
+          title: string;
+          coverFocalX: number;
+          coverFocalY: number;
+        };
       };
       assert.equal(created.page.title, 'Restart-safe page');
+      assert.equal(created.page.coverFocalX, 25);
+      assert.equal(created.page.coverFocalY, 75);
 
       const getRes1 = await pageRoute.GET(new NextRequest(`http://localhost/api/pages/${created.page.id}`), {
         params: { id: created.page.id },
@@ -71,22 +84,55 @@ describe('page API endpoints', () => {
             revision: loaded.page.revision,
             contentJson,
             title: 'Restart-safe page',
+            coverFocalX: 125,
+            coverFocalY: -10,
           }),
         }),
         { params: { id: created.page.id } },
       );
       const patched = (await callJson(patchRes)) as {
-        page: { id: string; revision: number; contentJson: string; title: string };
+        page: { id: string; revision: number; contentJson: string; title: string; coverFocalX: number; coverFocalY: number };
       };
       assert.equal(patched.page.contentJson, contentJson);
       assert.equal(patched.page.title, 'Restart-safe page');
+      assert.equal(patched.page.coverFocalX, 100);
+      assert.equal(patched.page.coverFocalY, 0);
 
       // Simulate restart by refetching page from storage.
       const getRes2 = await pageRoute.GET(new NextRequest(`http://localhost/api/pages/${created.page.id}`), {
         params: { id: created.page.id },
       });
-      const reloaded = (await callJson(getRes2)) as { page: { contentJson: string } };
+      const reloaded = (await callJson(getRes2)) as { page: { contentJson: string; coverFocalX: number; coverFocalY: number } };
       assert.equal(reloaded.page.contentJson, contentJson);
+      assert.equal(reloaded.page.coverFocalX, 100);
+      assert.equal(reloaded.page.coverFocalY, 0);
+    });
+  });
+
+  it('validates cover focal update payloads', async () => {
+    await withWorkspace(async () => {
+      const createRes = await pagesRoute.POST(
+        new NextRequest('http://localhost/api/pages', {
+          method: 'POST',
+          body: JSON.stringify({ title: 'Cover controls test' }),
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+      const created = (await callJson(createRes)) as { page: { id: string; revision: number } };
+
+      const badUpdate = await pageRoute.PATCH(
+        new NextRequest(`http://localhost/api/pages/${created.page.id}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            revision: created.page.revision,
+            coverFocalX: 'invalid',
+            coverFocalY: 50,
+          } as unknown as Record<string, unknown>),
+        }),
+        { params: { id: created.page.id } },
+      );
+      assert.equal(badUpdate.status, 400);
     });
   });
 

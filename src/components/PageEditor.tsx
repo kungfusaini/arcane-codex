@@ -10,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactElement,
 } from 'react';
 import { BlockNoteSchema, PartialBlock, defaultBlockSpecs } from '@blocknote/core';
 import {
@@ -36,6 +37,8 @@ type PageRecord = {
   title: string;
   icon: string | null;
   coverAssetId: string | null;
+  coverFocalX: number;
+  coverFocalY: number;
   contentJson: string;
   revision: number;
   createdAt: number;
@@ -46,8 +49,12 @@ type PageRecord = {
 type SidebarPage = {
   id: string;
   parentId: string | null;
+  sortKey: number;
   title: string;
+  icon: string | null;
 };
+
+const COVER_FOCAL_STEP = 5;
 
 type AssetRecord = {
   id: string;
@@ -66,6 +73,7 @@ type UploadTask = {
   target: 'body' | 'cover';
   status: 'uploading' | 'error';
   error?: string;
+  blockId?: string;
 };
 
 type RecoveryDraft = {
@@ -88,61 +96,69 @@ function isSupportedUpload(file: File): boolean {
   return file.size <= 20 * 1024 * 1024 && ALLOWED_UPLOAD_TYPES.includes(file.type.toLowerCase());
 }
 
-const PAGE_LINK_BLOCK = createReactBlockSpec(
-  {
-    type: 'pageLink',
-    propSchema: {
-      pageId: { default: '' },
-      title: { default: '' },
-    },
-    content: 'none',
-  },
-  {
-    render: (props) => {
-      const propsByType = props.block.props as { pageId?: string; title?: string };
-      const pageId = String(propsByType.pageId || '');
-      const title = String(propsByType.title || 'Page');
-      const href = pageId ? `/page/${pageId}` : '#';
+type ReferencedPage = {
+  title: string;
+  icon: string | null;
+};
 
-      const openPage = (event: MouseEvent<HTMLAnchorElement>) => {
-        if (!pageId) {
-          return;
-        }
-        event.preventDefault();
-        window.location.href = href;
-      };
+function createPageLinkBlockSpec(referencedPages: Map<string, ReferencedPage>) {
+  const getReference = (pageId: string): ReferencedPage => {
+    return referencedPages.get(pageId) || { title: 'Page', icon: null };
+  };
 
-      return (
-        <a
-          className="page-link-block"
-          href={href}
-          onClick={openPage}
-          contentEditable={false}
-          draggable={false}
-        >
-          {title}
-        </a>
-      );
+  return createReactBlockSpec(
+    {
+      type: 'pageLink',
+      propSchema: {
+        pageId: { default: '' },
+        title: { default: '' },
+      },
+      content: 'none',
     },
-    toExternalHTML: (props) => {
-      const propsByType = props.block.props as { pageId?: string; title?: string };
-      const pageId = String(propsByType.pageId || '');
-      const title = String(propsByType.title || 'Page');
-      return <a href={pageId ? `${pageId}.md` : '#'}>{title}</a>;
-    },
-  },
-);
+    {
+      render: (props) => {
+        const propsByType = props.block.props as { pageId?: string; title?: string };
+        const pageId = String(propsByType.pageId || '');
+        const reference = pageId ? getReference(pageId) : { title: String(propsByType.title || 'Page'), icon: null };
+        const label = `${reference.icon ? `${reference.icon} ` : ''}${reference.title || String(propsByType.title || 'Page')}`;
+        const href = pageId ? `/page/${pageId}` : '#';
 
-const PAGE_GRAPH_SCHEMA = BlockNoteSchema.create({
-  blockSpecs: {
-    ...defaultBlockSpecs,
-    pageLink: PAGE_LINK_BLOCK(),
-  },
-});
+        const openPage = (event: MouseEvent<HTMLAnchorElement>) => {
+          if (!pageId) {
+            return;
+          }
+          event.preventDefault();
+          window.location.href = href;
+        };
+
+        return (
+          <a
+            className="page-link-block"
+            href={href}
+            onClick={openPage}
+            contentEditable={false}
+            draggable={false}
+          >
+            {label}
+          </a>
+        );
+      },
+      toExternalHTML: (props) => {
+        const propsByType = props.block.props as { pageId?: string; title?: string };
+        const pageId = String(propsByType.pageId || '');
+        const reference = pageId ? getReference(pageId) : { title: String(propsByType.title || 'Page'), icon: null };
+        const label = `${reference.icon ? `${reference.icon} ` : ''}${reference.title || String(propsByType.title || 'Page')}`;
+        return <a href={pageId ? `/page/${pageId}` : '#'}>{label}</a>;
+      },
+    },
+  );
+}
 
 type MentionItem = DefaultReactSuggestionItem & {
   id: string;
   title: string;
+  icon?: ReactElement;
+  label: string;
 };
 
 export function PageEditor({ pageId }: { pageId: string }) {
@@ -159,9 +175,89 @@ export function PageEditor({ pageId }: { pageId: string }) {
   const [conflictPage, setConflictPage] = useState<PageRecord | null>(null);
   const [recoveryDraft, setRecoveryDraft] = useState<RecoveryDraft | null>(null);
 
+  const referencedPages = useMemo(() => {
+    const map = new Map<string, ReferencedPage>();
+    for (const item of allPages) {
+      map.set(item.id, { title: item.title || 'Untitled', icon: item.icon ?? null });
+    }
+    return map;
+  }, [allPages]);
+
+  const setUploadTask = useCallback((taskId: string, patch: Partial<UploadTask>) => {
+    setUploadTasks((current) =>
+      current.map((task) => {
+        if (task.id !== taskId) {
+          return task;
+        }
+
+        return { ...task, ...patch };
+      }),
+    );
+  }, []);
+
+  const addUploadTask = useCallback((task: Omit<UploadTask, 'id'>) => {
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    setUploadTasks((current) => [...current, { ...task, id }]);
+    return id;
+  }, []);
+
+  const removeUploadTask = useCallback((taskId: string) => {
+    setUploadTasks((current) => current.filter((task) => task.id !== taskId));
+  }, []);
+
+  const uploadAssetRecord = useCallback(async (file: File): Promise<AssetRecord> => {
+    const form = new FormData();
+    form.append('file', file);
+    const response = await fetch('/api/assets', { method: 'POST', body: form });
+    const payload = (await response.json().catch(() => ({}))) as { asset?: AssetRecord; error?: string };
+    if (!response.ok || !payload.asset) {
+      throw new Error(payload.error || 'Upload failed');
+    }
+    const asset = payload.asset;
+    setAssets((current) => [asset, ...current.filter((existing) => existing.id !== asset.id)]);
+    return asset;
+  }, []);
+
   const editor = useCreateBlockNote({
-    schema: PAGE_GRAPH_SCHEMA,
+    schema: useMemo(
+      () =>
+        BlockNoteSchema.create({
+          blockSpecs: {
+            ...defaultBlockSpecs,
+            pageLink: createPageLinkBlockSpec(referencedPages)(),
+          },
+        }),
+      [referencedPages],
+    ),
     trailingBlock: true,
+    uploadFile: async (file, blockId) => {
+      const taskId = addUploadTask({
+        file,
+        target: 'body',
+        status: 'uploading',
+        ...(blockId ? { blockId } : {}),
+      });
+      try {
+        if (!isSupportedUpload(file)) {
+          throw new Error('Use an image, PDF, text, or Markdown file up to 20 MB.');
+        }
+        const asset = await uploadAssetRecord(file);
+        removeUploadTask(taskId);
+        return {
+          props: {
+            url: `/api/assets/${asset.id}`,
+            name: asset.filename,
+            caption: asset.filename,
+          },
+        };
+      } catch (error) {
+        setUploadTask(taskId, {
+          status: 'error',
+          error: error instanceof Error ? error.message : 'Upload failed',
+        });
+        throw error;
+      }
+    },
   });
 
   const saveTimerRef = useRef<number | null>(null);
@@ -179,6 +275,26 @@ export function PageEditor({ pageId }: { pageId: string }) {
 
   const draftKey = `arcane-codex:draft:${pageId}`;
   const isDeleted = Boolean(page?.deletedAt);
+
+  const coverPositionPercent = page?.coverAssetId
+    ? {
+        x: Number.isFinite(page.coverFocalX) ? Math.round(page.coverFocalX / COVER_FOCAL_STEP) * COVER_FOCAL_STEP : 50,
+        y: Number.isFinite(page.coverFocalY) ? Math.round(page.coverFocalY / COVER_FOCAL_STEP) * COVER_FOCAL_STEP : 50,
+      }
+    : null;
+
+  const clampCoverFocal = useCallback((value: number) => {
+    if (!Number.isFinite(value)) {
+      return 50;
+    }
+    if (value <= 0) {
+      return 0;
+    }
+    if (value >= 100) {
+      return 100;
+    }
+    return Math.round(value / COVER_FOCAL_STEP) * COVER_FOCAL_STEP;
+  }, []);
 
   const applyInitialContent = useCallback((rawContent: string) => {
     let parsed: PartialBlock[] = DOCUMENT_FALLBACK;
@@ -332,6 +448,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
         setBacklinks(payload.backlinks ?? []);
         setConflictPage(null);
         setRecoveryDraft(null);
+        window.dispatchEvent(new Event('arcane-pages-changed'));
 
         if (editVersionRef.current === saveVersion) {
           setStatus('saved');
@@ -435,7 +552,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
     setStatusMessage('Discarded browser recovery draft');
   }, [draftKey]);
 
-  const updateMetadata = useCallback(async (updates: { icon?: string | null; coverAssetId?: string | null }) => {
+  const updateMetadata = useCallback(async (updates: { icon?: string | null; coverAssetId?: string | null; coverFocalX?: number; coverFocalY?: number }) => {
     if (!page || page.deletedAt) {
       return;
     }
@@ -474,16 +591,44 @@ export function PageEditor({ pageId }: { pageId: string }) {
 
     pendingRevision.current = payload.page.revision;
     setPage(payload.page);
+    window.dispatchEvent(new Event('arcane-pages-changed'));
     setStatus('saved');
     setStatusMessage('Page details saved');
   }, [page, pageId, savePage]);
 
-  const insertAsset = useCallback((asset: AssetRecord) => {
-    const cursor = editor.getTextCursorPosition().block;
+  const updateCoverFocal = useCallback((axis: 'x' | 'y', value: number) => {
+    if (!page || !page.coverAssetId) {
+      return;
+    }
+    const nextX = axis === 'x' ? clampCoverFocal(value) : page.coverFocalX;
+    const nextY = axis === 'y' ? clampCoverFocal(value) : page.coverFocalY;
+    void updateMetadata({
+      coverFocalX: nextX,
+      coverFocalY: nextY,
+    });
+  }, [clampCoverFocal, page, updateMetadata]);
+
+  const insertAsset = useCallback((asset: AssetRecord, blockId?: string) => {
     const url = `/api/assets/${asset.id}`;
     const block = asset.mimeType.startsWith('image/')
       ? { type: 'image', props: { url, name: asset.filename, caption: asset.filename } }
       : { type: 'file', props: { url, name: asset.filename, caption: asset.filename } };
+
+    if (blockId) {
+      try {
+        editor.updateBlock(blockId, block as Parameters<typeof editor.updateBlock>[1]);
+      } catch {
+        const cursor = editor.getTextCursorPosition().block;
+        editor.insertBlocks(
+          [block] as unknown as Parameters<typeof editor.insertBlocks>[0],
+          cursor,
+          'after',
+        );
+      }
+      return;
+    }
+
+    const cursor = editor.getTextCursorPosition().block;
     editor.insertBlocks(
       [block] as unknown as Parameters<typeof editor.insertBlocks>[0],
       cursor,
@@ -491,46 +636,59 @@ export function PageEditor({ pageId }: { pageId: string }) {
     );
   }, [editor]);
 
-  const uploadAsset = useCallback(async (file: File, target: 'body' | 'cover') => {
-    const taskId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const uploadForBody = useCallback(async (file: File, taskId: string, blockId?: string) => {
+    const asset = await uploadAssetRecord(file);
+    insertAsset(asset, blockId);
+    removeUploadTask(taskId);
+    return asset;
+  }, [insertAsset, removeUploadTask, uploadAssetRecord]);
+
+  const uploadForCover = useCallback(async (file: File, taskId: string) => {
+    const asset = await uploadAssetRecord(file);
+    await updateMetadata({ coverAssetId: asset.id });
+    removeUploadTask(taskId);
+    return asset;
+  }, [removeUploadTask, updateMetadata, uploadAssetRecord]);
+
+  const uploadAndHandleTask = useCallback(async (file: File, target: 'body' | 'cover', blockId?: string) => {
     if (!isSupportedUpload(file)) {
-      setUploadTasks((current) => [...current, { id: taskId, file, target, status: 'error', error: 'Use an image, PDF, text, or Markdown file up to 20 MB.' }]);
+      setUploadTasks((current) => [...current, { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, file, target, status: 'error', error: 'Use an image, PDF, text, or Markdown file up to 20 MB.' }]);
       return;
     }
 
-    setUploadTasks((current) => [...current.filter((task) => task.id !== taskId), { id: taskId, file, target, status: 'uploading' }]);
-    const form = new FormData();
-    form.append('file', file);
+    const taskId = addUploadTask({
+      file,
+      target,
+      status: 'uploading',
+      ...(blockId ? { blockId } : {}),
+    });
 
     try {
-      const response = await fetch('/api/assets', { method: 'POST', body: form });
-      const payload = (await response.json().catch(() => ({}))) as { asset?: AssetRecord; error?: string };
-      if (!response.ok || !payload.asset) {
-        throw new Error(payload.error || 'Upload failed');
-      }
-
-      setAssets((current) => [payload.asset!, ...current.filter((asset) => asset.id !== payload.asset!.id)]);
-      setUploadTasks((current) => current.filter((task) => task.id !== taskId));
       if (target === 'cover') {
-        await updateMetadata({ coverAssetId: payload.asset.id });
-      } else {
-        insertAsset(payload.asset);
+        await uploadForCover(file, taskId);
+        return;
       }
+      await uploadForBody(file, taskId);
     } catch (error) {
-      setUploadTasks((current) => current.map((task) => task.id === taskId
-        ? { ...task, status: 'error', error: error instanceof Error ? error.message : 'Upload failed' }
-        : task));
+      setUploadTask(taskId, {
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Upload failed',
+      });
     }
-  }, [insertAsset, updateMetadata]);
+  }, [addUploadTask, setUploadTask, uploadForBody, uploadForCover]);
+
+  const retryUploadTask = useCallback((task: UploadTask) => {
+    setUploadTasks((current) => current.filter((item) => item.id !== task.id));
+    void uploadAndHandleTask(task.file, task.target, task.blockId);
+  }, [uploadAndHandleTask]);
 
   const chooseUpload = (event: ChangeEvent<HTMLInputElement>, target: 'body' | 'cover') => {
     const files = Array.from(event.currentTarget.files ?? []);
     for (const file of files) {
-      void uploadAsset(file, target);
+      void uploadAndHandleTask(file, target);
     }
     event.currentTarget.value = '';
   };
-
   const duplicate = async () => {
     const response = await fetch(`/api/pages/${pageId}`, {
       method: 'POST',
@@ -601,6 +759,115 @@ export function PageEditor({ pageId }: { pageId: string }) {
     requestSave();
   };
 
+  const pagesById = useMemo(
+    () => new Map(allPages.map((item) => [item.id, item])),
+    [allPages],
+  );
+
+  const labelForPage = useCallback((pageId: string) => {
+    const pageInfo = pagesById.get(pageId);
+    const title = pageInfo?.title || 'Page';
+    return {
+      title,
+      icon: pageInfo?.icon ?? null,
+      label: `${pageInfo?.icon ? `${pageInfo.icon} ` : ''}${title}`,
+    };
+  }, [pagesById]);
+
+  const getPageIdFromHref = useCallback((href: string) => {
+    try {
+      const normalized = decodeURIComponent(href).trim();
+      const result = /^(?:https?:\/\/[^\/]+)?\/?page\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(
+        normalized,
+      );
+      if (result?.[1]) {
+        return result[1];
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }, []);
+
+  const refreshLiveReferenceLabels = useCallback(() => {
+    const blocks = JSON.parse(JSON.stringify(editor.document)) as Array<Record<string, unknown>>;
+    let updated = false;
+
+    const visit = (node: unknown) => {
+      if (!node || typeof node !== 'object') {
+        return;
+      }
+      if (Array.isArray(node)) {
+        for (const child of node) {
+          visit(child);
+        }
+        return;
+      }
+
+      const block = node as Record<string, unknown>;
+      if (block.type === 'pageLink' && block.props && typeof block.props === 'object') {
+        const blockProps = block.props as Record<string, unknown>;
+        const pageId = String(blockProps.pageId || '').trim();
+        if (pageId) {
+          const { title, label, icon } = labelForPage(pageId);
+          const currentTitle = String(blockProps.title || '');
+          if (currentTitle !== title) {
+            block.props = {
+              ...blockProps,
+              title,
+              label,
+              icon: icon ?? null,
+            };
+            updated = true;
+          }
+        }
+        return;
+      }
+
+      if (block.type === 'link' && typeof block.href === 'string') {
+        const targetId = getPageIdFromHref(block.href);
+        if (targetId) {
+          const { label } = labelForPage(targetId);
+          const firstContent = Array.isArray(block.content) ? block.content[0] : undefined;
+          const current = typeof firstContent === 'object' && firstContent !== null && 'text' in firstContent
+            ? String((firstContent as { text?: unknown }).text || '')
+            : '';
+          if (current !== label) {
+            const firstStyles = typeof firstContent === 'object' && firstContent !== null && 'styles' in firstContent
+              ? (firstContent as { styles?: unknown }).styles
+              : {};
+            block.content = [{
+              type: 'text',
+              text: label,
+              styles: firstStyles,
+            }];
+            updated = true;
+          }
+        }
+      }
+
+      const content = block.content;
+      if (Array.isArray(content)) {
+        visit(content);
+      }
+      for (const value of Object.values(block)) {
+        if (Array.isArray(value)) {
+          visit(value);
+        } else if (value && typeof value === 'object') {
+          visit(value);
+        }
+      }
+    };
+
+    visit(blocks);
+    if (updated) {
+      isApplyingRemoteContent.current = true;
+      editor.replaceBlocks(editor.document, blocks);
+      queueMicrotask(() => {
+        isApplyingRemoteContent.current = false;
+      });
+    }
+  }, [editor, getPageIdFromHref, labelForPage]);
 
   const pageSuggestions = useCallback(
     (query: string): SidebarPage[] => {
@@ -616,14 +883,15 @@ export function PageEditor({ pageId }: { pageId: string }) {
   );
 
   const insertPageCard = useCallback((targetPage: SidebarPage) => {
+    const label = labelForPage(targetPage.id).label;
     insertOrUpdateBlockForSlashMenu(editor, {
       type: 'pageLink',
       props: {
         pageId: targetPage.id,
-        title: targetPage.title || 'Untitled',
+        title: label,
       },
     });
-  }, [editor]);
+  }, [editor, labelForPage]);
 
   const createChildPageCard = useCallback(async () => {
     const response = await fetch('/api/pages', {
@@ -676,7 +944,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
       editor.insertInlineContent({
         type: 'link',
         href: `/page/${item.id}`,
-        content: item.title,
+        content: item.label,
       } as unknown as Parameters<typeof editor.insertInlineContent>[0]);
     },
     [editor],
@@ -685,19 +953,32 @@ export function PageEditor({ pageId }: { pageId: string }) {
   const getMentionItems = useCallback(async (query: string): Promise<(DefaultReactSuggestionItem & MentionItem)[]> => {
     return pageSuggestions(query).map((candidate) => {
       const title = candidate.title || 'Untitled';
+      const label = labelForPage(candidate.id).label;
+      const icon = candidate.icon ? <span>{candidate.icon}</span> : undefined;
       return {
         title,
+        label,
+        icon,
         subtext: 'Link this page',
         id: candidate.id,
         onItemClick: () => {
           insertMention({
             id: candidate.id,
             title,
+            label,
+            icon,
           } as MentionItem);
         },
       };
     });
-  }, [insertMention, pageSuggestions]);
+  }, [insertMention, labelForPage, pageSuggestions]);
+
+  useEffect(() => {
+    if (!editorReady) {
+      return;
+    }
+    refreshLiveReferenceLabels();
+  }, [editorReady, allPages, refreshLiveReferenceLabels]);
 
   useEditorChange(() => {
     if (!editorReady || isApplyingRemoteContent.current) {
@@ -744,10 +1025,16 @@ export function PageEditor({ pageId }: { pageId: string }) {
       }
     };
 
+    const onPagesChanged = () => {
+      void loadPageList();
+    };
+
     window.addEventListener('beforeunload', unload);
+    window.addEventListener('arcane-pages-changed', onPagesChanged);
 
     return () => {
       window.removeEventListener('beforeunload', unload);
+      window.removeEventListener('arcane-pages-changed', onPagesChanged);
       if (saveTimerRef.current !== null) {
         clearTimeout(saveTimerRef.current);
       }
@@ -850,8 +1137,49 @@ export function PageEditor({ pageId }: { pageId: string }) {
             width={1200}
             height={320}
             className="cover-preview-image"
+            style={
+              coverPositionPercent
+                ? {
+                    objectPosition: `${coverPositionPercent.x}% ${coverPositionPercent.y}%`,
+                  }
+                : undefined
+            }
             unoptimized
           />
+          {page?.coverAssetId ? (
+            <div className="cover-controls" role="group" aria-label="Cover focal point">
+              <label htmlFor="cover-focal-x">
+                Horizontal
+                <input
+                  id="cover-focal-x"
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={COVER_FOCAL_STEP}
+                  value={coverPositionPercent?.x ?? 50}
+                  onChange={(event) => {
+                    updateCoverFocal('x', Number(event.currentTarget.value));
+                  }}
+                  disabled={isDeleted}
+                />
+              </label>
+              <label htmlFor="cover-focal-y">
+                Vertical
+                <input
+                  id="cover-focal-y"
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={COVER_FOCAL_STEP}
+                  value={coverPositionPercent?.y ?? 50}
+                  onChange={(event) => {
+                    updateCoverFocal('y', Number(event.currentTarget.value));
+                  }}
+                  disabled={isDeleted}
+                />
+              </label>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -939,8 +1267,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
               {task.status === 'error' ? (
                 <div className="toolbar">
                   <button type="button" onClick={() => {
-                    setUploadTasks((current) => current.filter((item) => item.id !== task.id));
-                    void uploadAsset(task.file, task.target);
+                    retryUploadTask(task);
                   }}>
                     Retry
                   </button>
