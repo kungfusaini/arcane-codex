@@ -316,7 +316,6 @@ summary::-webkit-details-marker { display: none; }
 .tree-actions,
 .row-menu > div,
 .action-menu-panel,
-.emoji-picker,
 .cover-controls,
 .collections-create-form,
 .add-entry-panel {
@@ -499,29 +498,6 @@ summary::-webkit-details-marker { display: none; }
   opacity: 0;
   transform: translateY(var(--motion-small));
   animation: surface-enter var(--motion-fast) var(--ease-out) forwards;
-}
-.emoji-picker {
-  position: absolute;
-  top: calc(100% + var(--space-2));
-  left: var(--space-0);
-  z-index: 35;
-  width: 264px;
-  padding: var(--space-2);
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: var(--space-1);
-  border-radius: var(--radius-md);
-  background: var(--color-card);
-  box-shadow: var(--elevation-md);
-  animation: surface-enter var(--motion-fast) var(--ease-out) forwards;
-}
-.emoji-picker button {
-  min-height: var(--space-10);
-  padding: var(--space-1);
-  font-size: var(--font-size-500);
-}
-.emoji-picker button[aria-selected='true'] {
-  background: var(--color-page-muted);
 }
 .page-title {
   min-height: var(--space-16);

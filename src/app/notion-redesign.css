@@ -130,7 +130,7 @@
 .tree-actions,
 .row-menu > div,
 .action-menu-panel,
-.emoji-picker,
+.emoji-popover,
 .cover-controls,
 .collections-create-form,
 .add-entry-panel {
@@ -240,6 +240,79 @@
 }
 .has-cover .page-identity {
   margin-block-start: calc(var(--space-8) * -1);
+}
+.has-cover .page-identity:not(.has-icon) {
+  margin-block-start: var(--space-0);
+  padding-block-start: var(--space-6);
+}
+.page-media-affordances {
+  min-height: var(--space-8);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+.page-identity:hover .page-media-affordances,
+.page-identity:focus-within .page-media-affordances {
+  opacity: 1;
+  pointer-events: auto;
+}
+.page-media-affordances button {
+  min-height: var(--space-8);
+  color: var(--color-muted);
+}
+.page-media-affordances button:hover {
+  color: var(--color-ink);
+}
+.emoji-popover {
+  position: absolute;
+  top: calc(var(--space-16) + var(--space-2));
+  left: var(--space-0);
+  z-index: 35;
+  width: min(calc(var(--space-16) * 5 + var(--space-8)), calc(100vw - var(--space-8)));
+  padding: var(--space-2);
+  animation: surface-enter var(--motion-fast) var(--ease-out) forwards;
+}
+.emoji-popover-header,
+.emoji-popover-actions {
+  display: flex;
+  align-items: center;
+}
+.emoji-popover-header {
+  min-height: var(--space-8);
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-inline: var(--space-1);
+}
+.emoji-popover-header strong {
+  font-size: var(--font-size-200);
+}
+.emoji-popover-actions {
+  gap: var(--space-1);
+}
+.emoji-popover-actions button {
+  min-height: var(--space-8);
+}
+.emoji-picker-state {
+  min-height: calc(var(--space-16) * 4);
+  display: grid;
+  place-items: center;
+  color: var(--color-muted);
+  font-size: var(--font-size-200);
+}
+.emoji-picker-host {
+  width: 100%;
+  min-height: calc(var(--space-16) * 5 + var(--space-8));
+  margin-block-start: var(--space-1);
+}
+.emoji-picker-host em-emoji-picker {
+  width: 100%;
+  height: calc(var(--space-16) * 5 + var(--space-8));
+  --border-radius: var(--radius-sm);
+  --category-icon-size: var(--space-5);
+  --font-family: var(--font-base);
 }
 .page-icon {
   width: var(--space-16);
@@ -647,6 +720,26 @@
   .has-cover .page-identity {
     margin-block-start: calc(var(--space-6) * -1);
   }
+  .has-cover .page-identity:not(.has-icon) {
+    margin-block-start: var(--space-0);
+    padding-block-start: var(--space-4);
+  }
+  .page-media-affordances {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .emoji-popover {
+    position: fixed;
+    top: var(--space-12);
+    left: var(--space-2);
+    width: calc(100vw - var(--space-4));
+    max-height: calc(100vh - var(--space-16));
+    overflow: auto;
+  }
+  .emoji-picker-host,
+  .emoji-picker-host em-emoji-picker {
+    height: min(calc(var(--space-16) * 6), calc(100vh - var(--space-16) * 2 - var(--space-2)));
+  }
   .page-icon {
     width: var(--space-12);
     height: var(--space-12);
@@ -714,6 +807,7 @@
   .route-motion-shell,
   .document-shell,
   .cover-preview,
+  .emoji-popover,
   .page-icon,
   .page-title,
   .editor-view {

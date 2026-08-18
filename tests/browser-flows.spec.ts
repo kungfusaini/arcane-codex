@@ -210,7 +210,7 @@ test('core local workspace flows survive reload and remain recoverable', async (
   await page.goto(`/page/${root.id}`);
   await expect(page.locator('.page-title')).toHaveValue('Field Notes');
   await expect(page.locator('.cover-preview-image')).toBeVisible();
-  await expect(page.getByRole('button', { name: '🧭' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Change page icon' })).toHaveText('🧭');
   await page.keyboard.press('Control+k');
   const workspaceSearch = page.getByRole('search').getByLabel('Search pages');
   await expect(workspaceSearch).toBeFocused();
@@ -303,6 +303,48 @@ test('core local workspace flows survive reload and remain recoverable', async (
   await download.saveAs(exportPath);
   const signature = (await readFile(exportPath)).subarray(0, 2).toString('ascii');
   expect(signature).toBe('PK');
+});
+
+test('shows page appearance affordances and selects a searchable emoji icon', async ({ page, request }) => {
+  const createResponse = await request.post('/api/pages', { data: { title: 'Fresh page' } });
+  expect(createResponse.ok()).toBeTruthy();
+  const freshPage = (await createResponse.json()).page as PageRecord;
+
+  await page.goto(`/page/${freshPage.id}`);
+  const identity = page.locator('.page-identity');
+  await identity.hover();
+  await expect(page.getByRole('button', { name: 'Add icon' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add cover' })).toBeVisible();
+  const coverChooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Add cover' }).click();
+  await (await coverChooser).setFiles({
+    name: 'fresh-cover.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
+  });
+  await expect(page.locator('.cover-preview-image')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Add icon' }).click();
+  const emojiPopover = page.getByRole('dialog', { name: 'Choose page icon' });
+  await expect(emojiPopover).toBeVisible();
+  const picker = emojiPopover.locator('em-emoji-picker');
+  await expect(picker).toBeVisible();
+  const search = picker.locator('input[type="search"]');
+  await search.fill('dragon');
+  const dragon = picker.locator('button[title="Dragon"]');
+  await expect(dragon).toBeVisible();
+  await dragon.click();
+
+  await expect(emojiPopover).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Change page icon' })).toHaveText(/🐉/);
+  await expect.poll(() => page.evaluate(() => document.activeElement === document.querySelector('.page-icon'))).toBe(true);
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Change page icon' })).toHaveText(/🐉/);
+
+  await page.getByRole('button', { name: 'Change page icon' }).click();
+  await page.keyboard.press('Escape');
+  await expect(emojiPopover).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Change page icon' })).toBeFocused();
 });
 
 test('renders custom slash and mention suggestion menus without BlockNote UI context errors', async ({ page, request }) => {
@@ -613,7 +655,7 @@ test.describe('cover controls at 390px', () => {
     await pageActionsButton.click();
     const pageActions = page.locator('.action-menu');
     await expect(pageActions).toHaveAttribute('open');
-    await expect(page.getByRole('button', { name: 'Add cover' })).toBeVisible();
+    await expect(pageActions.getByRole('button', { name: 'Add cover' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Upload file' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Remove icon' })).toBeDisabled();
     await page.screenshot({ path: testInfo.outputPath('narrow-mobile-page-actions.png'), fullPage: true });

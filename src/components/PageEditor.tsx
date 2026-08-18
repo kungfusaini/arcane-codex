@@ -29,6 +29,7 @@ import {
   insertOrUpdateBlockForSlashMenu,
 } from '@blocknote/core/extensions';
 import { getBreadcrumbs } from '@/lib/pageTree';
+import { PageEmojiPicker } from '@/components/PageEmojiPicker';
 import { useDismissibleDetails } from '@/components/useDismissibleDetails';
 
 import './page-editor.css';
@@ -93,7 +94,6 @@ const DOCUMENT_FALLBACK: PartialBlock[] = [{
 }];
 
 const ALLOWED_UPLOAD_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf', 'text/plain', 'text/markdown'];
-const EMOJI_OPTIONS = ['📄', '🧾', '📚', '⚡', '✨', '🗂️', '🧠', '✍️', '🗒️', '🎯', '🛠️', '🧪', '📌', '🧭', '🔖', '🧩'];
 
 function isSupportedUpload(file: File): boolean {
   return file.size <= 20 * 1024 * 1024 && ALLOWED_UPLOAD_TYPES.includes(file.type.toLowerCase());
@@ -323,6 +323,8 @@ export function PageEditor({ pageId }: { pageId: string }) {
   const titleRef = useRef('');
   const bodyUploadRef = useRef<HTMLInputElement>(null);
   const coverUploadRef = useRef<HTMLInputElement>(null);
+  const iconTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const restoreIconFocusRef = useRef(false);
   const coverDragRef = useRef<{ pointerId: number; clientX: number; clientY: number; x: number; y: number } | null>(null);
 
   const draftKey = `arcane-codex:draft:${pageId}`;
@@ -650,6 +652,33 @@ export function PageEditor({ pageId }: { pageId: string }) {
     setStatusMessage('Page details saved');
     return true;
   }, [page, pageId, savePage]);
+
+  const setIconTrigger = useCallback((node: HTMLButtonElement | null) => {
+    iconTriggerRef.current = node;
+    if (node && restoreIconFocusRef.current) {
+      restoreIconFocusRef.current = false;
+      node.focus();
+    }
+  }, []);
+
+  const closeIconPicker = useCallback((reason: 'escape' | 'outside' | 'button') => {
+    setIconPickerOpen(false);
+    if (reason !== 'outside') {
+      window.requestAnimationFrame(() => iconTriggerRef.current?.focus());
+    }
+  }, []);
+
+  const selectPageIcon = useCallback((emoji: string) => {
+    restoreIconFocusRef.current = true;
+    setIconPickerOpen(false);
+    void updateMetadata({ icon: emoji });
+  }, [updateMetadata]);
+
+  const removePageIcon = useCallback(() => {
+    restoreIconFocusRef.current = true;
+    setIconPickerOpen(false);
+    void updateMetadata({ icon: null });
+  }, [updateMetadata]);
 
   const updateCoverFocal = useCallback((axis: 'x' | 'y', value: number) => {
     setCoverDraft((current) => {
@@ -1251,17 +1280,23 @@ export function PageEditor({ pageId }: { pageId: string }) {
       ) : null}
 
       <div className={`document-content ${coverAsset ? 'has-cover' : ''}`}>
-        <div className="page-identity">
-          <div className="page-icon-wrap">
-            <button type="button" className="page-icon" aria-haspopup="listbox" aria-expanded={iconPickerOpen} disabled={isDeleted} onClick={() => setIconPickerOpen((open) => !open)}>{page.icon ?? '📄'}</button>
-            {iconPickerOpen ? (
-              <div className="emoji-picker" role="listbox" aria-label="Choose page icon">
-                {EMOJI_OPTIONS.map((emoji) => (
-                  <button type="button" role="option" aria-selected={page.icon === emoji} key={emoji} onClick={() => { setIconPickerOpen(false); void updateMetadata({ icon: emoji }); }}>{emoji}</button>
-                ))}
-              </div>
-            ) : null}
-          </div>
+        <div className={`page-identity ${page.icon ? 'has-icon' : ''}`}>
+          {page.icon ? (
+            <div className="page-icon-wrap">
+              <button ref={setIconTrigger} key={`icon-${page.icon}`} type="button" className="page-icon" aria-label="Change page icon" aria-haspopup="dialog" aria-expanded={iconPickerOpen} disabled={isDeleted} onClick={() => setIconPickerOpen((open) => !open)}>{page.icon}</button>
+            </div>
+          ) : null}
+          {!page.icon || !coverAsset ? (
+            <div className="page-media-affordances" aria-label="Page appearance">
+              {!page.icon ? (
+                <button ref={setIconTrigger} key="add-icon" type="button" aria-haspopup="dialog" aria-expanded={iconPickerOpen} disabled={isDeleted} onClick={() => setIconPickerOpen(true)}>Add icon</button>
+              ) : null}
+              {!coverAsset ? <button type="button" disabled={isDeleted} onClick={() => coverUploadRef.current?.click()}>Add cover</button> : null}
+            </div>
+          ) : null}
+          {iconPickerOpen ? (
+            <PageEmojiPicker currentIcon={page.icon} onSelect={selectPageIcon} onRemove={removePageIcon} onClose={closeIconPicker} />
+          ) : null}
           <textarea className="page-title" rows={1} value={title} onChange={onTitleInput} placeholder="Untitled" disabled={isDeleted} />
           <div className={`status ${status === 'saved' ? 'saved' : status === 'error' || status === 'conflict' ? 'error' : status === 'saving' ? 'saving' : ''}`} role="status">
             <span>{statusMessage || 'Saved'}</span>
