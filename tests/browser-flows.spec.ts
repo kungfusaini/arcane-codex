@@ -336,7 +336,9 @@ test('shows page appearance affordances and selects a searchable emoji icon', as
   await dragon.click();
 
   await expect(emojiPopover).toBeHidden();
-  await expect(page.getByRole('button', { name: 'Change page icon' })).toHaveText(/🐉/);
+  const titleRow = page.locator('.page-title-row');
+  await expect(titleRow.getByRole('button', { name: 'Change page icon' })).toHaveText(/🐉/);
+  await expect(titleRow.locator('.page-title')).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.activeElement === document.querySelector('.page-icon'))).toBe(true);
   await page.reload();
   await expect(page.getByRole('button', { name: 'Change page icon' })).toHaveText(/🐉/);

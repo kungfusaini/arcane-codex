@@ -266,6 +266,19 @@
 .page-media-affordances button:hover {
   color: var(--color-ink);
 }
+.page-title-row {
+  min-width: var(--space-0);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.page-title-row .page-icon-wrap {
+  flex: 0 0 auto;
+}
+.page-title-row .page-title {
+  min-width: var(--space-0);
+  flex: 1 1 auto;
+}
 .emoji-popover {
   position: absolute;
   top: calc(var(--space-16) + var(--space-2));
@@ -739,6 +752,9 @@
   .emoji-picker-host,
   .emoji-picker-host em-emoji-picker {
     height: min(calc(var(--space-16) * 6), calc(100vh - var(--space-16) * 2 - var(--space-2)));
+  }
+  .page-title-row {
+    gap: var(--space-1);
   }
   .page-icon {
     width: var(--space-12);

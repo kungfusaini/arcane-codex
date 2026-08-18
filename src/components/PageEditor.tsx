@@ -1281,11 +1281,6 @@ export function PageEditor({ pageId }: { pageId: string }) {
 
       <div className={`document-content ${coverAsset ? 'has-cover' : ''}`}>
         <div className={`page-identity ${page.icon ? 'has-icon' : ''}`}>
-          {page.icon ? (
-            <div className="page-icon-wrap">
-              <button ref={setIconTrigger} key={`icon-${page.icon}`} type="button" className="page-icon" aria-label="Change page icon" aria-haspopup="dialog" aria-expanded={iconPickerOpen} disabled={isDeleted} onClick={() => setIconPickerOpen((open) => !open)}>{page.icon}</button>
-            </div>
-          ) : null}
           {!page.icon || !coverAsset ? (
             <div className="page-media-affordances" aria-label="Page appearance">
               {!page.icon ? (
@@ -1294,10 +1289,17 @@ export function PageEditor({ pageId }: { pageId: string }) {
               {!coverAsset ? <button type="button" disabled={isDeleted} onClick={() => coverUploadRef.current?.click()}>Add cover</button> : null}
             </div>
           ) : null}
+          <div className="page-title-row">
+            {page.icon ? (
+              <div className="page-icon-wrap">
+                <button ref={setIconTrigger} key={`icon-${page.icon}`} type="button" className="page-icon" aria-label="Change page icon" aria-haspopup="dialog" aria-expanded={iconPickerOpen} disabled={isDeleted} onClick={() => setIconPickerOpen((open) => !open)}>{page.icon}</button>
+              </div>
+            ) : null}
+            <textarea className="page-title" rows={1} value={title} onChange={onTitleInput} placeholder="Untitled" disabled={isDeleted} />
+          </div>
           {iconPickerOpen ? (
             <PageEmojiPicker currentIcon={page.icon} onSelect={selectPageIcon} onRemove={removePageIcon} onClose={closeIconPicker} />
           ) : null}
-          <textarea className="page-title" rows={1} value={title} onChange={onTitleInput} placeholder="Untitled" disabled={isDeleted} />
           <div className={`status ${status === 'saved' ? 'saved' : status === 'error' || status === 'conflict' ? 'error' : status === 'saving' ? 'saving' : ''}`} role="status">
             <span>{statusMessage || 'Saved'}</span>
             {status === 'error' && hasPendingContent.current ? <button type="button" className="mini-btn" onClick={() => void savePage()}>Retry save</button> : null}
