@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
@@ -37,8 +38,9 @@ import {
   insertOrUpdateBlockForSlashMenu,
 } from '@blocknote/core/extensions';
 import { getBreadcrumbs } from '@/lib/pageTree';
-import { PageEmojiPicker } from '@/components/PageEmojiPicker';
+import { PageIcon } from '@/components/PageIcon';
 import { useDismissibleDetails } from '@/components/useDismissibleDetails';
+import { buildPagePathFromPages, isPagePathForId } from '@/lib/pageUrls';
 import { PageEditorSkeleton } from '@/components/PageEditorSkeleton';
 import {
   createCustomBlockSpecs,
@@ -55,6 +57,7 @@ type PageRecord = {
   sortKey: number;
   title: string;
   icon: string | null;
+  iconAssetId: string | null;
   coverAssetId: string | null;
   coverFocalX: number;
   coverFocalY: number;
@@ -72,7 +75,29 @@ type SidebarPage = {
   sortKey: number;
   title: string;
   icon: string | null;
+  iconAssetId: string | null;
 };
+
+type CollectionSummary = {
+  id: string;
+  hostPageId: string | null;
+  name: string;
+};
+
+type PageCollectionsPayload = {
+  collections?: CollectionSummary[];
+  hostCollection?: CollectionSummary | null;
+};
+
+const PageEmojiPicker = dynamic(
+  () => import('@/components/PageEmojiPicker').then((module) => module.PageEmojiPicker),
+  { ssr: false },
+);
+
+const CollectionEditor = dynamic(
+  () => import('@/components/CollectionEditor').then((module) => module.CollectionEditor),
+  { ssr: false },
+);
 
 const COVER_FOCAL_STEP = 5;
 const COVER_SCALE_STEP = 5;
@@ -91,7 +116,7 @@ type AssetRecord = {
 type UploadTask = {
   id: string;
   file: File;
-  target: 'body' | 'cover';
+  target: 'body' | 'cover' | 'icon';
   status: 'uploading' | 'error';
   error?: string;
   blockId?: string;
@@ -225,7 +250,7 @@ function migrateLegacyImageBlocks(blocks: PartialBlock[]): { blocks: PartialBloc
             name,
             caption: typeof record.props.caption === 'string' ? record.props.caption : '',
           }]),
-          columns: 1,
+          columns: 2,
           mode: 'single',
           captionMode: 'individual',
           groupCaption: '',
@@ -269,11 +294,10 @@ function ArcaneSideMenu() {
     selector: (state) => state?.block,
   });
 
-  if (!block) {
-    return null;
-  }
-
   const moveBlock = (direction: -1 | 1) => {
+    if (!block) {
+      return;
+    }
     const blocks = editor.document;
     const index = blocks.findIndex((candidate) => candidate.id === block.id);
     const targetIndex = index + direction;
@@ -285,12 +309,16 @@ function ArcaneSideMenu() {
     if (!source || !target) {
       return;
     }
-    const { id: _sourceId, ...partialSource } = source;
+    const partialSource = { ...source };
+    delete (partialSource as { id?: string }).id;
     editor.insertBlocks([partialSource], target, direction < 0 ? 'before' : 'after');
     editor.removeBlocks([source]);
   };
 
   useEffect(() => {
+    if (!block) {
+      return;
+    }
     const up = moveUpRef.current;
     const down = moveDownRef.current;
     const moveUp = (event: globalThis.MouseEvent) => { event.preventDefault(); moveBlock(-1); };
@@ -302,6 +330,10 @@ function ArcaneSideMenu() {
       down?.removeEventListener('click', moveDown);
     };
   });
+
+  if (!block) {
+    return null;
+  }
 
   return (
     <div className="arcane-side-menu-actions">
@@ -374,7 +406,7 @@ function ArcaneSuggestionMenu<T extends DefaultReactSuggestionItem>({
   );
 }
 
-export function PageEditor({ pageId }: { pageId: string }) {
+export function PageEditor({ pageId, initialPages = [] }: { pageId: string; initialPages?: SidebarPage[] }) {
   useDismissibleDetails('.action-menu');
 
   const [page, setPage] = useState<PageRecord | null>(null);
@@ -383,10 +415,12 @@ export function PageEditor({ pageId }: { pageId: string }) {
   const [title, setTitle] = useState('');
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error' | 'conflict'>('idle');
   const [statusMessage, setStatusMessage] = useState('');
-  const [allPages, setAllPages] = useState<SidebarPage[]>([]);
+  const [allPages, setAllPages] = useState<SidebarPage[]>(initialPages);
   const [editorReady, setEditorReady] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [assets, setAssets] = useState<AssetRecord[]>([]);
+  const [hostCollection, setHostCollection] = useState<CollectionSummary | null>(null);
+  const [pageCollections, setPageCollections] = useState<CollectionSummary[]>([]);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [uploadTasks, setUploadTasks] = useState<UploadTask[]>([]);
   const [coverUrlOpen, setCoverUrlOpen] = useState(false);
@@ -409,7 +443,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
   const referencedPages = useMemo(() => {
     const map = new Map<string, ReferencedPage>();
     for (const item of allPages) {
-      map.set(item.id, { title: item.title || 'Untitled', icon: item.icon ?? null });
+      map.set(item.id, { id: item.id, parentId: item.parentId, sortKey: item.sortKey, title: item.title || 'Untitled', icon: item.icon ?? null, iconAssetId: item.iconAssetId ?? null });
     }
     return map;
   }, [allPages]);
@@ -517,6 +551,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
   const titleRef = useRef('');
   const bodyUploadRef = useRef<HTMLInputElement>(null);
   const coverUploadRef = useRef<HTMLInputElement>(null);
+  const iconUploadRef = useRef<HTMLInputElement>(null);
   const iconTriggerRef = useRef<HTMLButtonElement | null>(null);
   const restoreIconFocusRef = useRef(false);
   const coverDragRef = useRef<{ pointerId: number; clientX: number; clientY: number; x: number; y: number } | null>(null);
@@ -628,8 +663,10 @@ export function PageEditor({ pageId }: { pageId: string }) {
         throw new Error(response.status === 404 ? 'Page not found' : 'Page could not be loaded');
       }
 
-      const payload = (await response.json()) as { page: PageRecord };
+      const payload = (await response.json()) as { page: PageRecord } & PageCollectionsPayload;
       setPage(payload.page);
+      setPageCollections(payload.collections ?? []);
+      setHostCollection(payload.hostCollection ?? null);
       pendingRevision.current = payload.page.revision;
       editVersionRef.current = 0;
       saveQueuedRef.current = false;
@@ -680,17 +717,6 @@ export function PageEditor({ pageId }: { pageId: string }) {
     const response = await fetch('/api/pages');
     const payload = (await response.json()) as { pages: SidebarPage[] };
     setAllPages(payload.pages);
-  }, []);
-
-  const loadAssets = useCallback(async () => {
-    const response = await fetch('/api/assets');
-    if (!response.ok) {
-      setStatus('error');
-      setStatusMessage('Media library could not be loaded');
-      return;
-    }
-    const payload = (await response.json()) as { assets: AssetRecord[] };
-    setAssets(payload.assets);
   }, []);
 
   const savePage = useCallback(async () => {
@@ -843,7 +869,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
     setStatusMessage('Discarded browser recovery draft');
   }, [draftKey]);
 
-  const updateMetadata = useCallback(async (updates: { icon?: string | null; coverAssetId?: string | null; coverFocalX?: number; coverFocalY?: number; coverScale?: number }) => {
+  const updateMetadata = useCallback(async (updates: { icon?: string | null; iconAssetId?: string | null; coverAssetId?: string | null; coverFocalX?: number; coverFocalY?: number; coverScale?: number }) => {
     if (!page || page.deletedAt) {
       return false;
     }
@@ -906,13 +932,17 @@ export function PageEditor({ pageId }: { pageId: string }) {
   const selectPageIcon = useCallback((emoji: string) => {
     restoreIconFocusRef.current = true;
     setIconPickerOpen(false);
-    void updateMetadata({ icon: emoji });
+    void updateMetadata({ icon: emoji, iconAssetId: null });
+  }, [updateMetadata]);
+
+  const selectPageIconAsset = useCallback((assetId: string) => {
+    void updateMetadata({ icon: null, iconAssetId: assetId });
   }, [updateMetadata]);
 
   const removePageIcon = useCallback(() => {
     restoreIconFocusRef.current = true;
     setIconPickerOpen(false);
-    void updateMetadata({ icon: null });
+    void updateMetadata({ icon: null, iconAssetId: null });
   }, [updateMetadata]);
 
   const updateCoverScale = useCallback((value: number) => {
@@ -1014,7 +1044,14 @@ export function PageEditor({ pageId }: { pageId: string }) {
     return asset;
   }, [removeUploadTask, updateMetadata, uploadAssetRecord]);
 
-  const uploadAndHandleTask = useCallback(async (file: File, target: 'body' | 'cover', blockId?: string) => {
+  const uploadForIcon = useCallback(async (file: File, taskId: string) => {
+    const asset = await uploadAssetRecord(file);
+    await updateMetadata({ icon: null, iconAssetId: asset.id });
+    removeUploadTask(taskId);
+    return asset;
+  }, [removeUploadTask, updateMetadata, uploadAssetRecord]);
+
+  const uploadAndHandleTask = useCallback(async (file: File, target: 'body' | 'cover' | 'icon', blockId?: string) => {
     if (!isSupportedUpload(file)) {
       setUploadTasks((current) => [...current, { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, file, target, status: 'error', error: 'Use an image, PDF, text, or Markdown file up to 20 MB.' }]);
       return;
@@ -1032,6 +1069,10 @@ export function PageEditor({ pageId }: { pageId: string }) {
         await uploadForCover(file, taskId);
         return;
       }
+      if (target === 'icon') {
+        await uploadForIcon(file, taskId);
+        return;
+      }
       await uploadForBody(file, taskId);
     } catch (error) {
       setUploadTask(taskId, {
@@ -1039,7 +1080,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
         error: error instanceof Error ? error.message : 'Upload failed',
       });
     }
-  }, [addUploadTask, setUploadTask, uploadForBody, uploadForCover]);
+  }, [addUploadTask, setUploadTask, uploadForBody, uploadForCover, uploadForIcon]);
 
   const retryUploadTask = useCallback((task: UploadTask) => {
     setUploadTasks((current) => current.filter((item) => item.id !== task.id));
@@ -1085,7 +1126,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
     }
   }, [imageUrl, importAssetFromUrl, insertAsset]);
 
-  const chooseUpload = (event: ChangeEvent<HTMLInputElement>, target: 'body' | 'cover') => {
+  const chooseUpload = (event: ChangeEvent<HTMLInputElement>, target: 'body' | 'cover' | 'icon') => {
     if (target === 'body') {
       setImageUrlOpen(false);
       setImageUrlPosition(null);
@@ -1108,7 +1149,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
     }
 
     const payload = (await response.json()) as { page: PageRecord };
-    window.location.href = `/page/${payload.page.id}`;
+    window.location.href = buildPagePathFromPages(payload.page.id, [...allPages, payload.page]);
   };
 
   const trash = async () => {
@@ -1177,6 +1218,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
     return {
       title,
       icon: pageInfo?.icon ?? null,
+      iconAssetId: pageInfo?.iconAssetId ?? null,
       label: `${pageInfo?.icon ? `${pageInfo.icon} ` : ''}${title}`,
     };
   }, [pagesById]);
@@ -1406,11 +1448,11 @@ export function PageEditor({ pageId }: { pageId: string }) {
     (item: MentionItem) => {
       editor.insertInlineContent([{
         type: 'link',
-        href: `/page/${item.id}`,
+        href: buildPagePathFromPages(item.id, allPages),
         content: item.label,
       }]);
     },
-    [editor],
+    [allPages, editor],
   );
 
   const getMentionItems = useCallback(async (query: string): Promise<(DefaultReactSuggestionItem & MentionItem)[]> => {
@@ -1609,7 +1651,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
       width: blockBox.width,
       height: blockBox.height,
     });
-  }, [editor, isEditing]);
+  }, [editor, isEditing, pageId]);
 
   const openCaptionEditor = useCallback(() => {
     if (!imageHover) {
@@ -1643,7 +1685,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
       const uploadPayload = await uploadResponse.json() as { asset?: AssetRecord; error?: string };
       if (!uploadResponse.ok || !uploadPayload.asset) throw new Error(uploadPayload.error || 'Edited image could not be saved to the media library.');
       const editedUrl = `/api/assets/${uploadPayload.asset.id}`;
-      if (window.location.pathname === `/page/${pageId}`) {
+      if (isPagePathForId(window.location.pathname, pageId, allPages)) {
         editor.updateBlock(imageHover.blockId, { props: { url: editedUrl } });
         window.requestAnimationFrame(() => { void savePage(); });
       } else {
@@ -1660,7 +1702,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
       setGeneratingImage(null);
       setImagePromptBusy(false);
     }
-  }, [editor, imageHover, imagePrompt, imagePromptBusy, pageId, savePage]);
+  }, [allPages, editor, imageHover, imagePrompt, imagePromptBusy, pageId, savePage]);
 
   const saveCaption = useCallback((event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1677,6 +1719,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
       parentId: string | null;
       title: string;
       icon: string | null;
+      iconAssetId: string | null;
       sortKey: number;
     };
     const breadcrumbMap = new Map<string, BreadcrumbEntry>(
@@ -1687,6 +1730,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
           parentId: item.parentId,
           title: item.title,
           icon: item.icon ?? null,
+          iconAssetId: item.iconAssetId ?? null,
           sortKey: item.sortKey,
         },
       ]),
@@ -1696,9 +1740,9 @@ export function PageEditor({ pageId }: { pageId: string }) {
 
   useEffect(() => {
     void loadPage();
-    void loadPageList();
-    void loadAssets();
-
+    if (initialPages.length === 0) {
+      void loadPageList();
+    }
     const unload = () => {
       if (hasPendingContent.current) {
         clearTimeout(saveTimerRef.current ?? undefined);
@@ -1708,6 +1752,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
 
     const onPagesChanged = () => {
       void loadPageList();
+      void loadPage();
     };
 
     window.addEventListener('beforeunload', unload);
@@ -1720,7 +1765,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
         clearTimeout(saveTimerRef.current);
       }
     };
-  }, [loadAssets, loadPage, loadPageList, savePage]);
+  }, [initialPages.length, loadPage, loadPageList, savePage]);
 
   useEffect(() => {
     setShowLoadingSkeleton(false);
@@ -1756,7 +1801,9 @@ export function PageEditor({ pageId }: { pageId: string }) {
       This page is in trash. Restore it before editing.
     </p>
   ) : null;
-  const coverAsset = assets.find((asset) => asset.id === page.coverAssetId) ?? null;
+  const coverAsset = page.coverAssetId
+    ? assets.find((asset) => asset.id === page.coverAssetId) ?? { id: page.coverAssetId, filename: 'Cover image' }
+    : null;
 
   return (
     <section className="document-shell" aria-live="polite">
@@ -1765,8 +1812,8 @@ export function PageEditor({ pageId }: { pageId: string }) {
           {breadcrumbs.length > 0 ? breadcrumbs.map((crumb, index) => (
             <span key={crumb.id} className="breadcrumb-group">
               <span className="breadcrumb-entry">
-                {crumb.icon ? <span className="breadcrumb-icon" aria-hidden="true">{crumb.icon}</span> : null}
-                <Link className="text-link" href={`/page/${crumb.id}`}>{crumb.title}</Link>
+                {crumb.icon || crumb.iconAssetId ? <PageIcon className="breadcrumb-icon" icon={crumb.icon} iconAssetId={crumb.iconAssetId} /> : null}
+                <Link className="text-link" href={buildPagePathFromPages(crumb.id, allPages)}>{crumb.title}</Link>
               </span>
               {index + 1 < breadcrumbs.length ? <span className="breadcrumb-separator" aria-hidden="true">/</span> : null}
             </span>
@@ -1791,7 +1838,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
               <button type="button" disabled={isDeleted} onClick={() => setCoverUrlOpen(true)}>{coverAsset ? 'Replace cover from URL' : 'Add cover from URL'}</button>
               {coverAsset ? <button type="button" disabled={isDeleted} onClick={() => void updateMetadata({ coverAssetId: null })}>Remove cover</button> : null}
               <button type="button" disabled={isDeleted} onClick={() => bodyUploadRef.current?.click()}>Upload file</button>
-              <button type="button" disabled={isDeleted || !page.icon} onClick={() => void updateMetadata({ icon: null })}>Remove icon</button>
+              <button type="button" disabled={isDeleted || (!page.icon && !page.iconAssetId)} onClick={() => void updateMetadata({ icon: null, iconAssetId: null })}>Remove icon</button>
               <button type="button" onClick={duplicate} disabled={isDeleted}>Duplicate</button>
               <button type="button" onClick={trash} className="danger-action">{page.deletedAt ? 'Restore' : 'Move to trash'}</button>
             </div>
@@ -1858,10 +1905,10 @@ export function PageEditor({ pageId }: { pageId: string }) {
       ) : null}
 
       <div className={`document-content ${coverAsset ? 'has-cover' : ''}`}>
-        <div className={`page-identity ${page.icon ? 'has-icon' : ''}`}>
-          {!page.icon || !coverAsset ? (
+        <div className={`page-identity ${page.icon || page.iconAssetId ? 'has-icon' : ''}`}>
+          {!hostCollection && ((!page.icon && !page.iconAssetId) || !coverAsset) ? (
             <div className="page-media-affordances" aria-label="Page appearance">
-              {!page.icon ? (
+              {!page.icon && !page.iconAssetId ? (
                 <button ref={setIconTrigger} key="add-icon" type="button" aria-haspopup="dialog" aria-expanded={iconPickerOpen} disabled={isDeleted} onClick={() => setIconPickerOpen(true)}>Add icon</button>
               ) : null}
               {!coverAsset ? <>
@@ -1871,17 +1918,31 @@ export function PageEditor({ pageId }: { pageId: string }) {
             </div>
           ) : null}
           <div className="page-title-row">
-            {page.icon ? (
+            {page.icon || page.iconAssetId ? (
               <div className="page-icon-wrap">
-                <button ref={setIconTrigger} key={`icon-${page.icon}`} type="button" className="page-icon" aria-label="Change page icon" aria-haspopup="dialog" aria-expanded={iconPickerOpen} disabled={isDeleted} onClick={() => setIconPickerOpen((open) => !open)}>{page.icon}</button>
+                <button ref={setIconTrigger} key={`icon-${page.icon ?? page.iconAssetId}`} type="button" className="page-icon" aria-label="Change page icon" aria-haspopup="dialog" aria-expanded={iconPickerOpen} disabled={isDeleted} onClick={() => setIconPickerOpen((open) => !open)}><PageIcon icon={page.icon} iconAssetId={page.iconAssetId} /></button>
               </div>
             ) : null}
             <textarea className="page-title" rows={1} value={title} onChange={onTitleInput} placeholder="Untitled" disabled={isDeleted} />
           </div>
           {iconPickerOpen ? (
-            <PageEmojiPicker currentIcon={page.icon} onSelect={selectPageIcon} onRemove={removePageIcon} onClose={closeIconPicker} />
+            <PageEmojiPicker
+              pageId={pageId}
+              currentIcon={page.icon}
+              currentIconAssetId={page.iconAssetId}
+              onSelect={selectPageIcon}
+              onSelectAsset={selectPageIconAsset}
+              onUploadIcon={() => iconUploadRef.current?.click()}
+              onImportIconUrl={async (url) => {
+                const asset = await importAssetFromUrl(url);
+                selectPageIconAsset(asset.id);
+                return;
+              }}
+              onRemove={removePageIcon}
+              onClose={closeIconPicker}
+            />
           ) : null}
-          {status !== 'saving' ? (
+          {status !== 'saving' && (!hostCollection || status === 'error' || status === 'conflict') ? (
             <div className={`status ${status === 'saved' ? 'saved' : status === 'error' || status === 'conflict' ? 'error' : ''}`} role="status">
               <span>{statusMessage || 'Saved'}</span>
               {status === 'error' && hasPendingContent.current ? <button type="button" className="mini-btn" onClick={() => void savePage()}>Retry save</button> : null}
@@ -1890,6 +1951,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
         </div>
 
         <input ref={coverUploadRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" onChange={(event) => chooseUpload(event, 'cover')} disabled={isDeleted} />
+        <input ref={iconUploadRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" onChange={(event) => chooseUpload(event, 'icon')} disabled={isDeleted} />
         <input ref={bodyUploadRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown" multiple onChange={(event) => chooseUpload(event, 'body')} disabled={isDeleted} />
 
         {coverUrlOpen ? (
@@ -1924,6 +1986,23 @@ export function PageEditor({ pageId }: { pageId: string }) {
               </li>
             ))}
           </ul>
+        ) : null}
+
+        {hostCollection || pageCollections.length ? (
+          <section className="page-collections-embed" aria-label="Collections on this page">
+            {hostCollection ? (
+              <div className="page-collection-embed" aria-label={`${hostCollection.name} collection`}>
+                <p className="eyebrow">Collection</p>
+                <CollectionEditor collectionId={hostCollection.id} embedded />
+              </div>
+            ) : null}
+            {pageCollections.map((collection) => (
+              <div key={collection.id} className="page-collection-embed" aria-label={`${collection.name} collection`}>
+                <p className="eyebrow">Collection</p>
+                <CollectionEditor collectionId={collection.id} embedded focusPageId={page.id} />
+              </div>
+            ))}
+          </section>
         ) : null}
 
         <div

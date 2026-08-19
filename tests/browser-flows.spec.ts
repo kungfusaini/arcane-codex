@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { buildPagePathFromPages } from '../src/lib/pageUrls';
 
 type MotionSample = {
   tx: number;
@@ -167,6 +168,7 @@ async function dispatchDropIntoEditor(page: Page, editorSelector: string, file: 
 type PageRecord = {
   id: string;
   parentId: string | null;
+  sortKey: number;
   title: string;
   revision: number;
 };
@@ -196,7 +198,7 @@ test('core local workspace flows survive reload and remain recoverable', async (
       type: 'paragraph',
       content: [
         { type: 'text', text: 'See ', styles: {} },
-        { type: 'link', href: `/page/${child.id}`, content: [{ type: 'text', text: child.title, styles: {} }] },
+        { type: 'link', href: buildPagePathFromPages(child.id, [root, child]), content: [{ type: 'text', text: child.title, styles: {} }] },
       ],
     },
     { type: 'image', props: { url: `/api/assets/${asset.id}`, caption: 'Cover study', name: 'cover.png' } },
@@ -206,7 +208,7 @@ test('core local workspace flows survive reload and remain recoverable', async (
   });
   expect(enrichRoot.ok()).toBeTruthy();
 
-  await page.goto(`/page/${root.id}`);
+  await page.goto(buildPagePathFromPages(root.id, [root, child]));
   await expect(page.locator('.page-title')).toHaveValue('Field Notes');
   await expect(page.locator('.cover-preview-image')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Change page icon' })).toHaveText('🧭');
@@ -335,9 +337,76 @@ test('shows page appearance affordances and selects a searchable emoji icon', as
   await expect(page.getByRole('button', { name: 'Change page icon' })).toHaveText(/🐉/);
 
   await page.getByRole('button', { name: 'Change page icon' }).click();
+  await expect(emojiPopover.getByLabel('Generate icon')).toHaveValue('dragon');
+  await expect(emojiPopover.getByRole('button', { name: 'Regenerate' })).toBeEnabled();
   await page.keyboard.press('Escape');
   await expect(emojiPopover).toBeHidden();
   await expect(page.getByRole('button', { name: 'Change page icon' })).toBeFocused();
+});
+
+test('allows choosing an uploaded icon image', async ({ page, request }) => {
+  const freshResponse = await request.post('/api/pages', { data: { title: 'Page with image icon' } });
+  expect(freshResponse.ok()).toBeTruthy();
+  const freshPage = (await freshResponse.json()).page as PageRecord;
+
+  await page.goto(`/page/${freshPage.id}`);
+  await page.locator('.page-identity').hover();
+  await page.getByRole('button', { name: 'Add icon' }).click();
+
+  const iconFileChooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Upload image' }).click();
+  await (await iconFileChooser).setFiles({
+    name: 'icon-image.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
+  });
+
+  const iconButton = page.getByRole('button', { name: 'Change page icon' });
+  await expect(iconButton.locator('img')).toHaveAttribute('src', /\/api\/assets\//);
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Change page icon' }).locator('img')).toHaveAttribute('src', /\/api\/assets\//);
+});
+
+test('allows choosing an icon image from URL', async ({ page, request }) => {
+  const freshResponse = await request.post('/api/pages', { data: { title: 'Page icon from URL' } });
+  expect(freshResponse.ok()).toBeTruthy();
+  const freshPage = (await freshResponse.json()).page as PageRecord;
+
+  const iconImage = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+  const iconUpload = await request.post('/api/assets', {
+    multipart: {
+      file: {
+        name: 'icon-image.png',
+        mimeType: 'image/png',
+        buffer: iconImage,
+      },
+    },
+  });
+  expect(iconUpload.ok()).toBeTruthy();
+  const importedAsset = (await iconUpload.json()).asset as { id: string };
+
+  await page.route('**/api/assets/import', async (route) => {
+    if (route.request().method() === 'POST') {
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({ asset: importedAsset }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto(`/page/${freshPage.id}`);
+  await page.locator('.page-identity').hover();
+  await page.getByRole('button', { name: 'Add icon' }).click();
+
+  await page.getByLabel('Icon image URL').fill('https://example.com/icon.png');
+  await page.getByRole('button', { name: 'Use image URL' }).click();
+
+  const iconButton = page.getByRole('button', { name: 'Change page icon' });
+  await expect(iconButton.locator('img')).toHaveAttribute('src', new RegExp(`/api/assets/${importedAsset.id}`));
+  await page.unroute('**/api/assets/import');
 });
 
 test('renders custom slash and mention suggestion menus without BlockNote UI context errors', async ({ page, request }) => {
@@ -380,7 +449,7 @@ test('renders custom slash and mention suggestion menus without BlockNote UI con
   await expect(targetOption).toBeVisible();
   await targetOption.click();
   await expect(mentionMenu).toBeHidden();
-  await expect(page.locator(`.editor-view a[href="/page/${target.id}"]`)).toBeVisible();
+  await expect(page.locator(`.editor-view a[href="${buildPagePathFromPages(target.id, [target])}"]`)).toBeVisible();
 
   expect(pageErrors.map((error) => error.stack ?? error.message)).toEqual([]);
 });
@@ -452,13 +521,54 @@ test('renders a hosted collection with the host page cover, icon, title, and foc
   });
   expect(collectionResponse.ok()).toBeTruthy();
   const collection = (await collectionResponse.json()).collection as { id: string };
+  const entryResponse = await request.post('/api/pages', { data: { title: 'Dune' } });
+  expect(entryResponse.ok()).toBeTruthy();
+  const entry = (await entryResponse.json()).page as PageRecord;
+  const addResponse = await request.post(`/api/collections/${collection.id}/items`, {
+    data: {
+      pageId: entry.id,
+      properties: {
+        author: 'Frank Herbert',
+        status: 'Reading',
+        type: ['Science fiction', 'Classic'],
+        score: 5,
+        tags: ['Epic', 'Desert'],
+      },
+    },
+  });
+  expect(addResponse.ok()).toBeTruthy();
 
   await page.goto(`/collections/${collection.id}`);
   await expect(page.locator('.collection-host-cover-image')).toBeVisible();
   await expect(page.locator('.collection-host-cover-image')).toHaveAttribute('style', /object-position:\s*70% 30%/);
   await expect(page.locator('.collection-host-icon')).toHaveText('📕');
-  await expect(page.getByRole('main').getByRole('link', { name: 'Hosted library' })).toHaveAttribute('href', `/page/${host.id}`);
+  await expect(page.getByRole('main').getByRole('link', { name: 'Hosted library' })).toHaveAttribute('href', buildPagePathFromPages(host.id, [host]));
   await expect(page.locator('input[name="name"]')).toHaveValue('Books');
+
+  await page.getByRole('button', { name: /Collection settings/ }).click();
+  const authorRow = page.locator('.collection-property-item').filter({ hasText: 'Author' }).first();
+  await expect(authorRow.getByLabel('Type')).toHaveValue('select');
+
+  const authorCell = page.locator('.collection-row').first().locator('.collection-cell-select').first();
+  await authorCell.fill('Frank Herbert');
+  await authorCell.press('Enter');
+  await expect.poll(async () => {
+    const response = await request.get(`/api/collections/${collection.id}`);
+    const payload = await response.json() as { collection: { schemaJson: string } };
+    const schema = JSON.parse(payload.collection.schemaJson) as { properties: Array<{ id: string; options?: string[] }> };
+    return schema.properties.find((property) => property.id === 'author')?.options ?? [];
+  }).toContain('Frank Herbert');
+  await expect(page.locator('#collection-options-author option[value="Frank Herbert"]')).toHaveCount(1);
+
+  await page.goto(buildPagePathFromPages(host.id, [host]));
+  await expect(page.locator('.page-collection-embed')).toBeVisible();
+  await expect(page.locator('.collection-table')).toBeVisible();
+
+  await page.goto(`/page/${entry.id}`);
+  await expect(page.locator('.page-collections-embed')).toBeVisible();
+  await expect(page.getByRole('link', { name: /Books.*Open collection/ })).toHaveAttribute('href', `/collections/${collection.id}`);
+  await expect(page.locator('.page-collection-embed')).toContainText('Books');
+  await expect(page.locator('.page-collection-embed')).toContainText('Frank Herbert');
 });
 
 test.describe('cover controls and reference refresh', () => {
@@ -544,7 +654,7 @@ test.describe('cover controls and reference refresh', () => {
         content: [
           {
             type: 'link',
-            href: `/page/${target.id}`,
+            href: buildPagePathFromPages(target.id, [{ ...target, parentId: root.id, sortKey: 2, title: 'Target old' }]),
             content: [{ type: 'text', text: 'Target old', styles: {} }],
           },
         ],
