@@ -12,6 +12,7 @@ import {
   useRef,
   useState,
   type ClipboardEvent as ReactClipboardEvent,
+  type FocusEvent as ReactFocusEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactElement,
@@ -19,15 +20,19 @@ import {
 import { BlockNoteSchema, PartialBlock, defaultBlockSpecs } from '@blocknote/core';
 import {
   BlockNoteViewRaw as BlockNoteView,
+  SideMenuController,
   SuggestionMenuController,
-  createReactBlockSpec,
   type DefaultReactSuggestionItem,
   type SuggestionMenuProps,
   getDefaultReactSlashMenuItems,
   useCreateBlockNote,
+  useBlockNoteEditor,
   useEditorChange,
+  useExtension,
+  useExtensionState,
 } from '@blocknote/react';
 import {
+  SideMenuExtension,
   filterSuggestionItems,
   insertOrUpdateBlockForSlashMenu,
 } from '@blocknote/core/extensions';
@@ -35,6 +40,12 @@ import { getBreadcrumbs } from '@/lib/pageTree';
 import { PageEmojiPicker } from '@/components/PageEmojiPicker';
 import { useDismissibleDetails } from '@/components/useDismissibleDetails';
 import { PageEditorSkeleton } from '@/components/PageEditorSkeleton';
+import {
+  createCustomBlockSpecs,
+  getCustomSlashMenuItems,
+  getYouTubeVideoId,
+  type ReferencedPage,
+} from '@/components/customBlocks';
 
 import './page-editor.css';
 
@@ -99,6 +110,19 @@ const DOCUMENT_FALLBACK: PartialBlock[] = [{
   content: '',
 }];
 
+function isTrulyEmptyParagraph(block: { type: string; content: unknown }) {
+  return block.type === 'paragraph'
+    && Array.isArray(block.content)
+    && block.content.every((inline) => (
+      typeof inline === 'object'
+      && inline !== null
+      && 'type' in inline
+      && inline.type === 'text'
+      && 'text' in inline
+      && inline.text === ''
+    ));
+}
+
 const ALLOWED_UPLOAD_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf', 'text/plain', 'text/markdown'];
 
 function isSupportedUpload(file: File): boolean {
@@ -114,11 +138,65 @@ function getPastedUrl(value: string): string | null {
   }
 }
 
+function parseTimestamp(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split(':').map(Number);
+  if (parts.some((part) => !Number.isFinite(part) || part < 0) || parts.length > 3) return null;
+  const seconds = parts.length === 1
+    ? parts[0]
+    : parts.length === 2
+      ? parts[0] * 60 + parts[1]
+      : parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return seconds >= 0 ? seconds : null;
+}
+
 function getUrlTitle(value: string): string {
   try {
     return new URL(value).hostname.replace(/^www\./, '');
   } catch {
     return value;
+  }
+}
+
+function replaceImageBlockUrl(blocks: unknown, blockId: string, url: string): { blocks: unknown; changed: boolean } {
+  if (!Array.isArray(blocks)) return { blocks, changed: false };
+  let changed = false;
+  const next = blocks.map((block) => {
+    if (!block || typeof block !== 'object') return block;
+    const record = block as Record<string, unknown>;
+    let updated: Record<string, unknown> = record;
+    if (record.id === blockId) {
+      updated = { ...updated, props: { ...(record.props as Record<string, unknown>), url } };
+      changed = true;
+    }
+    const children = replaceImageBlockUrl(record.children, blockId, url);
+    if (children.changed) {
+      updated = { ...updated, children: children.blocks };
+      changed = true;
+    }
+    return updated;
+  });
+  return { blocks: next, changed };
+}
+
+async function saveEditedImageToPage(pageId: string, blockId: string, url: string) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await fetch(`/api/pages/${pageId}`);
+    const payload = await response.json() as { page?: Pick<PageRecord, 'revision' | 'contentJson'>; error?: string };
+    if (!response.ok || !payload.page) throw new Error(payload.error || 'Original page could not be loaded.');
+    const replaced = replaceImageBlockUrl(JSON.parse(payload.page.contentJson), blockId, url);
+    if (!replaced.changed) throw new Error('The original image block no longer exists.');
+    const update = await fetch(`/api/pages/${pageId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ revision: payload.page.revision, contentJson: JSON.stringify(replaced.blocks) }),
+    });
+    if (update.ok) return;
+    if (update.status !== 409 || attempt === 1) {
+      const error = await update.json().catch(() => ({})) as { error?: string };
+      throw new Error(error.error || 'Edited image could not be saved.');
+    }
   }
 }
 
@@ -131,73 +209,116 @@ function isImageUrl(value: string): boolean {
   }
 }
 
-type ReferencedPage = {
-  title: string;
-  icon: string | null;
-};
+function migrateLegacyImageBlocks(blocks: PartialBlock[]): { blocks: PartialBlock[]; changed: boolean } {
+  let changed = false;
+  const next = blocks.map((block) => {
+    const record = block as PartialBlock & { props?: Record<string, unknown>; children?: PartialBlock[] };
+    let migrated = record;
+    if (record.type === 'image' && typeof record.props?.url === 'string' && record.props.url) {
+      const name = typeof record.props.name === 'string' && record.props.name ? record.props.name : record.props.url;
+      migrated = {
+        ...record,
+        type: 'gallery',
+        props: {
+          images: JSON.stringify([{
+            url: record.props.url,
+            name,
+            caption: typeof record.props.caption === 'string' ? record.props.caption : '',
+          }]),
+          columns: 1,
+          mode: 'single',
+          captionMode: 'individual',
+          groupCaption: '',
+          width: 100,
+        },
+      } as unknown as PartialBlock & { props?: Record<string, unknown>; children?: PartialBlock[] };
+      changed = true;
+    }
+    if (Array.isArray(record.children)) {
+      const children = migrateLegacyImageBlocks(record.children);
+      if (children.changed) {
+        migrated = { ...migrated, children: children.blocks };
+        changed = true;
+      }
+    }
+    return migrated;
+  });
+  return { blocks: next, changed };
+}
 
-function createPageLinkBlockSpec(referencedPages: Map<string, ReferencedPage>) {
-  return createReactBlockSpec(
-    {
-      type: 'pageLink',
-      propSchema: {
-        pageId: { default: '' },
-        title: { default: '' },
-        icon: { default: '' },
-        url: { default: '' },
-      },
-      content: 'none',
-    },
-    {
-      render: (props) => {
-        const propsByType = props.block.props as { pageId?: string; title?: string; icon?: string; url?: string };
-        const pageId = String(propsByType.pageId || '');
-        const externalUrl = String(propsByType.url || '');
-        const reference = pageId
-          ? referencedPages.get(pageId) ?? { title: propsByType.icon ? String(propsByType.title || 'Page').replace(/^\S+\s/, '') : String(propsByType.title || 'Page'), icon: propsByType.icon || null }
-          : { title: propsByType.title || (externalUrl ? getUrlTitle(externalUrl) : 'Page'), icon: propsByType.icon || null };
-        const label = `${reference.icon ? `${reference.icon} ` : ''}${reference.title || String(propsByType.title || 'Page')}`;
-        const href = externalUrl || (pageId ? `/page/${pageId}` : '#');
+function removeRedundantYouTubeLinkBlocks(blocks: PartialBlock[]): PartialBlock[] {
+  return blocks.filter((block, index) => {
+    if (block.type !== 'paragraph' || !Array.isArray(block.content) || block.content.length !== 1) {
+      return true;
+    }
+    const inline = block.content[0] as { type?: string; href?: string } | undefined;
+    const next = blocks[index + 1] as { type?: string; props?: Record<string, unknown> } | undefined;
+    if (inline?.type !== 'link' || typeof inline.href !== 'string' || next?.type !== 'youtube') {
+      return true;
+    }
+    return getYouTubeVideoId(inline.href) !== getYouTubeVideoId(String(next.props?.url || ''));
+  });
+}
 
-        const openPage = (event: MouseEvent<HTMLAnchorElement>) => {
-          if (!pageId) {
-            return;
-          }
-          event.preventDefault();
-          window.location.href = href;
-        };
+function ArcaneSideMenu() {
+  const editor = useBlockNoteEditor();
+  const sideMenu = useExtension(SideMenuExtension);
+  const moveUpRef = useRef<HTMLButtonElement>(null);
+  const moveDownRef = useRef<HTMLButtonElement>(null);
+  const block = useExtensionState(SideMenuExtension, {
+    selector: (state) => state?.block,
+  });
 
-        return (
-          <a
-            className="page-link-block"
-            href={href}
-            aria-label={`Open ${label}`}
-            onClick={openPage}
-            target={externalUrl ? '_blank' : undefined}
-            rel={externalUrl ? 'noreferrer' : undefined}
-            contentEditable={false}
-            draggable={false}
-          >
-            <span className="page-link-icon" aria-hidden="true">{reference.icon || '📄'}</span>
-            <span className="page-link-title">{reference.title || String(propsByType.title || 'Page')}</span>
-          </a>
-        );
-      },
-      toExternalHTML: (props) => {
-        const propsByType = props.block.props as { pageId?: string; title?: string; icon?: string; url?: string };
-        const pageId = String(propsByType.pageId || '');
-        const externalUrl = String(propsByType.url || '');
-        const reference = pageId
-          ? referencedPages.get(pageId) ?? { title: propsByType.icon ? String(propsByType.title || 'Page').replace(/^\S+\s/, '') : String(propsByType.title || 'Page'), icon: propsByType.icon || null }
-          : { title: propsByType.title || (externalUrl ? getUrlTitle(externalUrl) : 'Page'), icon: propsByType.icon || null };
-        return (
-          <a href={externalUrl || (pageId ? `/page/${pageId}` : '#')} target={externalUrl ? '_blank' : undefined} rel={externalUrl ? 'noreferrer' : undefined}>
-            <span aria-hidden="true">{reference.icon || '📄'}</span>
-            <span>{reference.title || String(propsByType.title || 'Page')}</span>
-          </a>
-        );
-      },
-    },
+  if (!block) {
+    return null;
+  }
+
+  const moveBlock = (direction: -1 | 1) => {
+    const blocks = editor.document;
+    const index = blocks.findIndex((candidate) => candidate.id === block.id);
+    const targetIndex = index + direction;
+    if (index < 0 || targetIndex < 0 || targetIndex >= blocks.length) {
+      return;
+    }
+    const source = blocks[index];
+    const target = blocks[targetIndex];
+    if (!source || !target) {
+      return;
+    }
+    const { id: _sourceId, ...partialSource } = source;
+    editor.insertBlocks([partialSource], target, direction < 0 ? 'before' : 'after');
+    editor.removeBlocks([source]);
+  };
+
+  useEffect(() => {
+    const up = moveUpRef.current;
+    const down = moveDownRef.current;
+    const moveUp = (event: globalThis.MouseEvent) => { event.preventDefault(); moveBlock(-1); };
+    const moveDown = (event: globalThis.MouseEvent) => { event.preventDefault(); moveBlock(1); };
+    up?.addEventListener('click', moveUp);
+    down?.addEventListener('click', moveDown);
+    return () => {
+      up?.removeEventListener('click', moveUp);
+      down?.removeEventListener('click', moveDown);
+    };
+  });
+
+  return (
+    <div className="arcane-side-menu-actions">
+      <button
+      type="button"
+      className="arcane-drag-handle"
+      draggable
+      aria-label="Drag block"
+      onDragStart={(event) => sideMenu.blockDragStart(event, block)}
+      onDragEnd={sideMenu.blockDragEnd}
+      title="Drag block"
+    >
+      ⋮⋮
+    </button>
+      <button type="button" ref={moveUpRef} className="arcane-move-button" aria-label="Move block up" title="Move block up">↑</button>
+      <button type="button" ref={moveDownRef} className="arcane-move-button" aria-label="Move block down" title="Move block down">↓</button>
+    </div>
   );
 }
 
@@ -273,7 +394,13 @@ export function PageEditor({ pageId }: { pageId: string }) {
   const [imageUrlOpen, setImageUrlOpen] = useState(false);
   const [imageUrlPosition, setImageUrlPosition] = useState<{ top: number; left: number } | null>(null);
   const [imageUrl, setImageUrl] = useState('');
-  const [imageHover, setImageHover] = useState<{ blockId: string; top: number; left: number; caption: string } | null>(null);
+  const [timeComposerOpen, setTimeComposerOpen] = useState(false);
+  const [timeComposerValue, setTimeComposerValue] = useState('');
+  const [timeComposerError, setTimeComposerError] = useState('');
+  const [imageHover, setImageHover] = useState<{ pageId: string; blockId: string; top: number; left: number; caption: string; url: string; imageTop: number; imageLeft: number; width: number; height: number } | null>(null);
+  const [generatingImage, setGeneratingImage] = useState<{ pageId: string; top: number; left: number; width: number; height: number } | null>(null);
+  const [imagePrompt, setImagePrompt] = useState('');
+  const [imagePromptBusy, setImagePromptBusy] = useState(false);
   const [captionEditor, setCaptionEditor] = useState<{ blockId: string; top: number; left: number; value: string } | null>(null);
   const [conflictPage, setConflictPage] = useState<PageRecord | null>(null);
   const [recoveryDraft, setRecoveryDraft] = useState<RecoveryDraft | null>(null);
@@ -342,12 +469,12 @@ export function PageEditor({ pageId }: { pageId: string }) {
         BlockNoteSchema.create({
           blockSpecs: {
             ...defaultBlockSpecs,
-            pageLink: createPageLinkBlockSpec(referencedPages)(),
+            ...createCustomBlockSpecs({ referencedPages, importAssetFromUrl, uploadAssetRecord }),
           },
         }),
-      [referencedPages],
+      [importAssetFromUrl, referencedPages, uploadAssetRecord],
     ),
-    trailingBlock: true,
+    trailingBlock: false,
     uploadFile: async (file, blockId) => {
       const taskId = addUploadTask({
         file,
@@ -393,6 +520,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
   const iconTriggerRef = useRef<HTMLButtonElement | null>(null);
   const restoreIconFocusRef = useRef(false);
   const coverDragRef = useRef<{ pointerId: number; clientX: number; clientY: number; x: number; y: number } | null>(null);
+  const clickCreatedBlockIdsRef = useRef(new Set<string>());
 
   const draftKey = `arcane-codex:draft:${pageId}`;
   const isDeleted = Boolean(page?.deletedAt);
@@ -444,13 +572,16 @@ export function PageEditor({ pageId }: { pageId: string }) {
       parsed = DOCUMENT_FALLBACK;
     }
 
-    const payload = parsed.length ? parsed : DOCUMENT_FALLBACK;
+    const withoutRedundantLinks = removeRedundantYouTubeLinkBlocks(parsed.length ? parsed : DOCUMENT_FALLBACK);
+    const migrated = migrateLegacyImageBlocks(withoutRedundantLinks);
+    const payload = migrated.blocks;
     isApplyingRemoteContent.current = true;
     editor.replaceBlocks(editor.document, payload as Parameters<typeof editor.replaceBlocks>[1]);
     savedDocRef.current = JSON.stringify(payload);
     queueMicrotask(() => {
       isApplyingRemoteContent.current = false;
     });
+    return migrated.changed;
   }, [editor]);
 
   const readRecoveryDraft = useCallback((remote: PageRecord): RecoveryDraft | null => {
@@ -469,7 +600,15 @@ export function PageEditor({ pageId }: { pageId: string }) {
         return null;
       }
       JSON.parse(draft.contentJson);
-      if (draft.title === remote.title && draft.contentJson === remote.contentJson) {
+      // Older image-edit attempts could leave a huge base64 draft in localStorage;
+      // those payloads cannot be sent reliably as a recovery PATCH.
+      if (draft.contentJson.includes('data:image/') || draft.contentJson.length > 4_500_000) {
+        window.localStorage.removeItem(draftKey);
+        return null;
+      }
+      // A draft from an older server revision cannot safely be restored over a
+      // newer page. It is stale recovery state, not an unsaved current edit.
+      if (draft.baseRevision !== remote.revision || (draft.title === remote.title && draft.contentJson === remote.contentJson)) {
         window.localStorage.removeItem(draftKey);
         return null;
       }
@@ -503,7 +642,21 @@ export function PageEditor({ pageId }: { pageId: string }) {
       setTitle(payload.page.title);
       titleRef.current = payload.page.title;
 
-      applyInitialContent(payload.page.contentJson);
+      const migratedLegacyImages = applyInitialContent(payload.page.contentJson);
+      if (migratedLegacyImages) {
+        const migrationResponse = await fetch(`/api/pages/${pageId}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ contentJson: savedDocRef.current, revision: payload.page.revision }),
+        });
+        if (migrationResponse.ok) {
+          const migrationPayload = await migrationResponse.json() as { page?: PageRecord };
+          if (migrationPayload.page) {
+            setPage(migrationPayload.page);
+            pendingRevision.current = migrationPayload.page.revision;
+          }
+        }
+      }
 
       setConflictPage(null);
       setRecoveryDraft(readRecoveryDraft(payload.page));
@@ -559,7 +712,6 @@ export function PageEditor({ pageId }: { pageId: string }) {
         const response = await fetch(`/api/pages/${pageId}`, {
           method: 'PATCH',
           headers: { 'content-type': 'application/json' },
-          keepalive: true,
           body: JSON.stringify({
             title: titleToSave,
             contentJson: documentJson,
@@ -823,7 +975,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
   const insertAsset = useCallback((asset: AssetRecord, blockId?: string) => {
     const url = `/api/assets/${asset.id}`;
     const block = asset.mimeType.startsWith('image/')
-      ? { type: 'image', props: { url, name: asset.filename, caption: '' } }
+      ? { type: 'gallery', props: { images: JSON.stringify([{ url, name: asset.filename, caption: '' }]), columns: 3, mode: 'grid', captionMode: 'individual', groupCaption: '', width: 100 } }
       : { type: 'file', props: { url, name: asset.filename, caption: asset.filename } };
 
     if (blockId) {
@@ -1146,7 +1298,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
         title: label,
         icon: targetPage.icon ?? '',
       },
-    });
+    } as never);
   }, [editor, labelForPage]);
 
   const createChildPageCard = useCallback(async () => {
@@ -1169,6 +1321,26 @@ export function PageEditor({ pageId }: { pageId: string }) {
     setStatusMessage('Child page created; saving page card');
   }, [insertPageCard, pageId]);
 
+  const openTimeComposer = useCallback(() => {
+    setTimeComposerValue('');
+    setTimeComposerError('');
+    setTimeComposerOpen(true);
+  }, []);
+
+  const insertTimestamp = useCallback((event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const seconds = parseTimestamp(timeComposerValue);
+    if (seconds === null) {
+      setTimeComposerError('Use seconds or a timestamp like 1:23.');
+      return;
+    }
+    const label = timeComposerValue.trim() || `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+    editor.insertInlineContent([{ type: 'link', href: `#youtube-time-${seconds}`, content: label }, ' ']);
+    setTimeComposerOpen(false);
+    setTimeComposerValue('');
+    setTimeComposerError('');
+  }, [editor, timeComposerValue]);
+
   const openImageUrlPicker = useCallback(() => {
     const selection = editor.getSelectionBoundingBox();
     setImageUrlPosition(selection ? {
@@ -1183,6 +1355,13 @@ export function PageEditor({ pageId }: { pageId: string }) {
       ? { ...item, onItemClick: openImageUrlPicker }
       : item);
     const normalized = query.trim().toLowerCase();
+    const customItems = getCustomSlashMenuItems({
+      editor,
+      referencedPages,
+      insertBlock: (block) => insertOrUpdateBlockForSlashMenu(editor, block),
+      importAssetFromUrl,
+      uploadAssetRecord,
+    }, query);
     const createChildItem = !normalized || 'new child page'.includes(normalized)
       ? [{
           title: 'New child page',
@@ -1191,6 +1370,14 @@ export function PageEditor({ pageId }: { pageId: string }) {
             void createChildPageCard();
           },
           group: 'Pages',
+        }]
+      : [];
+    const timeItem = !normalized || 'time timestamp'.includes(normalized)
+      ? [{
+          title: 'Time timestamp',
+          subtext: 'Insert a clickable timestamp for the YouTube player',
+          onItemClick: openTimeComposer,
+          group: 'Media',
         }]
       : [];
     const imageUrlItem = !normalized || 'image from url'.includes(normalized)
@@ -1212,8 +1399,8 @@ export function PageEditor({ pageId }: { pageId: string }) {
       group: 'Pages',
     }));
 
-    return [...defaultItems, ...imageUrlItem, ...createChildItem, ...pages];
-  }, [createChildPageCard, editor, insertPageCard, openImageUrlPicker, pageSuggestions]);
+    return [...defaultItems, ...customItems, ...timeItem, ...imageUrlItem, ...createChildItem, ...pages];
+  }, [createChildPageCard, editor, importAssetFromUrl, insertPageCard, openImageUrlPicker, openTimeComposer, pageSuggestions, referencedPages, uploadAssetRecord]);
 
   const insertMention = useCallback(
     (item: MentionItem) => {
@@ -1257,7 +1444,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
   }, [editorReady, allPages, refreshLiveReferenceLabels]);
 
   useEditorChange(() => {
-    if (!editorReady || isApplyingRemoteContent.current) {
+    if (!editorReady || isApplyingRemoteContent.current || !isEditing) {
       return;
     }
 
@@ -1274,14 +1461,77 @@ export function PageEditor({ pageId }: { pageId: string }) {
     window.requestAnimationFrame(() => editor.focus());
   }, [editor, isDeleted]);
 
-  const onEditorViewClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
-    if ((event.target as HTMLElement).closest('a, button, input, textarea, [contenteditable="true"]')) {
+  const appendParagraphBlock = useCallback(() => {
+    const lastBlock = editor.document.at(-1);
+    if (!lastBlock) {
       return;
     }
-    enterEditing();
-  }, [enterEditing]);
+    const [insertedBlock] = editor.insertBlocks([{ type: 'paragraph' }], lastBlock, 'after');
+    clickCreatedBlockIdsRef.current.add(insertedBlock.id);
+    editor.setTextCursorPosition(insertedBlock, 'start');
+    editor.focus();
+  }, [editor]);
+
+  const onEditorViewMouseDownCapture = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest('a[href^="#youtube-time-"], a[href^="youtube-time:"]')) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }, []);
+
+  const onEditorViewClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    const timestampLink = target.closest<HTMLAnchorElement>('a[href^="#youtube-time-"], a[href^="youtube-time:"]');
+    if (timestampLink) {
+      const timestampHref = timestampLink.getAttribute('href') || '';
+      const seconds = Number(timestampHref.startsWith('#youtube-time-')
+        ? timestampHref.slice('#youtube-time-'.length)
+        : timestampHref.slice('youtube-time:'.length));
+      if (Number.isFinite(seconds)) {
+        event.preventDefault();
+        window.dispatchEvent(new CustomEvent('arcane-youtube-seek', { detail: { seconds } }));
+      }
+      return;
+    }
+    if (target.closest('a, button, input, textarea, .bn-trailing-block')) {
+      return;
+    }
+    if (target.closest('.bn-block-outer')) {
+      if (!isEditing) {
+        enterEditing();
+      }
+      return;
+    }
+    if (!isEditing) {
+      setIsEditing(true);
+      window.requestAnimationFrame(appendParagraphBlock);
+      return;
+    }
+    appendParagraphBlock();
+  }, [appendParagraphBlock, enterEditing, isEditing]);
+
+  const onEditorViewBlur = useCallback((event: ReactFocusEvent<HTMLDivElement>) => {
+    if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) {
+      return;
+    }
+    const emptyBlocks = editor.document.filter(isTrulyEmptyParagraph);
+    const blocksToRemove = emptyBlocks.filter((block) => clickCreatedBlockIdsRef.current.has(block.id));
+    editor.document.forEach((block) => {
+      if (!isTrulyEmptyParagraph(block)) {
+        clickCreatedBlockIdsRef.current.delete(block.id);
+      }
+    });
+    if (blocksToRemove.length) {
+      blocksToRemove.forEach((block) => clickCreatedBlockIdsRef.current.delete(block.id));
+      editor.removeBlocks(blocksToRemove);
+    }
+  }, [editor]);
 
   const onEditorViewKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Enter') {
+      clickCreatedBlockIdsRef.current.clear();
+    }
     if (!isEditing && (event.key === 'Enter' || event.key === ' ')) {
       event.preventDefault();
       enterEditing();
@@ -1292,11 +1542,29 @@ export function PageEditor({ pageId }: { pageId: string }) {
     if (!isEditing) {
       return;
     }
+    const pastedImage = Array.from(event.clipboardData.files).find((file) => file.type.startsWith('image/'));
+    if (pastedImage) {
+      event.preventDefault();
+      void uploadAssetRecord(pastedImage)
+        .then((asset) => insertAsset(asset))
+        .catch((error) => {
+          setStatus('error');
+          setStatusMessage(error instanceof Error ? error.message : 'Image import failed');
+        });
+      return;
+    }
     const pastedUrl = getPastedUrl(event.clipboardData.getData('text/plain'));
     if (!pastedUrl) {
       return;
     }
     event.preventDefault();
+    if (getYouTubeVideoId(pastedUrl)) {
+      insertOrUpdateBlockForSlashMenu(editor, {
+        type: 'youtube',
+        props: { url: pastedUrl },
+      } as never);
+      return;
+    }
     if (isImageUrl(pastedUrl)) {
       void importAssetFromUrl(pastedUrl)
         .then((asset) => insertAsset(asset))
@@ -1312,8 +1580,8 @@ export function PageEditor({ pageId }: { pageId: string }) {
         url: pastedUrl,
         title: getUrlTitle(pastedUrl),
       },
-    });
-  }, [editor, importAssetFromUrl, insertAsset, isEditing]);
+    } as never);
+  }, [editor, importAssetFromUrl, insertAsset, isEditing, uploadAssetRecord]);
 
   const onEditorMouseMove = useCallback((event: MouseEvent<HTMLDivElement>) => {
     if (!isEditing) {
@@ -1328,12 +1596,18 @@ export function PageEditor({ pageId }: { pageId: string }) {
     const editorBox = event.currentTarget.getBoundingClientRect();
     const blockBox = outer.getBoundingClientRect();
     const block = editor.getBlock(blockId);
-    const props = block?.props as { caption?: string } | undefined;
+    const props = block?.props as { caption?: string; url?: string } | undefined;
     setImageHover({
+      pageId,
       blockId,
       top: Math.max(0, blockBox.top - editorBox.top + 4),
-      left: Math.max(0, blockBox.right - editorBox.left - 112),
+      left: Math.max(0, blockBox.right - editorBox.left - 180),
       caption: String(props?.caption || ''),
+      url: String(props?.url || ''),
+      imageTop: Math.max(0, blockBox.top - editorBox.top),
+      imageLeft: Math.max(0, blockBox.left - editorBox.left),
+      width: blockBox.width,
+      height: blockBox.height,
     });
   }, [editor, isEditing]);
 
@@ -1343,6 +1617,50 @@ export function PageEditor({ pageId }: { pageId: string }) {
     }
     setCaptionEditor({ ...imageHover, value: imageHover.caption });
   }, [imageHover]);
+
+  const applyImagePrompt = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!imageHover || !imagePrompt.trim() || imagePromptBusy) return;
+    setImagePromptBusy(true);
+    setGeneratingImage({ pageId, top: imageHover.imageTop, left: imageHover.imageLeft, width: imageHover.width, height: imageHover.height });
+    setStatusMessage('Applying image edit…');
+    try {
+      const source = imageHover.url.startsWith('/') ? `${window.location.origin}${imageHover.url}` : imageHover.url;
+      const response = await fetch('/api/image-edit', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ image: source, prompt: imagePrompt.trim() }),
+      });
+      const payload = await response.json() as { image?: string; error?: string };
+      if (!response.ok || !payload.image) throw new Error(payload.error || 'Image edit failed.');
+      const imageBlob = await fetch(payload.image).then(async (result) => {
+        if (!result.ok) throw new Error('Edited image could not be read.');
+        return result.blob();
+      });
+      const upload = new FormData();
+      upload.append('file', new File([imageBlob], 'codex-edit.png', { type: 'image/png' }));
+      const uploadResponse = await fetch('/api/assets', { method: 'POST', body: upload });
+      const uploadPayload = await uploadResponse.json() as { asset?: AssetRecord; error?: string };
+      if (!uploadResponse.ok || !uploadPayload.asset) throw new Error(uploadPayload.error || 'Edited image could not be saved to the media library.');
+      const editedUrl = `/api/assets/${uploadPayload.asset.id}`;
+      if (window.location.pathname === `/page/${pageId}`) {
+        editor.updateBlock(imageHover.blockId, { props: { url: editedUrl } });
+        window.requestAnimationFrame(() => { void savePage(); });
+      } else {
+        await saveEditedImageToPage(pageId, imageHover.blockId, editedUrl);
+      }
+      setImagePrompt('');
+      setImageHover(null);
+      setStatus('saved');
+      setStatusMessage('Image edit applied.');
+    } catch (error) {
+      setStatus('error');
+      setStatusMessage(error instanceof Error ? error.message : 'Image edit failed.');
+    } finally {
+      setGeneratingImage(null);
+      setImagePromptBusy(false);
+    }
+  }, [editor, imageHover, imagePrompt, imagePromptBusy, pageId, savePage]);
 
   const saveCaption = useCallback((event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1454,21 +1772,31 @@ export function PageEditor({ pageId }: { pageId: string }) {
             </span>
           )) : <Link className="text-link" href="/">Workspace</Link>}
         </nav>
-        <details className="action-menu">
-          <summary role="button" aria-label="Page actions">•••</summary>
-          <div className="action-menu-panel">
-            <button type="button" onClick={() => editor.undo()} disabled={isDeleted}>Undo</button>
-            <button type="button" onClick={() => editor.redo()} disabled={isDeleted}>Redo</button>
-            {coverAsset ? <button type="button" disabled={isDeleted} onClick={beginCoverReposition}>Reposition cover</button> : null}
-            <button type="button" disabled={isDeleted} onClick={() => coverUploadRef.current?.click()}>{coverAsset ? 'Replace cover' : 'Add cover'}</button>
-            <button type="button" disabled={isDeleted} onClick={() => setCoverUrlOpen(true)}>{coverAsset ? 'Replace cover from URL' : 'Add cover from URL'}</button>
-            {coverAsset ? <button type="button" disabled={isDeleted} onClick={() => void updateMetadata({ coverAssetId: null })}>Remove cover</button> : null}
-            <button type="button" disabled={isDeleted} onClick={() => bodyUploadRef.current?.click()}>Upload file</button>
-            <button type="button" disabled={isDeleted || !page.icon} onClick={() => void updateMetadata({ icon: null })}>Remove icon</button>
-            <button type="button" onClick={duplicate} disabled={isDeleted}>Duplicate</button>
-            <button type="button" onClick={trash} className="danger-action">{page.deletedAt ? 'Restore' : 'Move to trash'}</button>
-          </div>
-        </details>
+        <div className="document-topbar-actions">
+          {status === 'saving' ? (
+            <span
+              className="save-spinner"
+              role="status"
+              aria-label={statusMessage || 'Saving'}
+              title={statusMessage || 'Saving'}
+            />
+          ) : null}
+          <details className="action-menu">
+            <summary role="button" aria-label="Page actions">•••</summary>
+            <div className="action-menu-panel">
+              <button type="button" onClick={() => editor.undo()} disabled={isDeleted}>Undo</button>
+              <button type="button" onClick={() => editor.redo()} disabled={isDeleted}>Redo</button>
+              {coverAsset ? <button type="button" disabled={isDeleted} onClick={beginCoverReposition}>Reposition cover</button> : null}
+              <button type="button" disabled={isDeleted} onClick={() => coverUploadRef.current?.click()}>{coverAsset ? 'Replace cover' : 'Add cover'}</button>
+              <button type="button" disabled={isDeleted} onClick={() => setCoverUrlOpen(true)}>{coverAsset ? 'Replace cover from URL' : 'Add cover from URL'}</button>
+              {coverAsset ? <button type="button" disabled={isDeleted} onClick={() => void updateMetadata({ coverAssetId: null })}>Remove cover</button> : null}
+              <button type="button" disabled={isDeleted} onClick={() => bodyUploadRef.current?.click()}>Upload file</button>
+              <button type="button" disabled={isDeleted || !page.icon} onClick={() => void updateMetadata({ icon: null })}>Remove icon</button>
+              <button type="button" onClick={duplicate} disabled={isDeleted}>Duplicate</button>
+              <button type="button" onClick={trash} className="danger-action">{page.deletedAt ? 'Restore' : 'Move to trash'}</button>
+            </div>
+          </details>
+        </div>
       </header>
 
       {showTrashNotice}
@@ -1553,10 +1881,12 @@ export function PageEditor({ pageId }: { pageId: string }) {
           {iconPickerOpen ? (
             <PageEmojiPicker currentIcon={page.icon} onSelect={selectPageIcon} onRemove={removePageIcon} onClose={closeIconPicker} />
           ) : null}
-          <div className={`status ${status === 'saved' ? 'saved' : status === 'error' || status === 'conflict' ? 'error' : status === 'saving' ? 'saving' : ''}`} role="status">
-            <span>{statusMessage || 'Saved'}</span>
-            {status === 'error' && hasPendingContent.current ? <button type="button" className="mini-btn" onClick={() => void savePage()}>Retry save</button> : null}
-          </div>
+          {status !== 'saving' ? (
+            <div className={`status ${status === 'saved' ? 'saved' : status === 'error' || status === 'conflict' ? 'error' : ''}`} role="status">
+              <span>{statusMessage || 'Saved'}</span>
+              {status === 'error' && hasPendingContent.current ? <button type="button" className="mini-btn" onClick={() => void savePage()}>Retry save</button> : null}
+            </div>
+          ) : null}
         </div>
 
         <input ref={coverUploadRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" onChange={(event) => chooseUpload(event, 'cover')} disabled={isDeleted} />
@@ -1598,7 +1928,9 @@ export function PageEditor({ pageId }: { pageId: string }) {
 
         <div
           className={`editor-view ${isEditing ? 'is-editing' : 'is-reading'}`}
-          onClick={onEditorViewClick}
+          onMouseDownCapture={onEditorViewMouseDownCapture}
+          onClickCapture={onEditorViewClick}
+          onBlur={onEditorViewBlur}
           onKeyDown={onEditorViewKeyDown}
           onPaste={onEditorViewPaste}
           onMouseMove={onEditorMouseMove}
@@ -1607,6 +1939,7 @@ export function PageEditor({ pageId }: { pageId: string }) {
           aria-label={isEditing ? undefined : 'Page content. Click to edit.'}
         >
           <BlockNoteView editor={editor} slashMenu={false} editable={isEditing && !isDeleted} theme="dark">
+            <SideMenuController sideMenu={ArcaneSideMenu} />
             <SuggestionMenuController
               triggerCharacter="/"
               getItems={getSlashMenuItems}
@@ -1620,15 +1953,30 @@ export function PageEditor({ pageId }: { pageId: string }) {
               suggestionMenuComponent={ArcaneSuggestionMenu}
             />
           </BlockNoteView>
-          {imageHover && !captionEditor ? (
-            <button
-              type="button"
-              className="image-caption-trigger"
-              style={{ top: imageHover.top, left: imageHover.left }}
-              onClick={openCaptionEditor}
-            >
-              {imageHover.caption ? 'Edit caption' : 'Add caption'}
-            </button>
+          {timeComposerOpen ? (
+            <form className="time-composer" onSubmit={insertTimestamp}>
+              <label htmlFor="timestamp-value">Timestamp<input id="timestamp-value" autoFocus value={timeComposerValue} onChange={(event) => { setTimeComposerValue(event.target.value); setTimeComposerError(''); }} placeholder="1:23 or 83" /></label>
+              <button type="submit" className="primary-btn">Add timestamp</button>
+              <button type="button" onClick={() => setTimeComposerOpen(false)}>Cancel</button>
+              {timeComposerError ? <p role="alert">{timeComposerError}</p> : null}
+            </form>
+          ) : null}
+          {imageHover && imageHover.pageId === pageId && !captionEditor ? (
+            <div className="image-actions-popover" style={{ top: imageHover.top, left: imageHover.left }}>
+              <form className="image-prompt-editor" onSubmit={(event) => void applyImagePrompt(event)}>
+                <label htmlFor="image-ai-prompt" className="visually-hidden">Describe image edit</label>
+                <input id="image-ai-prompt" autoFocus value={imagePrompt} onChange={(event) => setImagePrompt(event.target.value)} placeholder="Make her look sad…" disabled={imagePromptBusy || isDeleted} />
+                <button type="submit" className="primary-btn" disabled={imagePromptBusy || isDeleted || !imagePrompt.trim()}>{imagePromptBusy ? '…' : 'Apply'}</button>
+              </form>
+              <button type="button" className="image-caption-trigger" onClick={openCaptionEditor}>{imageHover.caption ? 'Edit caption' : 'Add caption'}</button>
+            </div>
+          ) : null}
+          {generatingImage?.pageId === pageId ? (
+            <div className="image-generation-overlay" style={{ top: generatingImage.top, left: generatingImage.left, width: generatingImage.width, height: generatingImage.height }} role="status" aria-live="polite">
+              <span className="image-generation-spinner" aria-hidden="true" />
+              <strong>Applying your edit…</strong>
+              <span>Keeping the rest of the image unchanged</span>
+            </div>
           ) : null}
           {captionEditor ? (
             <form className="image-caption-editor" style={{ top: captionEditor.top, left: captionEditor.left }} onSubmit={saveCaption}>

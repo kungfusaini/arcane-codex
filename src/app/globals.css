@@ -424,6 +424,21 @@ summary::-webkit-details-marker { display: none; }
 }
 .breadcrumbs { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-muted); font-size: var(--font-size-200); }
 .breadcrumbs a:active { color: var(--color-accent); }
+.document-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.save-spinner {
+  width: var(--space-4);
+  height: var(--space-4);
+  flex: 0 0 auto;
+  display: block;
+  border: 2px solid var(--color-accent);
+  border-left-color: transparent;
+  border-radius: 50%;
+  animation: save-spinner 800ms linear infinite reverse;
+}
 .action-menu, .row-menu { position: relative; }
 .action-menu-panel { top: calc(100% + var(--space-1)); right: var(--space-0); }
 .cover-preview {
@@ -868,6 +883,10 @@ summary::-webkit-details-marker { display: none; }
 .collection-row-checkbox { display: inline-flex; align-items: center; }
 .collection-row-checkbox input { width: var(--space-4); min-height: var(--space-4); margin: var(--space-0); }
 .no-results-state { display: flex; gap: var(--space-2); }
+
+@keyframes save-spinner {
+  to { transform: rotate(360deg); }
+}
 
 @keyframes route-enter {
   from {

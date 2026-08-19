@@ -45,3 +45,18 @@ Do not delete unregistered asset files until their origin is understood.
 The editor keeps an unsaved recovery draft in browser local storage until the server confirms a save. On a stale revision, Arcane Codex never silently overwrites either version: choose **Load latest saved page** or **Save my draft over latest**. A browser draft found after restart can be restored or discarded explicitly.
 
 Uploads are limited to 20 MB and validated by filename extension, declared MIME type, and file signature. Supported formats are PNG, JPEG, GIF, WebP, PDF, UTF-8 text, and Markdown; SVG and mismatched files are rejected.
+
+## Trusted custom blocks
+
+Custom blocks are code-authored React/BlockNote blocks registered in `src/components/customBlocks.tsx`. They run as trusted application code and are available to render stored page content. Slash-menu insertion is opt-in: add a `slashMenu` function to a registration only when the block should be user-insertable from the editor.
+
+```ts
+customBlockRegistry.push({
+  type: 'projectStatus',
+  create: () => createReactBlockSpec(/* block config */, /* React implementation */)(),
+  // slashMenu: ({ insertBlock }) => ({
+  //   title: 'Project status',
+  //   onItemClick: () => insertBlock({ type: 'projectStatus', props: {} }),
+  // }),
+});
+```
