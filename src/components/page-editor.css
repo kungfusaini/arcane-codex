@@ -55,13 +55,13 @@
 .youtube-custom-player {
   position: relative;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2) var(--space-3);
   min-height: var(--space-12);
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-3);
   border-radius: var(--radius-md);
-  background: var(--color-page-muted);
+  background: transparent;
 }
 
 .youtube-transport {
@@ -76,14 +76,14 @@
 .youtube-play-button {
   display: grid;
   place-items: center;
-  width: var(--space-8);
-  height: var(--space-8);
+  width: var(--space-10);
+  height: var(--space-10);
   flex: 0 0 auto;
   padding: 0;
-  border-radius: 50%;
-  background: var(--color-accent);
-  color: var(--color-accent-on);
-  font-size: var(--font-size-200);
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-ink);
+  font-size: var(--font-size-500);
 }
 
 .youtube-play-button:focus-visible {
@@ -115,10 +115,11 @@
 }
 
 .youtube-playing-state {
-  margin-inline-start: auto;
+  margin: 0;
 }
 
 .youtube-time {
+  justify-self: end;
   color: var(--color-muted);
   font-size: var(--font-size-200);
   font-variant-numeric: tabular-nums;
@@ -128,21 +129,19 @@
 .youtube-actions {
   display: inline-flex;
   align-items: center;
+  justify-self: end;
   gap: var(--space-1);
-  margin-inline-start: var(--space-2);
 }
 
 .youtube-action-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: var(--space-8);
-  min-height: var(--space-8);
-  padding: var(--space-1) var(--space-2);
+  display: inline-grid;
+  place-items: center;
+  width: var(--space-8);
+  height: var(--space-8);
+  padding: var(--space-1);
   border-radius: var(--radius-sm);
-  color: var(--color-ink);
+  color: var(--color-muted);
   background: transparent;
-  font-size: var(--font-size-200);
   text-decoration: none;
 }
 
@@ -159,14 +158,22 @@
   transform: scale(.97);
 }
 
-.youtube-copy-button {
-  font-size: var(--font-size-300);
+.youtube-action-button svg {
+  width: var(--space-4);
+  height: var(--space-4);
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.youtube-copy-button svg {
+  fill: none;
 }
 
 .youtube-seeker {
   grid-column: 2 / -1;
   width: 100%;
-  accent-color: var(--color-accent);
+  accent-color: var(--color-ink);
 }
 
 .youtube-seeker:disabled {
@@ -513,7 +520,7 @@
 
 .gallery-widget-shell-body {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(280px, .85fr);
+  grid-template-columns: 1fr;
   gap: var(--space-4);
   align-items: start;
 }

@@ -184,12 +184,14 @@ function YouTubeBlock({
           <span aria-hidden="true">{isPlaying ? 'Ⅱ' : '▶'}</span>
         </button>
         <div className="youtube-track-copy"><strong>Incubus — Drive</strong><span>Audio from YouTube</span></div>
-        <span className="youtube-playing-state" aria-live="polite">{isPlaying ? 'Playing' : 'Ready'}</span>
+        <span className="youtube-playing-state visually-hidden" aria-live="polite">{isPlaying ? 'Playing' : 'Ready'}</span>
         <span className="youtube-time" aria-label={`Current time ${formatTime(currentTime)} of ${duration ? formatTime(duration) : 'unknown'}`}>{formatTime(currentTime)} / {duration ? formatTime(duration) : '--:--'}</span>
         <span className="youtube-actions">
-          <a className="youtube-action-button" href={url} target="_blank" rel="noopener noreferrer" aria-label="Open on YouTube" title="Open on YouTube">YouTube</a>
+          <a className="youtube-action-button" href={url} target="_blank" rel="noopener noreferrer" aria-label="Open on YouTube" title="Open on YouTube">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2 31 31 0 0 0 0 12a31 31 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1A31 31 0 0 0 24 12a31 31 0 0 0-.5-5.8ZM9.6 15.8V8.2l6.4 3.8-6.4 3.8Z" /></svg>
+          </a>
           <button type="button" className="youtube-action-button youtube-copy-button" onClick={() => void copyUrl()} aria-label={copied ? 'Link copied' : 'Copy link'} title={copied ? 'Link copied' : 'Copy link'}>
-            <span aria-hidden="true">🔗</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.7 12.9 12 16.2a4.2 4.2 0 0 0 5.9 0l2.3-2.3a4.2 4.2 0 0 0-5.9-5.9l-1.1 1.1M15.3 11.1 12 7.8a4.2 4.2 0 0 0-5.9 0l-2.3 2.3a4.2 4.2 0 0 0 5.9 5.9l1.1-1.1" /></svg>
           </button>
         </span>
         <input
@@ -229,16 +231,16 @@ function GalleryBlock({
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [draftWidth, setDraftWidth] = useState<number | null>(null);
-  const [isEditingWidget, setIsEditingWidget] = useState(false);
   const touchStartX = useRef<number | null>(null);
   const resizeRef = useRef<{ startX: number; startWidth: number; parentWidth: number; pointerId: number } | null>(null);
   const { images, mode, groupCaption, columns, width } = readGalleryState(block);
+  const editorOpen = block.props.editorOpen === true;
   const renderedWidth = draftWidth ?? width;
   const safeActiveIndex = images.length ? Math.min(activeIndex, images.length - 1) : 0;
   const activeImage = images[safeActiveIndex];
 
   const updateBlock = (props: Record<string, unknown>) => {
-    editor.updateBlock(block.id, { props } as never);
+    editor.updateBlock(block.id, { props: { ...block.props, ...props } } as never);
   };
 
   const startResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -287,20 +289,23 @@ function GalleryBlock({
     if (Math.abs(delta) >= 40) move(delta < 0 ? 1 : -1);
   };
 
-  if (isEditingWidget) {
+  if (editorOpen) {
     return (
       <GalleryWidgetEditorShell
         blockId={block.id}
         editor={editor}
         importAssetFromUrl={importAssetFromUrl}
         uploadAssetRecord={uploadAssetRecord}
-        onClose={() => setIsEditingWidget(false)}
+        onClose={() => updateBlock({ editorOpen: false })}
       />
     );
   }
 
   return (
-    <section className={`gallery-block gallery-mode-${mode}`} contentEditable={false} tabIndex={0} aria-label="Image gallery" style={{ width: `${renderedWidth}%` }}>
+    <section className={`gallery-block gallery-mode-${mode}`} contentEditable={false} tabIndex={0} aria-label="Image gallery" style={{ width: `${renderedWidth}%` }} onClickCapture={(event) => {
+      if ((event.target as HTMLElement).closest('button, input, select, textarea, a')) return;
+      updateBlock({ editorOpen: true });
+    }}>
       {mode === 'single' && activeImage ? (
         <>
           <div className={`gallery-single ${images.length > 1 ? 'gallery-single-navigable' : 'gallery-single-static'}`} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
@@ -324,7 +329,6 @@ function GalleryBlock({
         </div>
       ) : <p className="gallery-empty">No images yet. Open settings to add one.</p>}
       {groupCaption ? <figcaption className="gallery-group-caption">{groupCaption}</figcaption> : null}
-      <button type="button" className="gallery-settings-trigger" onClick={() => setIsEditingWidget(true)}>Settings</button>
       <button
         type="button"
         className="gallery-resize-handle"
@@ -382,7 +386,7 @@ export function GalleryWidgetEditorShell({
   }
 
   const updateBlock = (props: Record<string, unknown>) => {
-    editor.updateBlock(block.id, { props } as never);
+    editor.updateBlock(block.id, { props: { ...block.props, ...props } } as never);
   };
 
   const updateImages = (nextImages: GalleryImage[]) => updateBlock({ images: JSON.stringify(nextImages), mode, columns, groupCaption, width });
@@ -657,6 +661,7 @@ const galleryBlock: CustomBlockRegistration = {
         captionMode: { default: 'individual' },
         groupCaption: { default: '' },
         width: { default: 100 },
+        editorOpen: { default: false },
       },
       content: 'none',
     },
