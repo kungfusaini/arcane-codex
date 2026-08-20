@@ -2,10 +2,9 @@ import type { Metadata } from 'next';
 import { notFound, permanentRedirect } from 'next/navigation';
 import { PageWorkspaceLayout } from '@/app/page/PageWorkspaceLayout';
 import { getPage, listPageSummaries, resolvePageRoutePath } from '@/lib/data/storage';
+import { toPublishedPath } from '@/lib/workspaceMode';
 
-function toPublishedPath(path: string): string {
-  return path.replace(/^\/page\//, '/published/');
-}
+export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({ params }: { params: { pagePath?: string[] } }): Promise<Metadata> {
   const resolution = resolvePageRoutePath(params.pagePath ?? []);

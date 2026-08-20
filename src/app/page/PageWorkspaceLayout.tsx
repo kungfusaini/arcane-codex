@@ -33,10 +33,14 @@ export function PageWorkspaceLayout({
   children,
   initialPageId = null,
   initialPages = [],
+  readOnly = false,
+  pageRouteBasePath = '/page',
 }: {
   children?: React.ReactNode;
   initialPageId?: string | null;
   initialPages?: LayoutPage[];
+  readOnly?: boolean;
+  pageRouteBasePath?: string;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -69,23 +73,28 @@ export function PageWorkspaceLayout({
     };
   }, [loaded]);
 
-  const resolvedPageId = loaded ? resolvePagePathname(pathname, pages) : null;
+  const resolvedPageId = loaded && pathname ? resolvePagePathname(pathname, pages) : null;
   const pageId = initialPageId ?? resolvedPageId;
-  const isPageRoute = pathname.split('/').filter(Boolean)[0] === 'page';
+  const isPageRoute = Boolean(pathname?.startsWith(pageRouteBasePath));
 
   return (
     <div className="layout-shell">
       <WorkspaceSidebar
         currentPageId={pageId ?? undefined}
         initialPages={initialPages}
-        onCreated={(page) => {
+        showCollectionPages={readOnly}
+        readOnly={readOnly}
+        pageRouteBasePath={pageRouteBasePath}
+        collectionHomePath={readOnly ? `${pageRouteBasePath}/collections` : '/collections'}
+        homePath={readOnly ? pageRouteBasePath : '/'}
+        onCreated={readOnly ? undefined : (page) => {
           if (page) {
-            router.push(buildPagePathFromPages(page.id, [...pages, page]));
+            router.push(buildPagePathFromPages(page.id, [...pages, page], pageRouteBasePath));
           }
         }}
       />
       <main className="main-column page-main">
-        {!loaded && isPageRoute ? <DelayedPageEditorSkeleton /> : pageId ? <PageEditor pageId={pageId} initialPages={initialPages} /> : children}
+        {!loaded && isPageRoute ? <DelayedPageEditorSkeleton /> : pageId ? <PageEditor pageId={pageId} initialPages={initialPages} readOnly={readOnly} pageRouteBasePath={pageRouteBasePath} /> : children}
       </main>
     </div>
   );

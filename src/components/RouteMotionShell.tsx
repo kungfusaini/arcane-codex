@@ -2,6 +2,7 @@
 
 import { ReactNode, useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import { YouTubeMiniPlayerDock } from '@/components/youtubeDock';
 
 export function RouteMotionShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -28,6 +29,7 @@ export function RouteMotionShell({ children }: { children: ReactNode }) {
       data-route-motion={isEntering ? 'entered' : 'entering'}
     >
       {children}
+      <YouTubeMiniPlayerDock />
     </div>
   );
 }

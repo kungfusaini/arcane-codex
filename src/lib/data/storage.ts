@@ -25,7 +25,7 @@ import {
 } from './workspace';
 import { buildPagePathFromPages, extractLegacyPageId, resolvePagePathSegments, slugifyPageTitle, type PageUrlPage } from '../pageUrls';
 
-const CURRENT_SCHEMA_VERSION = 6;
+const CURRENT_SCHEMA_VERSION = 7;
 
 const DEFAULT_COVER_FOCAL_PERCENT = 50;
 
@@ -86,8 +86,8 @@ export function openWorkspace(options?: { dataDir?: string }): StorageHandle {
     const now = Date.now();
     if (!(Number(settings.count) > 0)) {
       db.prepare(
-        'INSERT INTO settings (schema_version, workspace_name, created_at, updated_at) VALUES (?, ?, ?, ?)',
-      ).run(CURRENT_SCHEMA_VERSION, 'Arcane Codex', now, now);
+        'INSERT INTO settings (schema_version, workspace_name, published_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      ).run(CURRENT_SCHEMA_VERSION, 'Arcane Codex', 0, now, now);
     } else {
       db.prepare('UPDATE settings SET schema_version = ?, updated_at = ? WHERE schema_version != ?')
         .run(CURRENT_SCHEMA_VERSION, now, CURRENT_SCHEMA_VERSION);
@@ -181,6 +181,7 @@ function runMigrations(db: DatabaseSync): void {
       CREATE TABLE IF NOT EXISTS settings (
         schema_version INTEGER NOT NULL,
         workspace_name TEXT NOT NULL,
+        published_mode INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         PRIMARY KEY (schema_version)
@@ -238,6 +239,14 @@ function runMigrations(db: DatabaseSync): void {
 
   if (currentVersion < 6) {
     db.exec('PRAGMA user_version = 6;');
+  }
+
+  if (currentVersion < 7) {
+    const settingsColumns = db.prepare('PRAGMA table_info(settings);').all() as Array<{ name: string }>;
+    if (!settingsColumns.some((column) => column.name === 'published_mode')) {
+      db.exec('ALTER TABLE settings ADD COLUMN published_mode INTEGER NOT NULL DEFAULT 0;');
+    }
+    db.exec('PRAGMA user_version = 7;');
   }
 
   const rowsMissingSlugs = db.prepare("SELECT id, parent_id, sort_key, slug, title FROM pages WHERE slug = '' ORDER BY parent_id IS NULL DESC, parent_id, sort_key, title COLLATE NOCASE ASC").all() as DbRow[];
@@ -1729,23 +1738,60 @@ export function removeCollectionItem(collectionId: string, pageId: string, dataD
   }
 }
 
-export function getSettings(dataDir?: string): { schemaVersion: number; workspaceName: string } {
+export function getSettings(dataDir?: string): { schemaVersion: number; workspaceName: string; publishedMode: boolean } {
   const db = createStorageConnection(dataDir);
   try {
     const row = db
-      .prepare('SELECT schema_version, workspace_name FROM settings ORDER BY schema_version DESC LIMIT 1')
+      .prepare('SELECT schema_version, workspace_name, published_mode FROM settings ORDER BY schema_version DESC LIMIT 1')
       .get() as DbRow | undefined;
     if (!row) {
       const now = Date.now();
       db.prepare(
-        'INSERT INTO settings (schema_version, workspace_name, created_at, updated_at) VALUES (?, ?, ?, ?)',
-      ).run(CURRENT_SCHEMA_VERSION, 'Arcane Codex', now, now);
-      return { schemaVersion: CURRENT_SCHEMA_VERSION, workspaceName: 'Arcane Codex' };
+        'INSERT INTO settings (schema_version, workspace_name, published_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      ).run(CURRENT_SCHEMA_VERSION, 'Arcane Codex', 0, now, now);
+      return { schemaVersion: CURRENT_SCHEMA_VERSION, workspaceName: 'Arcane Codex', publishedMode: false };
     }
     return {
       schemaVersion: Number(row.schema_version),
       workspaceName: String(row.workspace_name),
+      publishedMode: Boolean(Number(row.published_mode ?? 0)),
     };
+  } finally {
+    db.close();
+  }
+}
+
+export function updateSettings(dataDir: string | undefined, updates: { workspaceName?: string; publishedMode?: boolean }): { schemaVersion: number; workspaceName: string; publishedMode: boolean } {
+  const db = createStorageConnection(dataDir);
+  try {
+    const row = db
+      .prepare('SELECT schema_version FROM settings ORDER BY schema_version DESC LIMIT 1')
+      .get() as DbRow | undefined;
+    const now = Date.now();
+    const workspaceName = typeof updates.workspaceName === 'string' && updates.workspaceName.trim() ? updates.workspaceName.trim() : undefined;
+    const publishedMode = typeof updates.publishedMode === 'boolean' ? updates.publishedMode : undefined;
+
+    if (!row) {
+      db.prepare(
+        'INSERT INTO settings (schema_version, workspace_name, published_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      ).run(CURRENT_SCHEMA_VERSION, workspaceName ?? 'Arcane Codex', publishedMode ? 1 : 0, now, now);
+      return getSettings(dataDir);
+    }
+
+    const assignments: string[] = [];
+    const values: Array<string | number> = [];
+    if (workspaceName !== undefined) {
+      assignments.push('workspace_name = ?');
+      values.push(workspaceName);
+    }
+    if (publishedMode !== undefined) {
+      assignments.push('published_mode = ?');
+      values.push(publishedMode ? 1 : 0);
+    }
+    assignments.push('updated_at = ?');
+    values.push(now);
+    db.prepare(`UPDATE settings SET ${assignments.join(', ')}`).run(...values);
+    return getSettings(dataDir);
   } finally {
     db.close();
   }

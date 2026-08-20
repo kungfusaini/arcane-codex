@@ -130,6 +130,7 @@ export type CollectionUpdateItemSort = {
 export type SettingsRecord = {
   schemaVersion: number;
   workspaceName: string;
+  publishedMode: boolean;
   createdAt: number;
   updatedAt: number;
 };

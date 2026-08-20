@@ -1,24 +1,17 @@
-"use client";
+import { redirect } from 'next/navigation';
+import { getSettings } from '@/lib/data/storage';
+import { CollectionWorkspace } from '@/components/CollectionWorkspace';
 
-import { CollectionEditor } from '@/components/CollectionEditor';
-import { WorkspaceSidebar } from '@/components/WorkspaceSidebar';
+export const dynamic = 'force-dynamic';
 
 type RouteParams = {
   collectionId: string;
 };
 
 export default function CollectionRoute({ params }: { params: RouteParams }) {
-  return (
-    <div className="layout-shell">
-      <WorkspaceSidebar
-        currentPageId={undefined}
-        onCreated={() => {
-          window.dispatchEvent(new Event('arcane-pages-changed'));
-        }}
-      />
-      <main className="main-column collection-main">
-        <CollectionEditor collectionId={params.collectionId} />
-      </main>
-    </div>
-  );
+  if (getSettings().publishedMode) {
+    redirect(`/published/collections/${params.collectionId}`);
+  }
+
+  return <CollectionWorkspace collectionId={params.collectionId} />;
 }

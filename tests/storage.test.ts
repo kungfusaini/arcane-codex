@@ -14,11 +14,13 @@ import {
   duplicatePage,
   extractLinkedPageIds,
   getPage,
+  getSettings,
   listCollectionItems,
   listCollectionsForPage,
   listPages,
   openWorkspace,
   readBacklinks,
+  updateSettings,
   resolvePageRoutePath,
   restorePage,
   trashPage,
@@ -66,12 +68,14 @@ describe('workspace bootstrap', () => {
       const columnY = pageColumns.find((row) => row.name === 'cover_focal_y');
       const columnScale = pageColumns.find((row) => row.name === 'cover_scale');
       const iconAssetColumn = pageColumns.find((row) => row.name === 'icon_asset_id');
-      assert.equal(version.user_version, 6);
+      assert.equal(version.user_version, 7);
       assert.ok(assetIndex);
       assert.ok(columnX);
       assert.ok(columnY);
       assert.ok(columnScale);
       assert.ok(iconAssetColumn);
+      const settingsColumns = migrated.prepare("PRAGMA table_info(settings)").all() as Array<{ name: string }>;
+      assert.ok(settingsColumns.some((row) => row.name === 'published_mode'));
       migrated.exec('PRAGMA user_version = 99;');
       migrated.close();
 
@@ -81,6 +85,27 @@ describe('workspace bootstrap', () => {
       );
     } finally {
       rmSync(base, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('workspace settings', () => {
+  it('stores published mode toggles', () => {
+    const workspace = mkdtempSync(path.join(os.tmpdir(), 'arcane-codex-settings-'));
+    ensureWorkspaceDirs(workspace);
+    openWorkspace({ dataDir: workspace });
+
+    try {
+      const initial = getSettings(workspace);
+      assert.equal(initial.publishedMode, false);
+
+      const updated = updateSettings(workspace, { publishedMode: true });
+      assert.equal(updated.publishedMode, true);
+
+      const reread = getSettings(workspace);
+      assert.equal(reread.publishedMode, true);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
     }
   });
 });

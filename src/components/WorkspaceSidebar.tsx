@@ -15,6 +15,7 @@ import {
 import { buildTree, type PageTreeNode } from '@/lib/pageTree';
 import { useDismissibleDetails } from '@/components/useDismissibleDetails';
 import { buildPagePathFromPages } from '@/lib/pageUrls';
+import { toWorkspacePath } from '@/lib/workspaceMode';
 
 type SidebarPage = {
   id: string;
@@ -114,11 +115,19 @@ export function WorkspaceSidebar({
   initialPages = [],
   onCreated,
   showCollectionPages = false,
+  readOnly = false,
+  pageRouteBasePath = '/page',
+  homePath = '/',
+  collectionHomePath = '/collections',
 }: {
   currentPageId?: string;
   initialPages?: SidebarPage[];
-  onCreated: (page?: SidebarPage) => void;
+  onCreated?: (page?: SidebarPage) => void;
   showCollectionPages?: boolean;
+  readOnly?: boolean;
+  pageRouteBasePath?: string;
+  homePath?: string;
+  collectionHomePath?: string;
 }) {
   useDismissibleDetails('.tree-menu');
 
@@ -138,6 +147,8 @@ export function WorkspaceSidebar({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [railCollapsed, setRailCollapsed] = useState(false);
+  const [publishModeBusy, setPublishModeBusy] = useState(false);
+  const [publishModeStatus, setPublishModeStatus] = useState('');
   const sidebarRef = useRef<HTMLElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const navToggleRef = useRef<HTMLButtonElement | null>(null);
@@ -189,6 +200,27 @@ export function WorkspaceSidebar({
     }
   }, []);
 
+  const togglePublishMode = useCallback(async () => {
+    const nextPublishedMode = !readOnly;
+    setPublishModeStatus('');
+    setPublishModeBusy(true);
+    try {
+      const response = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ publishedMode: nextPublishedMode }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error || 'Publish mode could not be updated.');
+      }
+      window.location.href = toWorkspacePath(window.location.pathname, nextPublishedMode);
+    } catch (error) {
+      setPublishModeBusy(false);
+      setPublishModeStatus(error instanceof Error ? error.message : 'Publish mode could not be updated.');
+    }
+  }, [readOnly]);
+
   useEffect(() => {
     const storedRailState = window.localStorage.getItem('arcane-sidebar-collapsed');
     if (storedRailState === 'true') {
@@ -212,18 +244,20 @@ export function WorkspaceSidebar({
     if (initialPages.length === 0 || !showCollectionPages) {
       void fetchPages();
     }
-    const deferredChecks = window.setTimeout(() => {
+    const deferredChecks = readOnly ? null : window.setTimeout(() => {
       void fetchTrashPages();
       void fetchHealth();
     }, 300);
     mobileQuery.addEventListener('change', updateViewport);
     window.addEventListener('arcane-pages-changed', refreshPageLists);
     return () => {
-      window.clearTimeout(deferredChecks);
+      if (deferredChecks !== null) {
+        window.clearTimeout(deferredChecks);
+      }
       mobileQuery.removeEventListener('change', updateViewport);
       window.removeEventListener('arcane-pages-changed', refreshPageLists);
     };
-  }, [fetchHealth, fetchPages, fetchTrashPages, initialPages.length]);
+  }, [fetchHealth, fetchPages, fetchTrashPages, initialPages.length, readOnly, showCollectionPages]);
 
   const setDesktopRailCollapsed = useCallback((collapsed: boolean) => {
     setRailCollapsed(collapsed);
@@ -485,6 +519,9 @@ export function WorkspaceSidebar({
   };
 
   const onCreatePage = async (parentId: string | null = null) => {
+    if (readOnly || !onCreated) {
+      return;
+    }
     try {
       const response = await fetch('/api/pages', {
         method: 'POST',
@@ -596,18 +633,18 @@ export function WorkspaceSidebar({
           <li key={item.id} className="tree-item-row">
             <div
               className={`tree-item ${isCurrent ? 'active' : ''} ${draggingId === item.id ? 'dragging' : ''} ${isDropTarget ? `tree-item-drop ${moveModeClass}` : ''} ${recentPageId === item.id ? 'tree-item-new' : ''}`}
-              draggable
-              onDragStart={(event) => {
+              draggable={!readOnly}
+              onDragStart={readOnly ? undefined : (event) => {
                 setDraggingId(item.id);
                 event.dataTransfer.setData('text/plain', item.id);
                 event.dataTransfer.effectAllowed = 'move';
               }}
-              onDragEnd={() => {
+              onDragEnd={readOnly ? undefined : () => {
                 setDraggingId(null);
                 setDragTargetId(null);
                 setDragTargetMode(null);
               }}
-              onDragEnter={(event) => {
+              onDragEnter={readOnly ? undefined : (event) => {
                 if (!draggingId) {
                   return;
                 }
@@ -615,7 +652,7 @@ export function WorkspaceSidebar({
                 setDragTargetId(item.id);
                 setDragTargetMode(mode);
               }}
-              onDragOver={(event) => {
+              onDragOver={readOnly ? undefined : (event) => {
                 if (!draggingId) {
                   return;
                 }
@@ -625,13 +662,13 @@ export function WorkspaceSidebar({
                 setDragTargetMode(mode);
                 event.dataTransfer.dropEffect = 'move';
               }}
-              onDragLeave={() => {
+              onDragLeave={readOnly ? undefined : () => {
                 if (isDropTarget) {
                   setDragTargetId(null);
                   setDragTargetMode(null);
                 }
               }}
-              onDrop={(event) => {
+              onDrop={readOnly ? undefined : (event) => {
                 event.preventDefault();
                 const draggingPageId = draggingId || event.dataTransfer.getData('text/plain');
                 const mode = dragTargetMode || getDropMode(event);
@@ -685,59 +722,61 @@ export function WorkspaceSidebar({
                     aria-label={`Rename ${item.title}`}
                   />
                 ) : (
-                  <Link href={buildPagePathFromPages(item.id, pages)} className={isCurrent ? 'text-link active' : 'text-link'}>
+                  <Link href={buildPagePathFromPages(item.id, pages, pageRouteBasePath)} className={isCurrent ? 'text-link active' : 'text-link'}>
                     {fullPage.title || 'Untitled'}
                   </Link>
                 )}
               </div>
 
-              <details className="tree-menu">
-                <summary aria-label={`Actions for ${item.title}`}>•••</summary>
-                <div className="tree-actions">
-                  <button type="button" className="mini-btn" onClick={() => {
-                    setEditingId(item.id);
-                    setEditingTitle(fullPage.title || 'Untitled');
-                  }}>
-                    Rename
-                  </button>
-                  <button type="button" className="mini-btn" onClick={() => moveWithinSibling(item.id, 'up')}>
-                    Move up
-                  </button>
-                  <button type="button" className="mini-btn" onClick={() => moveWithinSibling(item.id, 'down')}>
-                    Move down
-                  </button>
-                  <button type="button" className="mini-btn" onClick={() => duplicatePage(item.id)}>
-                    Duplicate
-                  </button>
-                  <label className="nest-select-label" htmlFor={`move-${item.id}`}>
-                    Parent
-                    <select
-                      id={`move-${item.id}`}
-                      className="tree-select"
-                      value={moveTarget}
-                      onChange={(event: ChangeEvent<HTMLSelectElement>) => {
-                        const nextParent = event.target.value || null;
-                        if (nextParent === item.parentId) {
-                          return;
-                        }
-                        void movePage(item.id, nextParent).catch((error) => {
-                          setStatus((error as Error).message);
-                        });
-                      }}
-                    >
-                      <option value="">Root</option>
-                      {potentialParents
-                        .slice()
-                        .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }))
-                        .map((option) => (
-                          <option key={option.id} value={option.id}>
-                            {option.title}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
-                </div>
-              </details>
+              {readOnly ? null : (
+                <details className="tree-menu">
+                  <summary aria-label={`Actions for ${item.title}`}>•••</summary>
+                  <div className="tree-actions">
+                    <button type="button" className="mini-btn" onClick={() => {
+                      setEditingId(item.id);
+                      setEditingTitle(fullPage.title || 'Untitled');
+                    }}>
+                      Rename
+                    </button>
+                    <button type="button" className="mini-btn" onClick={() => moveWithinSibling(item.id, 'up')}>
+                      Move up
+                    </button>
+                    <button type="button" className="mini-btn" onClick={() => moveWithinSibling(item.id, 'down')}>
+                      Move down
+                    </button>
+                    <button type="button" className="mini-btn" onClick={() => duplicatePage(item.id)}>
+                      Duplicate
+                    </button>
+                    <label className="nest-select-label" htmlFor={`move-${item.id}`}>
+                      Parent
+                      <select
+                        id={`move-${item.id}`}
+                        className="tree-select"
+                        value={moveTarget}
+                        onChange={(event: ChangeEvent<HTMLSelectElement>) => {
+                          const nextParent = event.target.value || null;
+                          if (nextParent === item.parentId) {
+                            return;
+                          }
+                          void movePage(item.id, nextParent).catch((error) => {
+                            setStatus((error as Error).message);
+                          });
+                        }}
+                      >
+                        <option value="">Root</option>
+                        {potentialParents
+                          .slice()
+                          .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }))
+                          .map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.title}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                  </div>
+                </details>
+              )}
             </div>
 
             {!isCollapsed && item.children.length > 0 ? (
@@ -768,8 +807,8 @@ export function WorkspaceSidebar({
         >
           <span aria-hidden="true">☰</span>
         </button>
-        <Link href="/" className="mobile-brand">Arcane Codex</Link>
-        <button type="button" className="mobile-new" onClick={() => onCreatePage(null)}>New</button>
+        <Link href={homePath} className="mobile-brand">Arcane Codex</Link>
+        {readOnly || !onCreated ? null : <button type="button" className="mobile-new" onClick={() => onCreatePage(null)}>New</button>}
       </header>
       <button
         type="button"
@@ -786,7 +825,7 @@ export function WorkspaceSidebar({
         aria-hidden={isMobile ? !drawerOpen : railCollapsed ? true : undefined}
       >
         <div className="sidebar-brand-row">
-          <Link href="/" className="sidebar-brand" title="Arcane Codex">
+          <Link href={homePath} className="sidebar-brand" title="Arcane Codex">
             <span className="logo-content">
               <span className="site-title"><span className="arcane">ARCANE</span><span className="codex">CODEX</span></span>
               <span className="site-tagline">Compiled Texts for the Modern Mage</span>
@@ -796,7 +835,18 @@ export function WorkspaceSidebar({
           <button type="button" className="sidebar-close" aria-label="Close navigation" onClick={() => setDrawerOpen(false)}>×</button>
         </div>
 
-        {health && health.status !== 'ok' ? (
+        <section className="workspace-settings" aria-label="Workspace settings">
+          <div className="workspace-settings-copy">
+            <strong>Workspace settings</strong>
+            <p>{readOnly ? 'Published mode is on. Visitors see a read-only workspace.' : 'Turn on published mode to make the whole workspace read-only.'}</p>
+          </div>
+          <button type="button" className="primary-btn workspace-settings-toggle" onClick={() => void togglePublishMode()} disabled={publishModeBusy} aria-pressed={readOnly}>
+            {readOnly ? 'Turn off published mode' : 'Turn on published mode'}
+          </button>
+          {publishModeStatus ? <p className="status-note" role="status">{publishModeStatus}</p> : null}
+        </section>
+
+        {!readOnly && health && health.status !== 'ok' ? (
           <section className={`health-notice ${health.status}`} role={health.status === 'error' ? 'alert' : 'status'}>
             <strong>{health.status === 'error' ? 'Workspace needs recovery' : 'Workspace check found issues'}</strong>
             <span>{health.issues[0]}</span>
@@ -815,10 +865,12 @@ export function WorkspaceSidebar({
               aria-label="Search pages"
             />
           </form>
-          <div className="sidebar-create-row">
-            <button type="button" className="primary-btn" onClick={() => onCreatePage(null)}>New page</button>
-            <button type="button" className="icon-btn" aria-label="New child page" disabled={!currentPageId} onClick={() => onCreatePage(currentPageId ?? null)}>＋</button>
-          </div>
+          {readOnly || !onCreated ? null : (
+            <div className="sidebar-create-row">
+              <button type="button" className="primary-btn" onClick={() => onCreatePage(null)}>New page</button>
+              <button type="button" className="icon-btn" aria-label="New child page" disabled={!currentPageId} onClick={() => onCreatePage(currentPageId ?? null)}>＋</button>
+            </div>
+          )}
         </div>
 
         <div className="workspace-title">Pages</div>
@@ -842,7 +894,7 @@ export function WorkspaceSidebar({
           )}
         </div>
 
-        {trashPages.length ? (
+        {!readOnly && trashPages.length ? (
           <details className="trash-section">
             <summary id="trash-title">Trash <span>{trashPages.length}</span></summary>
             <ul className="trash-list">
@@ -855,6 +907,10 @@ export function WorkspaceSidebar({
             </ul>
           </details>
         ) : null}
+
+        <div className="sidebar-site-links" aria-label="Workspace sections">
+          <Link href={collectionHomePath} className="sidebar-section-link">Collections</Link>
+        </div>
 
         {status && pages.length ? <p className="help status-note" role="status">{status}</p> : null}
       </aside>

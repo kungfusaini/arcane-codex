@@ -405,7 +405,9 @@ function ArcaneSuggestionMenu<T extends DefaultReactSuggestionItem>({
   );
 }
 
-export function PageEditor({ pageId, initialPages = [] }: { pageId: string; initialPages?: SidebarPage[] }) {
+type PageEditorProps = { pageId: string; initialPages?: SidebarPage[]; readOnly?: boolean; pageRouteBasePath?: string };
+
+export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRouteBasePath = '/page' }: PageEditorProps) {
   useDismissibleDetails('.action-menu');
 
   const [page, setPage] = useState<PageRecord | null>(null);
@@ -420,6 +422,7 @@ export function PageEditor({ pageId, initialPages = [] }: { pageId: string; init
   const [assets, setAssets] = useState<AssetRecord[]>([]);
   const [hostCollection, setHostCollection] = useState<CollectionSummary | null>(null);
   const [pageCollections, setPageCollections] = useState<CollectionSummary[]>([]);
+  const [backlinks, setBacklinks] = useState<SidebarPage[]>([]);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [iconPickerPosition, setIconPickerPosition] = useState<{ top: number; left: number } | null>(null);
   const [uploadTasks, setUploadTasks] = useState<UploadTask[]>([]);
@@ -492,10 +495,10 @@ export function PageEditor({ pageId, initialPages = [] }: { pageId: string; init
         BlockNoteSchema.create({
           blockSpecs: {
             ...defaultBlockSpecs,
-            ...createCustomBlockSpecs({ referencedPages, importAssetFromUrl, uploadAssetRecord }),
+            ...createCustomBlockSpecs({ referencedPages, importAssetFromUrl, uploadAssetRecord, readOnly, pageRouteBasePath }),
           },
         }),
-      [importAssetFromUrl, referencedPages, uploadAssetRecord],
+      [importAssetFromUrl, referencedPages, readOnly, pageRouteBasePath, uploadAssetRecord],
     ),
     trailingBlock: false,
     uploadFile: async (file, blockId) => {
@@ -652,8 +655,9 @@ export function PageEditor({ pageId, initialPages = [] }: { pageId: string; init
         throw new Error(response.status === 404 ? 'Page not found' : 'Page could not be loaded');
       }
 
-      const payload = (await response.json()) as { page: PageRecord } & PageCollectionsPayload;
+      const payload = (await response.json()) as { page: PageRecord; backlinks?: SidebarPage[] } & PageCollectionsPayload;
       setPage(payload.page);
+      setBacklinks(payload.backlinks ?? []);
       setPageCollections(payload.collections ?? []);
       setHostCollection(payload.hostCollection ?? null);
       pendingRevision.current = payload.page.revision;
@@ -669,7 +673,7 @@ export function PageEditor({ pageId, initialPages = [] }: { pageId: string; init
       titleRef.current = payload.page.title;
 
       const migratedLegacyImages = applyInitialContent(payload.page.contentJson);
-      if (migratedLegacyImages) {
+      if (migratedLegacyImages && !readOnly) {
         const migrationResponse = await fetch(`/api/pages/${pageId}`, {
           method: 'PATCH',
           headers: { 'content-type': 'application/json' },
@@ -696,11 +700,12 @@ export function PageEditor({ pageId, initialPages = [] }: { pageId: string; init
       setEditorReady(true);
     } catch (error) {
       setPage(null);
+      setBacklinks([]);
       setEditorReady(false);
       setStatus('error');
       setStatusMessage(error instanceof Error ? error.message : 'Page could not be loaded');
     }
-  }, [applyInitialContent, pageId, readRecoveryDraft]);
+  }, [applyInitialContent, pageId, readRecoveryDraft, readOnly]);
 
   const loadPageList = useCallback(async () => {
     const response = await fetch('/api/pages');
@@ -1496,7 +1501,7 @@ export function PageEditor({ pageId, initialPages = [] }: { pageId: string; init
   }, [editorReady, allPages, refreshLiveReferenceLabels]);
 
   useEditorChange(() => {
-    if (!editorReady || isApplyingRemoteContent.current || !isEditing) {
+    if (readOnly || !editorReady || isApplyingRemoteContent.current || !isEditing) {
       return;
     }
 
@@ -1506,12 +1511,12 @@ export function PageEditor({ pageId, initialPages = [] }: { pageId: string; init
   }, editor);
 
   const enterEditing = useCallback(() => {
-    if (isDeleted) {
+    if (readOnly || isDeleted) {
       return;
     }
     setIsEditing(true);
     window.requestAnimationFrame(() => editor.focus());
-  }, [editor, isDeleted]);
+  }, [editor, isDeleted, readOnly]);
 
   const appendParagraphBlock = useCallback(() => {
     const lastBlock = editor.document.at(-1);
@@ -1697,7 +1702,7 @@ export function PageEditor({ pageId, initialPages = [] }: { pageId: string; init
       setGeneratingImage(null);
       setImagePromptBusy(false);
     }
-  }, [allPages, editor, imageHover, imagePrompt, imagePromptBusy, pageId, savePage]);
+  }, [allPages, editor, imageHover, imagePrompt, imagePromptBusy, pageId, rememberAsset, savePage]);
 
   const saveCaption = useCallback((event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1799,6 +1804,95 @@ export function PageEditor({ pageId, initialPages = [] }: { pageId: string; init
   const coverAsset = page.coverAssetId
     ? assets.find((asset) => asset.id === page.coverAssetId) ?? { id: page.coverAssetId, filename: 'Cover image' }
     : null;
+  const backlinksSection = backlinks.length ? (
+    <details className="backlinks">
+      <summary>
+        <h3>Backlinks</h3>
+        <span>{backlinks.length}</span>
+      </summary>
+      <ul>
+        {backlinks.map((backlink) => (
+          <li key={backlink.id}>
+            <Link className="text-link" href={buildPagePathFromPages(backlink.id, allPages, pageRouteBasePath)}>{backlink.title || 'Untitled'}</Link>
+          </li>
+        ))}
+      </ul>
+    </details>
+  ) : null;
+
+  if (readOnly) {
+    return (
+      <section className="document-shell" aria-live="polite">
+        <header className="document-topbar">
+          <nav className="breadcrumbs" aria-label="Breadcrumbs">
+            {breadcrumbs.length > 0 ? breadcrumbs.map((crumb, index) => (
+              <span key={crumb.id} className="breadcrumb-group">
+                <span className="breadcrumb-entry">
+                  {crumb.icon || crumb.iconAssetId ? <PageIcon className="breadcrumb-icon" icon={crumb.icon} iconAssetId={crumb.iconAssetId} /> : null}
+                  <Link className="text-link" href={buildPagePathFromPages(crumb.id, allPages, pageRouteBasePath)}>{crumb.title}</Link>
+                </span>
+                {index + 1 < breadcrumbs.length ? <span className="breadcrumb-separator" aria-hidden="true">/</span> : null}
+              </span>
+            )) : <Link className="text-link" href={pageRouteBasePath}>Workspace</Link>}
+          </nav>
+        </header>
+
+        {coverAsset ? (
+          <div className="cover-preview">
+            <Image
+              src={`/api/assets/${coverAsset.id}`}
+              alt={coverAsset.filename}
+              width={1200}
+              height={320}
+              className="cover-preview-image"
+              style={displayedCoverPosition ? {
+                objectPosition: `${displayedCoverPosition.x}% ${displayedCoverPosition.y}%`,
+                transform: `scale(${displayedCoverPosition.scale / 100})`,
+              } : undefined}
+              draggable={false}
+              unoptimized
+            />
+          </div>
+        ) : null}
+
+        <div className={`document-content ${coverAsset ? 'has-cover' : ''}`}>
+          <div className={`page-identity ${page.icon || page.iconAssetId ? 'has-icon' : ''}`}>
+            <div className="page-title-row">
+              {page.icon || page.iconAssetId ? (
+                <div className="page-icon-wrap">
+                  <span className="page-icon page-icon-static"><PageIcon icon={page.icon} iconAssetId={page.iconAssetId} /></span>
+                </div>
+              ) : null}
+              <h1 className="page-title page-title-readonly">{title || 'Untitled'}</h1>
+            </div>
+          </div>
+
+          {hostCollection || pageCollections.length ? (
+            <section className="page-collections-embed" aria-label="Collections on this page">
+              {hostCollection ? (
+                <div className="page-collection-embed" aria-label={`${hostCollection.name} collection`}>
+                  <p className="eyebrow">Collection</p>
+                  <CollectionEditor collectionId={hostCollection.id} embedded readOnly pageRouteBasePath={pageRouteBasePath} />
+                </div>
+              ) : null}
+              {pageCollections.map((collection) => (
+                <div key={collection.id} className="page-collection-embed" aria-label={`${collection.name} collection`}>
+                  <p className="eyebrow">Collection</p>
+                  <CollectionEditor collectionId={collection.id} embedded focusPageId={page.id} readOnly pageRouteBasePath={pageRouteBasePath} />
+                </div>
+              ))}
+            </section>
+          ) : null}
+
+          <div className="editor-view is-reading" tabIndex={-1} aria-label="Page content">
+            <BlockNoteView editor={editor} slashMenu={false} editable={false} theme="dark">
+            </BlockNoteView>
+          </div>
+          {backlinksSection}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="document-shell" aria-live="polite">
@@ -2140,6 +2234,7 @@ export function PageEditor({ pageId, initialPages = [] }: { pageId: string; init
               <button type="submit" className="primary-btn">Save</button>
             </form>
           ) : null}
+          {backlinksSection}
         </div>
 
       </div>

@@ -1,14 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { BlockNoteEditor, BlockSpec, PartialBlock } from '@blocknote/core';
-import {
-  createReactBlockSpec,
-  type DefaultReactSuggestionItem,
-} from '@blocknote/react';
+import type { DefaultReactSuggestionItem } from '@blocknote/react';
 import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type TouchEvent } from 'react';
 import { PageIcon } from '@/components/PageIcon';
 import { buildPagePathFromPages } from '@/lib/pageUrls';
 import { editGrabberImageToAsset, normalizeHttpUrl } from '@/lib/imageGrabber';
 import { ImageGrabberPromptForm, ImageGrabberStrip, ImageGrabberUrlForm } from '@/components/ImageGrabberControls';
+import { clearYouTubeDockSession, setYouTubeDockSession } from '@/components/youtubeDock';
 
 export type ReferencedPage = {
   id: string;
@@ -25,15 +23,21 @@ export type CustomBlockContext = {
   insertBlock: (block: PartialBlock) => void;
   importAssetFromUrl: (url: string) => Promise<{ id: string; filename: string }>;
   uploadAssetRecord: (file: File) => Promise<{ id: string; filename: string }>;
+  readOnly?: boolean;
+  pageRouteBasePath?: string;
 };
 
-type CustomBlockSchemaContext = Pick<CustomBlockContext, 'referencedPages' | 'importAssetFromUrl' | 'uploadAssetRecord'>;
+type CustomBlockSchemaContext = Pick<CustomBlockContext, 'referencedPages' | 'importAssetFromUrl' | 'uploadAssetRecord'> & Partial<Pick<CustomBlockContext, 'readOnly' | 'pageRouteBasePath'>>;
 
 export type CustomBlockRegistration = {
   type: string;
   create: (context: CustomBlockSchemaContext) => BlockSpec<any, any, any>;
   slashMenu?: (context: CustomBlockContext) => DefaultReactSuggestionItem | DefaultReactSuggestionItem[];
 };
+
+function buildReactBlockSpec(config: any, implementation: any): () => BlockSpec<any, any, any> {
+  return () => ({ config, implementation } as BlockSpec<any, any, any>);
+}
 
 function getUrlTitle(value: string): string {
   try {
@@ -100,16 +104,22 @@ function readGalleryState(block: { id: string; props: Record<string, unknown> })
 function YouTubeBlock({
   block,
   editor,
+  readOnly,
 }: {
   block: { id: string; props: Record<string, unknown> };
   editor: BlockNoteEditor<any>;
+  readOnly: boolean;
 }) {
   const [url, setUrl] = useState(typeof block.props.url === 'string' ? block.props.url : '');
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [hasStarted, setHasStarted] = useState(false);
+  const [isDocked, setIsDocked] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const blockRef = useRef<HTMLElement | null>(null);
+  const latestStateRef = useRef({ currentTime: 0, duration: 0, isPlaying: false, hasStarted: false, isDocked: false, videoId: '' as string | null, url: '' });
   const videoId = getYouTubeVideoId(String(block.props.url || ''));
   const formatTime = (seconds: number) => {
     if (!Number.isFinite(seconds) || seconds < 0) return '--:--';
@@ -120,6 +130,28 @@ function YouTubeBlock({
     iframeRef.current?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: command, args }), '*');
   };
   useEffect(() => {
+    setUrl(typeof block.props.url === 'string' ? block.props.url : '');
+  }, [block.props.url]);
+  useEffect(() => {
+    setIsPlaying(false);
+    setCurrentTime(0);
+    setDuration(0);
+    setHasStarted(false);
+    setIsDocked(false);
+  }, [block.id, videoId]);
+  useEffect(() => {
+    const target = blockRef.current;
+    if (!target || typeof IntersectionObserver === 'undefined' || !videoId) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsDocked(!(entry.isIntersecting && entry.intersectionRatio >= 0.2));
+      },
+      { threshold: [0, 0.2, 0.4, 1] },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [videoId]);
+  useEffect(() => {
     const handleSeek = (event: Event) => {
       const seconds = (event as CustomEvent<{ seconds?: number }>).detail?.seconds;
       if (typeof seconds !== 'number' || seconds < 0) return;
@@ -129,10 +161,18 @@ function YouTubeBlock({
     const handleMessage = (event: MessageEvent) => {
       if (event.source !== iframeRef.current?.contentWindow || typeof event.data !== 'string') return;
       try {
-        const payload = JSON.parse(event.data) as { event?: string; info?: { currentTime?: number; duration?: number } };
-        if (payload.event !== 'infoDelivery' || !payload.info) return;
-        if (typeof payload.info.currentTime === 'number') setCurrentTime(payload.info.currentTime);
-        if (typeof payload.info.duration === 'number' && payload.info.duration > 0) setDuration(payload.info.duration);
+        const payload = JSON.parse(event.data) as {
+          event?: string;
+          info?: { currentTime?: number; duration?: number } | number;
+        };
+        if (payload.event === 'infoDelivery' && payload.info && typeof payload.info === 'object') {
+          if (typeof payload.info.currentTime === 'number') setCurrentTime(payload.info.currentTime);
+          if (typeof payload.info.duration === 'number' && payload.info.duration > 0) setDuration(payload.info.duration);
+        }
+        if (payload.event === 'onStateChange' && typeof payload.info === 'number') {
+          setIsPlaying(payload.info === 1 || payload.info === 3);
+          if (payload.info === 1 || payload.info === 3) setHasStarted(true);
+        }
       } catch {
         // Ignore unrelated messages from embedded media.
       }
@@ -149,10 +189,43 @@ function YouTubeBlock({
       window.clearInterval(poll);
     };
   }, [videoId]);
+  latestStateRef.current = { currentTime, duration, isPlaying, hasStarted, isDocked, videoId: videoId ?? '', url };
+  useEffect(() => {
+    if (!videoId || !hasStarted) return;
+    const activeVideoId = videoId;
+    setYouTubeDockSession({
+      sourceBlockId: block.id,
+      videoId: activeVideoId,
+      url,
+      title: 'Incubus — Drive',
+      currentTime,
+      duration,
+      isPlaying,
+      isVisible: true,
+    });
+  }, [block.id, currentTime, duration, hasStarted, isPlaying, url, videoId]);
+  useEffect(() => () => {
+    const latest = latestStateRef.current;
+    if (latest.hasStarted || latest.isPlaying) {
+      setYouTubeDockSession({
+        sourceBlockId: block.id,
+        videoId: latest.videoId || '',
+        url: latest.url,
+        title: 'Incubus — Drive',
+        currentTime: latest.currentTime,
+        duration: latest.duration,
+        isPlaying: latest.isPlaying,
+        isVisible: true,
+      });
+    } else {
+      clearYouTubeDockSession(block.id);
+    }
+  }, [block.id]);
   const togglePlayback = () => {
     const nextPlaying = !isPlaying;
     sendCommand(nextPlaying ? 'playVideo' : 'pauseVideo');
     setIsPlaying(nextPlaying);
+    if (nextPlaying) setHasStarted(true);
   };
   const copyUrl = async () => {
     try {
@@ -171,8 +244,13 @@ function YouTubeBlock({
   };
 
   return (
-    <section className={`youtube-block youtube-compact ${videoId ? 'youtube-has-video' : 'youtube-needs-url'}`} contentEditable={false} aria-label="YouTube video">
-      {videoId ? <div className="youtube-custom-player">
+    <section
+      ref={blockRef}
+      className={`youtube-block youtube-compact ${videoId ? 'youtube-has-video' : 'youtube-needs-url'} ${isDocked && hasStarted ? 'youtube-block--docked' : ''}`}
+      contentEditable={false}
+      aria-label="YouTube video"
+    >
+      {videoId ? <div className="youtube-custom-player youtube-inline-player">
         <iframe
           ref={iframeRef}
           onLoad={() => {
@@ -217,11 +295,15 @@ function YouTubeBlock({
           aria-label="Seek through audio"
         />
       </div> : null}
-      <form className="youtube-url-form" onSubmit={updateUrl}>
-        <label>YouTube URL<input type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://www.youtube.com/watch?v=…" /></label>
-        <button type="submit" disabled={!getYouTubeVideoId(url)}>Embed video</button>
-      </form>
-      <p className="youtube-help">Use a youtube.com, youtu.be, or YouTube Shorts link.</p>
+      {readOnly ? null : (
+        <>
+          <form className="youtube-url-form" onSubmit={updateUrl}>
+            <label>YouTube URL<input type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://www.youtube.com/watch?v=…" /></label>
+            <button type="submit" disabled={!getYouTubeVideoId(url)}>Embed video</button>
+          </form>
+          <p className="youtube-help">Use a youtube.com, youtu.be, or YouTube Shorts link.</p>
+        </>
+      )}
     </section>
   );
 }
@@ -230,17 +312,19 @@ function GalleryBlock({
   block,
   editor,
   importAssetFromUrl,
+  readOnly,
 }: {
   block: { id: string; props: Record<string, unknown> };
   editor: BlockNoteEditor<any>;
   importAssetFromUrl: CustomBlockContext['importAssetFromUrl'];
+  readOnly: boolean;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [draftWidth, setDraftWidth] = useState<number | null>(null);
   const touchStartX = useRef<number | null>(null);
   const resizeRef = useRef<{ startX: number; startWidth: number; parentWidth: number; pointerId: number } | null>(null);
   const { images, mode, groupCaption, columns, width } = readGalleryState(block);
-  const editorOpen = block.props.editorOpen === true;
+  const editorOpen = !readOnly && block.props.editorOpen === true;
   const gridColumns = mode === 'grid' ? Math.min(images.length || 1, columns) : columns;
   const renderedWidth = draftWidth ?? width;
   const safeActiveIndex = images.length ? Math.min(activeIndex, images.length - 1) : 0;
@@ -308,7 +392,7 @@ function GalleryBlock({
   }
 
   return (
-    <section className={`gallery-block gallery-mode-${mode}`} contentEditable={false} tabIndex={0} aria-label="Image gallery" style={{ width: `${renderedWidth}%` }} onClickCapture={(event) => {
+    <section className={`gallery-block gallery-mode-${mode}`} contentEditable={false} tabIndex={0} aria-label="Image gallery" style={{ width: `${renderedWidth}%` }} onClickCapture={readOnly ? undefined : (event) => {
       if ((event.target as HTMLElement).closest('button, input, select, textarea, a')) return;
       updateBlock({ editorOpen: true });
     }}>
@@ -335,7 +419,7 @@ function GalleryBlock({
         </div>
       ) : <p className="gallery-empty">No images yet. Open settings to add one.</p>}
       {groupCaption ? <figcaption className="gallery-group-caption">{groupCaption}</figcaption> : null}
-      <button
+      {readOnly ? null : <button
         type="button"
         className="gallery-resize-handle"
         aria-label="Resize gallery"
@@ -344,7 +428,7 @@ function GalleryBlock({
         onPointerMove={resize}
         onPointerUp={finishResize}
         onPointerCancel={finishResize}
-      />
+      />}
     </section>
   );
 }
@@ -621,7 +705,9 @@ export function GalleryWidgetEditorShell({
 
 const pageLinkBlock: CustomBlockRegistration = {
   type: 'pageLink',
-  create: ({ referencedPages }) => createReactBlockSpec(
+  create: ({ referencedPages, pageRouteBasePath }) => {
+    const routeBasePath = pageRouteBasePath ?? '/page';
+    return buildReactBlockSpec(
     {
       type: 'pageLink',
       propSchema: {
@@ -633,7 +719,7 @@ const pageLinkBlock: CustomBlockRegistration = {
       content: 'none',
     },
     {
-      render: (props) => {
+      render: (props: any) => {
         const propsByType = props.block.props as { pageId?: string; title?: string; icon?: string; url?: string };
         const pageId = String(propsByType.pageId || '');
         const externalUrl = String(propsByType.url || '');
@@ -642,7 +728,7 @@ const pageLinkBlock: CustomBlockRegistration = {
           ? referencedPages.get(pageId) ?? fallbackReference
           : { id: '', parentId: null, sortKey: 0, title: propsByType.title || (externalUrl ? getUrlTitle(externalUrl) : 'Page'), icon: propsByType.icon || null, iconAssetId: null };
         const label = `${reference.icon ? `${reference.icon} ` : ''}${reference.title || String(propsByType.title || 'Page')}`;
-        const href = externalUrl || (pageId ? buildPagePathFromPages(pageId, referencedPages.size ? Array.from(referencedPages.values()) : [reference]) : '#');
+        const href = externalUrl || (pageId ? buildPagePathFromPages(pageId, referencedPages.size ? Array.from(referencedPages.values()) : [reference], routeBasePath) : '#');
 
         const openPage = (event: MouseEvent<HTMLAnchorElement>) => {
           if (!pageId) {
@@ -668,7 +754,7 @@ const pageLinkBlock: CustomBlockRegistration = {
           </a>
         );
       },
-      toExternalHTML: (props) => {
+      toExternalHTML: (props: any) => {
         const propsByType = props.block.props as { pageId?: string; title?: string; icon?: string; url?: string };
         const pageId = String(propsByType.pageId || '');
         const externalUrl = String(propsByType.url || '');
@@ -677,27 +763,28 @@ const pageLinkBlock: CustomBlockRegistration = {
           ? referencedPages.get(pageId) ?? fallbackReference
           : { id: '', parentId: null, sortKey: 0, title: propsByType.title || (externalUrl ? getUrlTitle(externalUrl) : 'Page'), icon: propsByType.icon || null, iconAssetId: null };
         return (
-          <a href={externalUrl || (pageId ? buildPagePathFromPages(pageId, referencedPages.size ? Array.from(referencedPages.values()) : [reference]) : '#')} target={externalUrl ? '_blank' : undefined} rel={externalUrl ? 'noreferrer' : undefined}>
+          <a href={externalUrl || (pageId ? buildPagePathFromPages(pageId, referencedPages.size ? Array.from(referencedPages.values()) : [reference], routeBasePath) : '#')} target={externalUrl ? '_blank' : undefined} rel={externalUrl ? 'noreferrer' : undefined}>
             <PageIcon icon={reference.icon} iconAssetId={reference.iconAssetId} />
             <span>{reference.title || String(propsByType.title || 'Page')}</span>
           </a>
         );
       },
     },
-  )(),
+  )();
+  },
 };
 
 const youtubeBlock: CustomBlockRegistration = {
   type: 'youtube',
-  create: () => createReactBlockSpec(
+  create: ({ readOnly }) => buildReactBlockSpec(
     {
       type: 'youtube',
       propSchema: { url: { default: '' } },
       content: 'none',
     },
     {
-      render: (props) => <YouTubeBlock block={props.block as unknown as { id: string; props: Record<string, unknown> }} editor={props.editor} />,
-      toExternalHTML: (props) => {
+      render: (props: any) => <YouTubeBlock block={props.block as unknown as { id: string; props: Record<string, unknown> }} editor={props.editor} readOnly={readOnly ?? false} />,
+      toExternalHTML: (props: any) => {
         const videoId = getYouTubeVideoId(String((props.block.props as Record<string, unknown>).url || ''));
         return videoId ? <div className="youtube-embed"><iframe src={`https://www.youtube-nocookie.com/embed/${videoId}?rel=0`} title="YouTube video" allowFullScreen /></div> : <p>Invalid YouTube URL</p>;
       },
@@ -713,7 +800,7 @@ const youtubeBlock: CustomBlockRegistration = {
 
 const galleryBlock: CustomBlockRegistration = {
   type: 'gallery',
-  create: ({ importAssetFromUrl }) => createReactBlockSpec(
+  create: ({ importAssetFromUrl, readOnly }) => buildReactBlockSpec(
     {
       type: 'gallery',
       propSchema: {
@@ -728,14 +815,15 @@ const galleryBlock: CustomBlockRegistration = {
       content: 'none',
     },
     {
-      render: (props) => (
+      render: (props: any) => (
         <GalleryBlock
           block={props.block as unknown as { id: string; props: Record<string, unknown> }}
           editor={props.editor}
           importAssetFromUrl={importAssetFromUrl}
+          readOnly={readOnly ?? false}
         />
       ),
-      toExternalHTML: (props) => {
+      toExternalHTML: (props: any) => {
         const images = readGalleryImages((props.block.props as Record<string, unknown>).images);
         return (
           <div>

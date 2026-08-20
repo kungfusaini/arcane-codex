@@ -789,7 +789,7 @@ function renderFocusedPropertyValue(property: CollectionProperty, value: unknown
   return property.type === 'url' ? <a href={text} className="text-link" target="_blank" rel="noreferrer">{normalizeUrl(text)}</a> : <span>{text}</span>;
 }
 
-export function CollectionEditor({ collectionId, embedded = false, focusPageId }: { collectionId: string; embedded?: boolean; focusPageId?: string }) {
+export function CollectionEditor({ collectionId, embedded = false, focusPageId, readOnly = false, pageRouteBasePath = '/page' }: { collectionId: string; embedded?: boolean; focusPageId?: string; readOnly?: boolean; pageRouteBasePath?: string }) {
   useDismissibleDetails('.add-entry-menu, .row-menu');
 
   const [collection, setCollection] = useState<CollectionRecord | null>(null);
@@ -832,7 +832,7 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId }
       const parsedViews = parseViews(payload.collection.viewsJson);
       const shouldSeedBooksSchema = isBooksCollectionName(payload.collection.name) && parsedSchema.properties.length === 0;
 
-      if (shouldSeedBooksSchema) {
+      if (shouldSeedBooksSchema && !readOnly) {
         void fetch(`/api/collections/${collectionId}`, {
           method: 'PATCH',
           headers: { 'content-type': 'application/json' },
@@ -856,7 +856,7 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId }
     } finally {
       setIsLoading(false);
     }
-  }, [collectionId]);
+  }, [collectionId, readOnly]);
 
   useEffect(() => {
     void loadCollection();
@@ -963,7 +963,7 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId }
   );
 
   useEffect(() => {
-    if (!collection || isLoading) {
+    if (readOnly || !collection || isLoading) {
       return;
     }
     if (viewSaveTimerRef.current !== null) {
@@ -984,7 +984,7 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId }
         viewSaveTimerRef.current = null;
       }
     };
-  }, [collection, filterBy, filterQuery, isLoading, saveViews, sortBy, sortDirection, views]);
+  }, [collection, filterBy, filterQuery, isLoading, readOnly, saveViews, sortBy, sortDirection, views]);
 
   const addProperty = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1378,13 +1378,13 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId }
           <header className={`collection-host-identity ${hostPage.coverAssetId ? 'has-cover' : ''}`}>
             <span className="collection-host-icon" aria-hidden="true">{hostPage.icon ?? '📄'}</span>
             <div className="collection-host-copy">
-              <Link href={buildPagePathFromPages(hostPage.id, pageUrlPages)} className="text-link collection-host-title">{hostPage.title || 'Untitled'}</Link>
+              <Link href={buildPagePathFromPages(hostPage.id, pageUrlPages, pageRouteBasePath)} className="text-link collection-host-title">{hostPage.title || 'Untitled'}</Link>
               <p className="collection-host-description">{hostPagePreview || 'Read books imported from the Notion export.'}</p>
             </div>
           </header>
         ) : null}
 
-        {!embedded ? (
+        {!embedded && !readOnly ? (
           <header className="collection-header">
             <form onSubmit={setCollectionName} className="collection-name-form">
               <input name="name" defaultValue={collection.name} aria-label="Collection name" placeholder="Collection name" />
@@ -1394,7 +1394,14 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId }
           </header>
         ) : null}
 
-        {!embedded ? (
+        {!embedded && readOnly ? (
+          <header className="collection-header">
+            <h1>{collection.name}</h1>
+            <span className="collection-count">{items.length} {items.length === 1 ? 'entry' : 'entries'}</span>
+          </header>
+        ) : null}
+
+        {!embedded && !readOnly ? (
           <div className="collection-viewbar" aria-label="Collection view controls">
             <div className="collection-view-tabs" role="tablist" aria-label="Collection views">
               <button type="button" role="tab" aria-selected={views.mode === 'table'} onClick={() => setViews((current) => ({ ...current, mode: 'table' }))}>▦ Table</button>
@@ -1440,7 +1447,7 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId }
           </div>
         ) : null}
 
-      {status && !embedded ? <p className="status-note" role="status">{status}</p> : null}
+      {status && !embedded && !readOnly ? <p className="status-note" role="status">{status}</p> : null}
 
       <div className="collection-surface collection-surface-stage">
         {showFocusedItem ? (
@@ -1479,13 +1486,13 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId }
                   className="collection-gallery-item"
                   style={{ '--motion-stagger-index': `${staggerIndex}` } as CSSProperties}
                 >
-                  <Link href={buildPagePathFromPages(item.pageId, pageUrlPages)} className="collection-cover-link">
+                  <Link href={buildPagePathFromPages(item.pageId, pageUrlPages, pageRouteBasePath)} className="collection-cover-link">
                     {image ? <Image src={image} alt={`Cover for ${item.page.title}`} className="collection-cover" width={640} height={360} unoptimized /> : <div className="collection-cover-blank" aria-hidden="true">{item.page.icon ?? '◆'}</div>}
                   </Link>
                   <div className="collection-card-body">
                     <div className="collection-card-title-row">
-                      <Link href={buildPagePathFromPages(item.pageId, pageUrlPages)} className="text-link collection-page-title">{item.page.icon ? <span>{item.page.icon} </span> : null}{item.page.title || 'Untitled'}</Link>
-                      <details className="row-menu"><summary aria-label={`Actions for ${item.page.title}`}>•••</summary><div><button type="button" onClick={() => void reorderEntry(item.pageId, 'up')}>Move up</button><button type="button" onClick={() => void reorderEntry(item.pageId, 'down')}>Move down</button><button type="button" className="danger-action" onClick={() => void removeEntry(item.pageId)}>Remove</button></div></details>
+                      <Link href={buildPagePathFromPages(item.pageId, pageUrlPages, pageRouteBasePath)} className="text-link collection-page-title">{item.page.icon ? <span>{item.page.icon} </span> : null}{item.page.title || 'Untitled'}</Link>
+                      {readOnly ? null : <details className="row-menu"><summary aria-label={`Actions for ${item.page.title}`}>•••</summary><div><button type="button" onClick={() => void reorderEntry(item.pageId, 'up')}>Move up</button><button type="button" onClick={() => void reorderEntry(item.pageId, 'down')}>Move down</button><button type="button" className="danger-action" onClick={() => void removeEntry(item.pageId)}>Remove</button></div></details>}
                     </div>
                     {schema.properties.length ? <div className="collection-properties-grid">{schema.properties.slice(0, 4).map((property) => <div key={property.id}>{renderGalleryProperty(property, values[property.id])}</div>)}</div> : <p className="help">No properties configured.</p>}
                   </div>
@@ -1496,7 +1503,7 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId }
         ) : (
           <section className="collection-table-wrap">
             <table className="collection-table">
-              <thead><tr><th className="collection-title-column"><span className="property-icon" aria-hidden="true">Aa</span> Name</th>{tableProperties.map((property) => <th key={property.id} className={`collection-property-column collection-property-${property.type} collection-property-${slugifyPropertyName(property.name)}`} data-tone={getPropertyTone(property)}><span className="property-icon" aria-hidden="true">{PROPERTY_ICONS[property.type]}</span> {getDisplayPropertyName(property, isBooksCollection)}</th>)}<th className="collection-actions-column"><span className="visually-hidden">Actions</span></th></tr></thead>
+              <thead><tr><th className="collection-title-column"><span className="property-icon" aria-hidden="true">Aa</span> Name</th>{tableProperties.map((property) => <th key={property.id} className={`collection-property-column collection-property-${property.type} collection-property-${slugifyPropertyName(property.name)}`} data-tone={getPropertyTone(property)}><span className="property-icon" aria-hidden="true">{PROPERTY_ICONS[property.type]}</span> {getDisplayPropertyName(property, isBooksCollection)}</th>)}{readOnly ? null : <th className="collection-actions-column"><span className="visually-hidden">Actions</span></th>}</tr></thead>
               <tbody>{ordered.map((item, itemIndex) => {
                 const properties = parseProperties(item.propertiesJson);
                 return <tr
@@ -1504,16 +1511,16 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId }
                   className="collection-row"
                   style={{ '--motion-stagger-index': `${Math.min(itemIndex, MAX_COLLECTION_STAGGER_INDEX)}` } as CSSProperties}
                 >
-                  <td className="collection-title-cell"><Link href={buildPagePathFromPages(item.pageId, pageUrlPages)} className="text-link collection-page-title">{item.page.icon ? <span>{item.page.icon} </span> : null}{item.page.title || 'Untitled'}</Link></td>
+                  <td className="collection-title-cell"><Link href={buildPagePathFromPages(item.pageId, pageUrlPages, pageRouteBasePath)} className="text-link collection-page-title">{item.page.icon ? <span>{item.page.icon} </span> : null}{item.page.title || 'Untitled'}</Link></td>
                   {tableProperties.map((property) => {
                     const cellKey = `${item.pageId}:${property.id}`;
                     const cellState = cellStates[cellKey];
                     return <td key={property.id} className={`collection-cell collection-property-${property.type} collection-property-${slugifyPropertyName(property.name)} ${cellState ? `is-${cellState}` : ''}`} data-tone={getPropertyTone(property)}>
-                      <CollectionPropertyControl property={property} value={properties[property.id]} onCommit={(nextValue) => void updateEntryProperty(item.pageId, property.id, nextValue)} onEnsureOptions={(values) => ensurePropertyOptions(property.id, values)} disabled={false} />
-                      {cellState ? <span className="cell-state" role={cellState === 'error' ? 'alert' : 'status'}>{cellState === 'saving' ? 'Saving' : 'Not saved'}</span> : null}
+                      {readOnly ? <span>{renderFocusedPropertyValue(property, properties[property.id])}</span> : <CollectionPropertyControl property={property} value={properties[property.id]} onCommit={(nextValue) => void updateEntryProperty(item.pageId, property.id, nextValue)} onEnsureOptions={(values) => ensurePropertyOptions(property.id, values)} disabled={false} />}
+                      {!readOnly && cellState ? <span className="cell-state" role={cellState === 'error' ? 'alert' : 'status'}>{cellState === 'saving' ? 'Saving' : 'Not saved'}</span> : null}
                     </td>;
                   })}
-                  <td><details className="row-menu"><summary aria-label={`Actions for ${item.page.title}`}>•••</summary><div><button type="button" onClick={() => void reorderEntry(item.pageId, 'up')}>Move up</button><button type="button" onClick={() => void reorderEntry(item.pageId, 'down')}>Move down</button><button type="button" className="danger-action" onClick={() => void removeEntry(item.pageId)}>Remove</button></div></details></td>
+                  {readOnly ? null : <td><details className="row-menu"><summary aria-label={`Actions for ${item.page.title}`}>•••</summary><div><button type="button" onClick={() => void reorderEntry(item.pageId, 'up')}>Move up</button><button type="button" onClick={() => void reorderEntry(item.pageId, 'down')}>Move down</button><button type="button" className="danger-action" onClick={() => void removeEntry(item.pageId)}>Remove</button></div></details></td>}
                 </tr>;
               })}</tbody>
             </table>
@@ -1521,7 +1528,7 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId }
         )}
       </div>
 
-      {!embedded ? (
+      {!embedded && !readOnly ? (
         <details className="collection-settings">
           <summary>Collection settings <span>{schema.properties.length} properties</span></summary>
           <div className="settings-panel">
