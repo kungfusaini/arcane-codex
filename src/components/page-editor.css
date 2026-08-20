@@ -65,6 +65,111 @@
   background: transparent;
 }
 
+.youtube-block--docked {
+  padding-bottom: calc(var(--space-16) + env(safe-area-inset-bottom));
+}
+
+.youtube-inline-player {
+  scroll-margin-bottom: calc(var(--space-16) + env(safe-area-inset-bottom));
+}
+
+.youtube-mini-player {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+  z-index: 40;
+  width: min(calc(100vw - var(--space-8)), 560px);
+  padding: var(--space-2);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  box-shadow: var(--elevation-lg);
+  transform: translateX(-50%);
+}
+
+.youtube-mini-player-main {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-1);
+  padding-right: calc(var(--space-8) + var(--space-2));
+  background: transparent;
+  color: var(--color-ink);
+  text-align: left;
+}
+
+.youtube-mini-player-main:hover,
+.youtube-mini-player-close:hover {
+  background: var(--color-page-muted);
+}
+
+.youtube-mini-player-main:focus-visible,
+.youtube-mini-player-close:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
+
+.youtube-mini-player-main:active,
+.youtube-mini-player-close:active {
+  transform: scale(0.97);
+}
+
+.youtube-mini-player-icon {
+  width: var(--space-8);
+  height: var(--space-8);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-page-muted);
+  color: var(--color-ink);
+  font-size: var(--font-size-300);
+  line-height: 1;
+}
+
+.youtube-mini-player-copy {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-0);
+}
+
+.youtube-mini-player-copy strong,
+.youtube-mini-player-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.youtube-mini-player-copy span {
+  color: var(--color-ink);
+  font-size: var(--font-size-200);
+}
+
+.youtube-mini-player-close {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  min-width: var(--space-8);
+  min-height: var(--space-8);
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: var(--color-page-muted);
+  color: var(--color-ink);
+  line-height: 1;
+}
+
+@media (max-width: 640px) {
+  .youtube-mini-player {
+    left: var(--space-2);
+    width: calc(100vw - var(--space-4));
+    transform: none;
+  }
+}
+
 .youtube-transport {
   position: absolute;
   width: 1px;
