@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useDismissibleDetails } from '@/components/useDismissibleDetails';
+import { buildPagePathFromPages, type PageUrlPage } from '@/lib/pageUrls';
 import {
   ChangeEvent,
   FormEvent,
@@ -38,6 +39,8 @@ type CollectionRecord = {
 
 type PageForSelector = {
   id: string;
+  parentId: string | null;
+  sortKey: number;
   title: string;
   icon: string | null;
   coverAssetId: string | null;
@@ -47,6 +50,7 @@ type HostPage = PageForSelector & {
   coverFocalX: number;
   coverFocalY: number;
   coverScale: number;
+  contentJson: string;
 };
 
 type CollectionItem = {
@@ -56,6 +60,8 @@ type CollectionItem = {
   sortKey: number;
   page: {
     id: string;
+    parentId: string | null;
+    sortKey: number;
     title: string;
     icon: string | null;
     coverAssetId: string | null;
@@ -117,6 +123,54 @@ const PROPERTY_ICONS: Record<CollectionPropertyType, string> = {
   date: '◷',
   url: '↗',
 };
+
+const BOOKS_COLLECTION_SCHEMA: CollectionSchema = {
+  properties: [
+    { id: 'author', name: 'Author', type: 'select' },
+    { id: 'status', name: 'Status', type: 'select', options: ['To read', 'Reading', 'Finished'] },
+    { id: 'type', name: 'Type', type: 'multi-select' },
+    { id: 'score', name: 'Score /5', type: 'number' },
+    { id: 'tags', name: 'Tags', type: 'multi-select' },
+  ],
+};
+
+function isBooksCollectionName(name: string): boolean {
+  return name.toLowerCase().includes('book');
+}
+
+function slugifyPropertyName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'property';
+}
+
+function getPropertyTone(property: CollectionProperty): string {
+  const name = property.name.toLowerCase();
+  if (name.includes('status')) return 'status';
+  if (name.includes('type') || name.includes('genre')) return 'warm';
+  if (name.includes('tag')) return 'tag';
+  if (name.includes('score') || name.includes('rating')) return 'score';
+  return 'accent';
+}
+
+function isScoreProperty(property: CollectionProperty): boolean {
+  const name = property.name.toLowerCase();
+  return property.type === 'number' && (name.includes('score') || name.includes('rating') || name.includes('/5'));
+}
+
+function getDisplayPropertyName(property: CollectionProperty, isBooksCollection: boolean): string {
+  if (isBooksCollection && isScoreProperty(property)) {
+    return 'Score /5';
+  }
+  return property.name;
+}
+
+function formatScoreStars(value: unknown): string {
+  const numeric = typeof value === 'number' ? value : Number(String(value ?? '').trim());
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return '—';
+  }
+  const filled = Math.max(0, Math.min(5, Math.round(numeric)));
+  return `${'★'.repeat(filled)}${'☆'.repeat(5 - filled)}`;
+}
 
 function parseSchema(value: string): CollectionSchema {
   try {
@@ -381,6 +435,77 @@ function getFirstImageUrl(page: { coverAssetId: string | null; contentJson: stri
   }
 }
 
+function getContentPreview(contentJson: string): string {
+  if (!contentJson) {
+    return '';
+  }
+
+  try {
+    const content = JSON.parse(contentJson) as unknown;
+    const pieces: string[] = [];
+    const walk = (node: unknown): void => {
+      if (pieces.length >= 2 || !node || typeof node !== 'object') {
+        return;
+      }
+
+      if (Array.isArray(node)) {
+        for (const child of node) {
+          walk(child);
+          if (pieces.length >= 2) {
+            break;
+          }
+        }
+        return;
+      }
+
+      const record = node as {
+        type?: unknown;
+        content?: unknown;
+        children?: unknown;
+      };
+
+      if (record.type === 'paragraph' || record.type === 'quote' || record.type === 'heading') {
+        const text = collectInlineText(record.content);
+        if (text) {
+          pieces.push(text);
+        }
+      }
+
+      if (record.children !== undefined) {
+        walk(record.children);
+      }
+      if (record.content !== undefined) {
+        walk(record.content);
+      }
+    };
+
+    const collectInlineText = (value: unknown): string => {
+      if (typeof value === 'string') {
+        return value;
+      }
+      if (!Array.isArray(value)) {
+        return '';
+      }
+      return value
+        .map((item) => {
+          if (!item || typeof item !== 'object') {
+            return '';
+          }
+          const text = (item as { text?: unknown }).text;
+          return typeof text === 'string' ? text : '';
+        })
+        .join('')
+        .replace(/\s+/g, ' ')
+        .trim();
+    };
+
+    walk(content);
+    return pieces.join(' ');
+  } catch {
+    return '';
+  }
+}
+
 function filterItems(items: CollectionItem[], propertyId: string, query: string): CollectionItem[] {
   const trimmed = query.trim().toLowerCase();
   if (!propertyId || !trimmed) {
@@ -436,19 +561,38 @@ function CollectionPropertyControl({
   property,
   value,
   onCommit,
+  onEnsureOptions,
   disabled,
 }: {
   property: CollectionProperty;
   value: unknown;
   onCommit: (next: unknown) => void;
+  onEnsureOptions?: (values: string[]) => void;
   disabled: boolean;
 }) {
   const persistedValue = toInputValue(property.type, value);
   const [draft, setDraft] = useState(persistedValue);
+  const optionListId = `collection-options-${property.id}`;
 
   useEffect(() => {
     setDraft(persistedValue);
   }, [persistedValue]);
+
+  const commitDraft = (raw: string) => {
+    const next = parseInputValue(property.type, raw);
+    if (property.type === 'select') {
+      const option = typeof next === 'string' ? next.trim() : '';
+      if (option) {
+        onEnsureOptions?.([option]);
+      }
+    }
+    if (property.type === 'multi-select' && Array.isArray(next)) {
+      onEnsureOptions?.(next.map((entry) => String(entry).trim()).filter(Boolean));
+    }
+    if (JSON.stringify(next) !== JSON.stringify(value)) {
+      onCommit(next);
+    }
+  };
 
   if (property.type === 'checkbox') {
     return (
@@ -463,49 +607,143 @@ function CollectionPropertyControl({
     );
   }
 
-  if (property.type === 'select') {
-    return (
-      <select
-        className="collection-cell-select"
-        data-tone={property.name.toLowerCase().includes('type') ? 'warm' : 'accent'}
-        value={typeof value === 'string' ? value : ''}
-        onChange={(event: ChangeEvent<HTMLSelectElement>) => onCommit(event.target.value)}
-        disabled={disabled || !property.options?.length}
-      >
-        <option value="">Choose…</option>
-        {(property.options ?? []).map((option) => <option key={option} value={option}>{option}</option>)}
-      </select>
+  if (property.type === 'select' || property.type === 'multi-select' || property.type === 'text' || property.type === 'number' || property.type === 'date' || property.type === 'url') {
+    const input = (
+      <input
+        className={property.type === 'multi-select' ? 'collection-cell-tags' : property.type === 'select' ? 'collection-cell-select' : undefined}
+        data-tone={property.type === 'select' ? getPropertyTone(property) : undefined}
+        list={property.type === 'select' || property.type === 'multi-select' ? optionListId : undefined}
+        type={property.type === 'date' ? 'date' : property.type === 'number' ? 'number' : property.type === 'url' ? 'url' : 'text'}
+        value={draft}
+        onChange={(event: ChangeEvent<HTMLInputElement>) => setDraft(event.target.value)}
+        onBlur={(event) => commitDraft(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            event.currentTarget.blur();
+          } else if (event.key === 'Escape') {
+            event.preventDefault();
+            event.currentTarget.value = persistedValue;
+            setDraft(persistedValue);
+            event.currentTarget.blur();
+          }
+        }}
+        placeholder={property.type === 'number' ? '0' : property.type === 'select' ? 'Choose or type' : property.name}
+        disabled={disabled}
+      />
     );
+
+    if (property.type === 'select') {
+      return (
+        <div className="collection-select-cell">
+          {input}
+          <datalist id={optionListId}>{(property.options ?? []).map((option) => <option key={option} value={option} />)}</datalist>
+        </div>
+      );
+    }
+
+    if (property.type === 'multi-select') {
+      const tags = persistedValue.split(',').map((tag) => tag.trim()).filter(Boolean);
+      return (
+        <div className="collection-multi-select-cell">
+          <div className="collection-token-list" aria-hidden="true">
+            {tags.length ? tags.map((tag) => <span key={tag}>{tag}</span>) : <span className="collection-empty-value">—</span>}
+          </div>
+          {input}
+          <datalist id={optionListId}>{(property.options ?? []).map((option) => <option key={option} value={option} />)}</datalist>
+        </div>
+      );
+    }
+
+    if (isScoreProperty(property)) {
+      return (
+        <div className="collection-score-cell">
+          <span className="collection-score-stars" aria-hidden="true">{formatScoreStars(value)}</span>
+          {input}
+        </div>
+      );
+    }
+
+    return input;
   }
 
-  const commitDraft = (raw: string) => {
-    const next = parseInputValue(property.type, raw);
-    if (JSON.stringify(next) !== JSON.stringify(value)) {
-      onCommit(next);
+  return null;
+}
+
+function CollectionPropertySettingsRow({
+  property,
+  index,
+  total,
+  onMove,
+  onRemove,
+  onUpdate,
+}: {
+  property: CollectionProperty;
+  index: number;
+  total: number;
+  onMove: (propertyId: string, direction: 'up' | 'down') => void;
+  onRemove: (propertyId: string) => void;
+  onUpdate: (propertyId: string, updates: Partial<CollectionProperty>) => void;
+}) {
+  const [nameDraft, setNameDraft] = useState(property.name);
+  const [typeDraft, setTypeDraft] = useState<CollectionPropertyType>(property.type);
+  const [optionsDraft, setOptionsDraft] = useState((property.options ?? []).join(', '));
+
+  useEffect(() => {
+    setNameDraft(property.name);
+    setTypeDraft(property.type);
+    setOptionsDraft((property.options ?? []).join(', '));
+  }, [property.name, property.options, property.type]);
+
+  const saveName = () => {
+    const nextName = nameDraft.trim();
+    if (nextName && nextName !== property.name) {
+      onUpdate(property.id, { name: nextName });
+    }
+  };
+
+  const saveType = (nextType: CollectionPropertyType) => {
+    setTypeDraft(nextType);
+    onUpdate(property.id, {
+      type: nextType,
+      options: nextType === 'select' || nextType === 'multi-select' ? property.options ?? [] : undefined,
+    });
+  };
+
+  const saveOptions = () => {
+    const nextOptions = optionsDraft
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    if (JSON.stringify(nextOptions) !== JSON.stringify(property.options ?? [])) {
+      onUpdate(property.id, { options: nextOptions });
     }
   };
 
   return (
-    <input
-      className={property.type === 'multi-select' ? 'collection-cell-tags' : undefined}
-      type={property.type === 'date' ? 'date' : property.type === 'number' ? 'number' : property.type === 'url' ? 'url' : 'text'}
-      value={draft}
-      onChange={(event: ChangeEvent<HTMLInputElement>) => setDraft(event.target.value)}
-      onBlur={(event) => commitDraft(event.currentTarget.value)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          event.currentTarget.blur();
-        } else if (event.key === 'Escape') {
-          event.preventDefault();
-          event.currentTarget.value = persistedValue;
-          setDraft(persistedValue);
-          event.currentTarget.blur();
-        }
-      }}
-      placeholder={property.type === 'number' ? '0' : property.name}
-      disabled={disabled}
-    />
+    <li key={property.id} className="collection-property-item" aria-label={property.name}>
+      <label>
+        Name
+        <input value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} onBlur={saveName} />
+      </label>
+      <label>
+        Type
+        <select value={typeDraft} onChange={(event) => saveType(event.target.value as CollectionPropertyType)}>
+          {PROPERTY_TYPES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+      </label>
+      {(typeDraft === 'select' || typeDraft === 'multi-select') ? (
+        <label>
+          Options
+          <input value={optionsDraft} onChange={(event) => setOptionsDraft(event.target.value)} onBlur={saveOptions} placeholder="Comma-separated values" />
+        </label>
+      ) : null}
+      <div className="toolbar">
+        <button type="button" className="mini-btn" onClick={() => onMove(property.id, 'up')} disabled={index === 0}>Move up</button>
+        <button type="button" className="mini-btn" onClick={() => onMove(property.id, 'down')} disabled={index === total - 1}>Move down</button>
+        <button type="button" className="mini-btn danger-action" onClick={() => onRemove(property.id)}>Remove</button>
+      </div>
+    </li>
   );
 }
 
@@ -526,7 +764,32 @@ function renderGalleryProperty(property: CollectionProperty, value: unknown): Re
   );
 }
 
-export function CollectionEditor({ collectionId }: { collectionId: string }) {
+function renderFocusedPropertyValue(property: CollectionProperty, value: unknown): ReactNode {
+  if (property.type === 'multi-select' && Array.isArray(value)) {
+    return value.length ? (
+      <div className="collection-focus-token-list" aria-label={property.name}>
+        {value.map((entry) => <span key={String(entry)}>{String(entry)}</span>)}
+      </div>
+    ) : <span className="collection-focus-empty">—</span>;
+  }
+
+  if (property.type === 'checkbox') {
+    return <span>{value ? 'Yes' : 'No'}</span>;
+  }
+
+  if (isScoreProperty(property)) {
+    return <span className="collection-score-stars" aria-hidden="true">{formatScoreStars(value)}</span>;
+  }
+
+  const text = String(value ?? '').trim();
+  if (!text) {
+    return <span className="collection-focus-empty">—</span>;
+  }
+
+  return property.type === 'url' ? <a href={text} className="text-link" target="_blank" rel="noreferrer">{normalizeUrl(text)}</a> : <span>{text}</span>;
+}
+
+export function CollectionEditor({ collectionId, embedded = false, focusPageId }: { collectionId: string; embedded?: boolean; focusPageId?: string }) {
   useDismissibleDetails('.add-entry-menu, .row-menu');
 
   const [collection, setCollection] = useState<CollectionRecord | null>(null);
@@ -567,9 +830,18 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
       const payload = (await response.json()) as ResponsePayload & { schema: CollectionSchema };
       const parsedSchema = parseSchema(payload.collection.schemaJson);
       const parsedViews = parseViews(payload.collection.viewsJson);
+      const shouldSeedBooksSchema = isBooksCollectionName(payload.collection.name) && parsedSchema.properties.length === 0;
+
+      if (shouldSeedBooksSchema) {
+        void fetch(`/api/collections/${collectionId}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ id: collectionId, schema: BOOKS_COLLECTION_SCHEMA }),
+        });
+      }
 
       setCollection(payload.collection);
-      setSchema(parsedSchema);
+      setSchema(shouldSeedBooksSchema ? BOOKS_COLLECTION_SCHEMA : parsedSchema);
       setViews(parsedViews);
       setItems(payload.items);
       setAvailablePages(payload.availablePages);
@@ -621,6 +893,54 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
       }
     },
     [collection, loadCollection, setStatusTemporarily],
+  );
+
+  const updateProperty = useCallback(
+    (propertyId: string, updates: Partial<CollectionProperty>) => {
+      const nextSchema: CollectionSchema = {
+        properties: schema.properties.map((property) => {
+          if (property.id !== propertyId) {
+            return property;
+          }
+
+          const nextType = updates.type ?? property.type;
+          const nextName = updates.name ?? property.name;
+          const nextOptions =
+            nextType === 'select' || nextType === 'multi-select'
+              ? updates.options ?? property.options ?? []
+              : undefined;
+
+          return {
+            ...property,
+            ...updates,
+            name: nextName.trim() || 'Property',
+            type: nextType,
+            ...(nextOptions ? { options: nextOptions.map((option) => option.trim()).filter(Boolean) } : {}),
+          };
+        }),
+      };
+      setSchema(nextSchema);
+      void saveSchema(nextSchema);
+    },
+    [saveSchema, schema.properties],
+  );
+
+  const ensurePropertyOptions = useCallback(
+    (propertyId: string, values: string[]) => {
+      const property = schema.properties.find((entry) => entry.id === propertyId);
+      if (!property || (property.type !== 'select' && property.type !== 'multi-select')) {
+        return;
+      }
+      const nextOptions = Array.from(new Set([
+        ...(property.options ?? []),
+        ...values.map((value) => value.trim()).filter(Boolean),
+      ]));
+      if (JSON.stringify(nextOptions) === JSON.stringify(property.options ?? [])) {
+        return;
+      }
+      void updateProperty(propertyId, { options: nextOptions });
+    },
+    [schema.properties, updateProperty],
   );
 
   const saveViews = useCallback(
@@ -920,6 +1240,14 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
       return;
     }
 
+    const definition = schema.properties.find((property) => property.id === propertyId);
+    if (definition?.type === 'select' && typeof nextValue === 'string') {
+      ensurePropertyOptions(propertyId, [nextValue]);
+    }
+    if (definition?.type === 'multi-select' && Array.isArray(nextValue)) {
+      ensurePropertyOptions(propertyId, nextValue.map((entry) => String(entry)));
+    }
+
     const current = items.find((item) => item.pageId === pageId);
     const previousProperties = current?.propertiesJson ?? '{}';
     const parsed = parseProperties(previousProperties);
@@ -990,6 +1318,24 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
     });
   }, [filtered, searchQuery]);
   const ordered = useMemo(() => sortItems(searched, schema, sortBy, sortDirection), [searched, schema, sortBy, sortDirection]);
+  const hostPagePreview = hostPage ? getContentPreview(hostPage.contentJson) : '';
+  const focusedItem = useMemo(
+    () => (embedded && focusPageId ? items.find((item) => item.pageId === focusPageId) ?? null : null),
+    [embedded, focusPageId, items],
+  );
+  const pageUrlPages = useMemo<PageUrlPage[]>(() => {
+    const map = new Map<string, PageUrlPage>();
+    for (const page of availablePages) {
+      map.set(page.id, page);
+    }
+    for (const item of items) {
+      map.set(item.page.id, item.page);
+    }
+    if (hostPage) {
+      map.set(hostPage.id, hostPage);
+    }
+    return Array.from(map.values());
+  }, [availablePages, hostPage, items]);
 
   if (!collection) {
     return isLoading ? (
@@ -1002,8 +1348,14 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
     );
   }
 
+  const isBooksCollection = [collection.name, hostPage?.title].some((value) => value?.toLowerCase().includes('book'));
+  const tableProperties = embedded && isBooksCollection
+    ? schema.properties.filter((property) => slugifyPropertyName(property.name) !== 'summary')
+    : schema.properties;
+  const showFocusedItem = embedded && focusPageId !== undefined;
+
   return (
-    <div className={`collection-workspace ${hostPage ? 'has-host-page' : ''}`}>
+    <div className={`collection-workspace ${hostPage ? 'has-host-page' : ''} ${isBooksCollection ? 'is-books-collection' : ''} ${embedded ? 'is-embedded' : ''}`}>
       {hostPage?.coverAssetId ? (
         <div className="collection-host-cover">
           <Image
@@ -1022,69 +1374,94 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
       ) : null}
 
       <div className="collection-content">
-        {hostPage ? (
+        {!embedded && hostPage ? (
           <header className={`collection-host-identity ${hostPage.coverAssetId ? 'has-cover' : ''}`}>
             <span className="collection-host-icon" aria-hidden="true">{hostPage.icon ?? '📄'}</span>
-            <Link href={`/page/${hostPage.id}`} className="text-link collection-host-title">{hostPage.title || 'Untitled'}</Link>
+            <div className="collection-host-copy">
+              <Link href={buildPagePathFromPages(hostPage.id, pageUrlPages)} className="text-link collection-host-title">{hostPage.title || 'Untitled'}</Link>
+              <p className="collection-host-description">{hostPagePreview || 'Read books imported from the Notion export.'}</p>
+            </div>
           </header>
         ) : null}
 
-        <header className="collection-header">
-          <form onSubmit={setCollectionName} className="collection-name-form">
-            <input name="name" defaultValue={collection.name} aria-label="Collection name" placeholder="Collection name" />
-            <button type="submit" className="quiet-btn">Save name</button>
-          </form>
-          <span className="collection-count">{items.length} {items.length === 1 ? 'entry' : 'entries'}</span>
-        </header>
+        {!embedded ? (
+          <header className="collection-header">
+            <form onSubmit={setCollectionName} className="collection-name-form">
+              <input name="name" defaultValue={collection.name} aria-label="Collection name" placeholder="Collection name" />
+              <button type="submit" className="quiet-btn">Save name</button>
+            </form>
+            <span className="collection-count">{items.length} {items.length === 1 ? 'entry' : 'entries'}</span>
+          </header>
+        ) : null}
 
-        <div className="collection-viewbar" aria-label="Collection view controls">
-          <div className="collection-view-tabs" role="tablist" aria-label="Collection views">
-            <button type="button" role="tab" aria-selected={views.mode === 'table'} onClick={() => setViews((current) => ({ ...current, mode: 'table' }))}>▦ Table</button>
-            <button type="button" role="tab" aria-selected={views.mode === 'gallery'} onClick={() => setViews((current) => ({ ...current, mode: 'gallery' }))}>▤ Gallery</button>
-          </div>
-          <label className="collection-search">
-            <span className="visually-hidden">Search collection</span>
-            <input aria-label="Search collection" placeholder="Search" value={searchQuery} onChange={(event: ChangeEvent<HTMLInputElement>) => setSearchQuery(event.target.value)} />
-          </label>
-          <label className="compact-field" htmlFor="view-sort-by"><span>Sort</span>
-            <select id="view-sort-by" value={sortBy} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSortBy(event.target.value)}>
-              <option value="sortKey">Default order</option>
-              <option value="title">Page title</option>
-              {schema.properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
-            </select>
-          </label>
-          <select className="compact-select" aria-label="Sort direction" value={sortDirection} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSortDirection(event.target.value as SortDirection)}>
-            <option value="asc">Ascending</option><option value="desc">Descending</option>
-          </select>
-          <label className="compact-field" htmlFor="filter-property"><span>Filter</span>
-            <select id="filter-property" value={filterBy} onChange={(event: ChangeEvent<HTMLSelectElement>) => setFilterBy(event.target.value)}>
-              <option value="">No filter</option>
-              {schema.properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
-            </select>
-          </label>
-          {filterBy ? <input className="filter-query" aria-label="Filter query" placeholder="Filter query" value={filterQuery} onChange={(event: ChangeEvent<HTMLInputElement>) => setFilterQuery(event.target.value)} /> : null}
-          <details className="add-entry-menu">
-            <summary>New</summary>
-            <div className="add-entry-panel">
-              <form onSubmit={addNewEntry} className="entry-add-form">
-                <label>New page<input value={newPageTitle} onChange={(event: ChangeEvent<HTMLInputElement>) => setNewPageTitle(event.target.value)} placeholder="Page title" /></label>
-                <button type="submit" className="primary-btn">Create entry</button>
-              </form>
-              <form onSubmit={addExistingEntry} className="entry-add-form">
-                <label>Existing page<select value={existingPageId} onChange={(event: ChangeEvent<HTMLSelectElement>) => setExistingPageId(event.target.value)}>
-                  <option value="">Choose a page…</option>
-                  {availablePages.slice().sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })).map((page) => <option key={page.id} value={page.id}>{page.title}</option>)}
-                </select></label>
-                <button type="submit" disabled={!existingPageId}>Add page</button>
-              </form>
+        {!embedded ? (
+          <div className="collection-viewbar" aria-label="Collection view controls">
+            <div className="collection-view-tabs" role="tablist" aria-label="Collection views">
+              <button type="button" role="tab" aria-selected={views.mode === 'table'} onClick={() => setViews((current) => ({ ...current, mode: 'table' }))}>▦ Table</button>
+              <button type="button" role="tab" aria-selected={views.mode === 'gallery'} onClick={() => setViews((current) => ({ ...current, mode: 'gallery' }))}>▤ Gallery</button>
             </div>
-          </details>
-        </div>
+            <label className="collection-search">
+              <span className="visually-hidden">Search collection</span>
+              <input aria-label="Search collection" placeholder="Search" value={searchQuery} onChange={(event: ChangeEvent<HTMLInputElement>) => setSearchQuery(event.target.value)} />
+            </label>
+            <label className="compact-field" htmlFor="view-sort-by"><span>Sort</span>
+              <select id="view-sort-by" value={sortBy} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSortBy(event.target.value)}>
+                <option value="sortKey">Default order</option>
+                <option value="title">Page title</option>
+                {schema.properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
+              </select>
+            </label>
+            <select className="compact-select" aria-label="Sort direction" value={sortDirection} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSortDirection(event.target.value as SortDirection)}>
+              <option value="asc">Ascending</option><option value="desc">Descending</option>
+            </select>
+            <label className="compact-field" htmlFor="filter-property"><span>Filter</span>
+              <select id="filter-property" value={filterBy} onChange={(event: ChangeEvent<HTMLSelectElement>) => setFilterBy(event.target.value)}>
+                <option value="">No filter</option>
+                {schema.properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
+              </select>
+            </label>
+            {filterBy ? <input className="filter-query" aria-label="Filter query" placeholder="Filter query" value={filterQuery} onChange={(event: ChangeEvent<HTMLInputElement>) => setFilterQuery(event.target.value)} /> : null}
+            <details className="add-entry-menu">
+              <summary>New</summary>
+              <div className="add-entry-panel">
+                <form onSubmit={addNewEntry} className="entry-add-form">
+                  <label>New page<input value={newPageTitle} onChange={(event: ChangeEvent<HTMLInputElement>) => setNewPageTitle(event.target.value)} placeholder="Page title" /></label>
+                  <button type="submit" className="primary-btn">Create entry</button>
+                </form>
+                <form onSubmit={addExistingEntry} className="entry-add-form">
+                  <label>Existing page<select value={existingPageId} onChange={(event: ChangeEvent<HTMLSelectElement>) => setExistingPageId(event.target.value)}>
+                    <option value="">Choose a page…</option>
+                    {availablePages.slice().sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })).map((page) => <option key={page.id} value={page.id}>{page.title}</option>)}
+                  </select></label>
+                  <button type="submit" disabled={!existingPageId}>Add page</button>
+                </form>
+              </div>
+            </details>
+          </div>
+        ) : null}
 
-      {status ? <p className="status-note" role="status">{status}</p> : null}
+      {status && !embedded ? <p className="status-note" role="status">{status}</p> : null}
 
       <div className="collection-surface collection-surface-stage">
-        {isLoading ? (
+        {showFocusedItem ? (
+          focusedItem ? (
+            <section className="collection-focus-panel" aria-label="Collection entry properties">
+              {schema.properties.length ? (
+                <div className="collection-focus-properties">
+                  {(() => {
+                    const values = parseProperties(focusedItem.propertiesJson);
+                    return schema.properties.map((property) => (
+                      <div key={property.id} className="collection-focus-property" data-tone={getPropertyTone(property)}>
+                        <span className="collection-focus-label"><span className="property-icon" aria-hidden="true">{PROPERTY_ICONS[property.type]}</span> {getDisplayPropertyName(property, isBooksCollection)}</span>
+                        <div className="collection-focus-value">{renderFocusedPropertyValue(property, values[property.id])}</div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              ) : <p className="help">No properties configured.</p>}
+            </section>
+          ) : <p className="help collection-state">This page is not in the collection.</p>
+        ) : isLoading ? (
           <p className="help collection-state">Loading entries…</p>
         ) : items.length === 0 ? (
           <div className="collection-state"><h2>No entries yet</h2><p className="help">Create a page entry to begin this collection.</p></div>
@@ -1102,12 +1479,12 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
                   className="collection-gallery-item"
                   style={{ '--motion-stagger-index': `${staggerIndex}` } as CSSProperties}
                 >
-                  <Link href={`/page/${item.pageId}`} className="collection-cover-link">
+                  <Link href={buildPagePathFromPages(item.pageId, pageUrlPages)} className="collection-cover-link">
                     {image ? <Image src={image} alt={`Cover for ${item.page.title}`} className="collection-cover" width={640} height={360} unoptimized /> : <div className="collection-cover-blank" aria-hidden="true">{item.page.icon ?? '◆'}</div>}
                   </Link>
                   <div className="collection-card-body">
                     <div className="collection-card-title-row">
-                      <Link href={`/page/${item.pageId}`} className="text-link collection-page-title">{item.page.icon ? <span>{item.page.icon} </span> : null}{item.page.title || 'Untitled'}</Link>
+                      <Link href={buildPagePathFromPages(item.pageId, pageUrlPages)} className="text-link collection-page-title">{item.page.icon ? <span>{item.page.icon} </span> : null}{item.page.title || 'Untitled'}</Link>
                       <details className="row-menu"><summary aria-label={`Actions for ${item.page.title}`}>•••</summary><div><button type="button" onClick={() => void reorderEntry(item.pageId, 'up')}>Move up</button><button type="button" onClick={() => void reorderEntry(item.pageId, 'down')}>Move down</button><button type="button" className="danger-action" onClick={() => void removeEntry(item.pageId)}>Remove</button></div></details>
                     </div>
                     {schema.properties.length ? <div className="collection-properties-grid">{schema.properties.slice(0, 4).map((property) => <div key={property.id}>{renderGalleryProperty(property, values[property.id])}</div>)}</div> : <p className="help">No properties configured.</p>}
@@ -1119,7 +1496,7 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
         ) : (
           <section className="collection-table-wrap">
             <table className="collection-table">
-              <thead><tr><th><span className="property-icon" aria-hidden="true">Aa</span> Page</th>{schema.properties.map((property) => <th key={property.id}><span className="property-icon" aria-hidden="true">{PROPERTY_ICONS[property.type]}</span> {property.name}</th>)}<th><span className="visually-hidden">Actions</span></th></tr></thead>
+              <thead><tr><th className="collection-title-column"><span className="property-icon" aria-hidden="true">Aa</span> Name</th>{tableProperties.map((property) => <th key={property.id} className={`collection-property-column collection-property-${property.type} collection-property-${slugifyPropertyName(property.name)}`} data-tone={getPropertyTone(property)}><span className="property-icon" aria-hidden="true">{PROPERTY_ICONS[property.type]}</span> {getDisplayPropertyName(property, isBooksCollection)}</th>)}<th className="collection-actions-column"><span className="visually-hidden">Actions</span></th></tr></thead>
               <tbody>{ordered.map((item, itemIndex) => {
                 const properties = parseProperties(item.propertiesJson);
                 return <tr
@@ -1127,12 +1504,12 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
                   className="collection-row"
                   style={{ '--motion-stagger-index': `${Math.min(itemIndex, MAX_COLLECTION_STAGGER_INDEX)}` } as CSSProperties}
                 >
-                  <td><Link href={`/page/${item.pageId}`} className="text-link collection-page-title">{item.page.icon ? <span>{item.page.icon} </span> : null}{item.page.title || 'Untitled'}</Link></td>
-                  {schema.properties.map((property) => {
+                  <td className="collection-title-cell"><Link href={buildPagePathFromPages(item.pageId, pageUrlPages)} className="text-link collection-page-title">{item.page.icon ? <span>{item.page.icon} </span> : null}{item.page.title || 'Untitled'}</Link></td>
+                  {tableProperties.map((property) => {
                     const cellKey = `${item.pageId}:${property.id}`;
                     const cellState = cellStates[cellKey];
-                    return <td key={property.id} className={`collection-cell ${cellState ? `is-${cellState}` : ''}`}>
-                      <CollectionPropertyControl property={property} value={properties[property.id]} onCommit={(nextValue) => void updateEntryProperty(item.pageId, property.id, nextValue)} disabled={false} />
+                    return <td key={property.id} className={`collection-cell collection-property-${property.type} collection-property-${slugifyPropertyName(property.name)} ${cellState ? `is-${cellState}` : ''}`} data-tone={getPropertyTone(property)}>
+                      <CollectionPropertyControl property={property} value={properties[property.id]} onCommit={(nextValue) => void updateEntryProperty(item.pageId, property.id, nextValue)} onEnsureOptions={(values) => ensurePropertyOptions(property.id, values)} disabled={false} />
                       {cellState ? <span className="cell-state" role={cellState === 'error' ? 'alert' : 'status'}>{cellState === 'saving' ? 'Saving' : 'Not saved'}</span> : null}
                     </td>;
                   })}
@@ -1144,29 +1521,36 @@ export function CollectionEditor({ collectionId }: { collectionId: string }) {
         )}
       </div>
 
-      <details className="collection-settings">
-        <summary>Collection settings <span>{schema.properties.length} properties</span></summary>
-        <div className="settings-panel">
-          <section className="collection-properties">
-            <h2>Properties</h2>
-            {schema.properties.length ? (
-              <ul className="collection-property-list">{schema.properties.map((property, index) => (
-                <li key={property.id} className="collection-property-item">
-                  <div><strong>{property.name}</strong><span className="help">{property.type}</span></div>
-                  <div className="toolbar"><button type="button" className="mini-btn" onClick={() => reorderProperty(property.id, 'up')} disabled={index === 0}>Move up</button><button type="button" className="mini-btn" onClick={() => reorderProperty(property.id, 'down')} disabled={index === schema.properties.length - 1}>Move down</button><button type="button" className="mini-btn danger-action" onClick={() => removeProperty(property.id)}>Remove</button></div>
-                </li>
-              ))}</ul>
-            ) : <p className="help">No properties yet.</p>}
-            <form onSubmit={addProperty} className="properties-form">
-              <label>Name<input value={newPropertyName} onChange={(event: ChangeEvent<HTMLInputElement>) => setNewPropertyName(event.target.value)} placeholder="Property name" /></label>
-              <label>Type<select value={newPropertyType} onChange={(event: ChangeEvent<HTMLSelectElement>) => setNewPropertyType(event.target.value as CollectionPropertyType)}>{PROPERTY_TYPES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-              {(newPropertyType === 'select' || newPropertyType === 'multi-select') ? <label>Options<input value={newPropertyOptions} onChange={(event: ChangeEvent<HTMLInputElement>) => setNewPropertyOptions(event.target.value)} placeholder="Comma-separated" /></label> : null}
-              <button type="submit" className="primary-btn">Add property</button>
-            </form>
-          </section>
-          <section className="danger-zone"><h2>Collection</h2><button type="button" onClick={deleteCollection} className="danger-btn">Delete collection</button></section>
-        </div>
-      </details>
+      {!embedded ? (
+        <details className="collection-settings">
+          <summary>Collection settings <span>{schema.properties.length} properties</span></summary>
+          <div className="settings-panel">
+            <section className="collection-properties">
+              <h2>Properties</h2>
+              {schema.properties.length ? (
+                <ul className="collection-property-list">{schema.properties.map((property, index) => (
+                  <CollectionPropertySettingsRow
+                    key={property.id}
+                    property={property}
+                    index={index}
+                    total={schema.properties.length}
+                    onMove={reorderProperty}
+                    onRemove={removeProperty}
+                    onUpdate={updateProperty}
+                  />
+                ))}</ul>
+              ) : <p className="help">No properties yet.</p>}
+              <form onSubmit={addProperty} className="properties-form">
+                <label>Name<input value={newPropertyName} onChange={(event: ChangeEvent<HTMLInputElement>) => setNewPropertyName(event.target.value)} placeholder="Property name" /></label>
+                <label>Type<select value={newPropertyType} onChange={(event: ChangeEvent<HTMLSelectElement>) => setNewPropertyType(event.target.value as CollectionPropertyType)}>{PROPERTY_TYPES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                {(newPropertyType === 'select' || newPropertyType === 'multi-select') ? <label>Options<input value={newPropertyOptions} onChange={(event: ChangeEvent<HTMLInputElement>) => setNewPropertyOptions(event.target.value)} placeholder="Comma-separated" /></label> : null}
+                <button type="submit" className="primary-btn">Add property</button>
+              </form>
+            </section>
+            <section className="danger-zone"><h2>Collection</h2><button type="button" onClick={deleteCollection} className="danger-btn">Delete collection</button></section>
+          </div>
+        </details>
+      ) : null}
       </div>
     </div>
   );

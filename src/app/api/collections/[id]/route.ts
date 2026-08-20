@@ -24,6 +24,7 @@ type EnrichedCollectionItem = {
   page: {
     id: string;
     parentId: string | null;
+    sortKey: number;
     title: string;
     icon: string | null;
     coverAssetId: string | null;
@@ -269,6 +270,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         page: {
           id: page.id,
           parentId: page.parentId,
+          sortKey: page.sortKey,
           title: page.title,
           icon: page.icon,
           coverAssetId: page.coverAssetId,
@@ -300,7 +302,25 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
   const joinedPageIds = new Set(items.map((item) => item.pageId));
   const availablePages = allPages.filter((page) => !joinedPageIds.has(page.id));
-  const hostPage = collection.hostPageId ? pageById.get(collection.hostPageId) ?? null : null;
+  const hostPage = collection.hostPageId
+    ? (() => {
+        const page = pageById.get(collection.hostPageId);
+        return page
+          ? {
+              id: page.id,
+              parentId: page.parentId,
+              sortKey: page.sortKey,
+              title: page.title,
+              icon: page.icon,
+              coverAssetId: page.coverAssetId,
+              coverFocalX: page.coverFocalX,
+              coverFocalY: page.coverFocalY,
+              coverScale: page.coverScale,
+              contentJson: page.contentJson,
+            }
+          : null;
+      })()
+    : null;
 
   return NextResponse.json({ collection, hostPage, items: ordered, availablePages, schema: parsedSchema, views: collection.viewsJson });
 }

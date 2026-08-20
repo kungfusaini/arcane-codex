@@ -51,6 +51,29 @@ function contentMatchesMime(bytes: Buffer, mimeType: string): boolean {
         : startsWith(bytes, 'RIFF') && startsWith(bytes, 'WEBP', 8);
 }
 
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
+
+function isWikimediaFilePage(url: URL): boolean {
+  const host = url.hostname.toLowerCase().replace(/^www\./, '');
+  return (host.endsWith('wikipedia.org') || host === 'commons.wikimedia.org') && decodeURIComponent(url.pathname).includes('/wiki/File:');
+}
+
+function extractWikimediaImageUrl(html: string, baseUrl: URL): URL | null {
+  const ogImage = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+    ?? html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+  const href = ogImage?.[1];
+  if (!href) return null;
+  const imageUrl = new URL(decodeHtmlEntities(href), baseUrl);
+  return imageUrl.protocol === 'http:' || imageUrl.protocol === 'https:' ? imageUrl : null;
+}
+
 function safeFilename(url: URL, mimeType: string): string {
   const candidate = path.basename(url.pathname).replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 100);
   const extension = MIME_EXTENSIONS[mimeType];
@@ -74,7 +97,17 @@ async function fetchImage(url: URL): Promise<{ bytes: Buffer; mimeType: string; 
     if (!response.ok) throw new Error(`The image host returned ${response.status}.`);
     const mimeType = (response.headers.get('content-type') || '').split(';', 1)[0].toLowerCase();
     const contentLength = Number(response.headers.get('content-length') || 0);
-    if (!IMAGE_TYPES.has(mimeType) || (contentLength > MAX_IMAGE_BYTES)) throw new Error('Use a PNG, JPEG, GIF, or WebP image under 20 MB.');
+    if (!IMAGE_TYPES.has(mimeType)) {
+      if (mimeType === 'text/html' && isWikimediaFilePage(current)) {
+        const imageUrl = extractWikimediaImageUrl(await response.text(), current);
+        if (imageUrl) {
+          current = imageUrl;
+          continue;
+        }
+      }
+      throw new Error('Use a direct PNG, JPEG, GIF, WebP image URL, or a Wikimedia File page.');
+    }
+    if (contentLength > MAX_IMAGE_BYTES) throw new Error('Use a PNG, JPEG, GIF, or WebP image under 20 MB.');
     const bytes = Buffer.from(await response.arrayBuffer());
     if (bytes.byteLength > MAX_IMAGE_BYTES || !contentMatchesMime(bytes, mimeType)) throw new Error('The downloaded file is not a supported image.');
     return { bytes, mimeType, sourceUrl: current };

@@ -3,6 +3,7 @@ export type PageSummary = {
   parentId: string | null;
   title: string;
   icon: string | null;
+  iconAssetId: string | null;
   sortKey: number;
 };
 

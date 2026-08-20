@@ -15,9 +15,11 @@ import {
   extractLinkedPageIds,
   getPage,
   listCollectionItems,
+  listCollectionsForPage,
   listPages,
   openWorkspace,
   readBacklinks,
+  resolvePageRoutePath,
   restorePage,
   trashPage,
   updateCollection,
@@ -32,6 +34,7 @@ import {
   getWorkspaceTrashDir,
   getWorkspaceDbPath,
 } from '../src/lib/data/workspace';
+import { buildPagePathFromPages } from '../src/lib/pageUrls';
 
 describe('workspace bootstrap', () => {
   it('creates required directories and schema', () => {
@@ -62,11 +65,13 @@ describe('workspace bootstrap', () => {
       const columnX = pageColumns.find((row) => row.name === 'cover_focal_x');
       const columnY = pageColumns.find((row) => row.name === 'cover_focal_y');
       const columnScale = pageColumns.find((row) => row.name === 'cover_scale');
-      assert.equal(version.user_version, 4);
+      const iconAssetColumn = pageColumns.find((row) => row.name === 'icon_asset_id');
+      assert.equal(version.user_version, 6);
       assert.ok(assetIndex);
       assert.ok(columnX);
       assert.ok(columnY);
       assert.ok(columnScale);
+      assert.ok(iconAssetColumn);
       migrated.exec('PRAGMA user_version = 99;');
       migrated.close();
 
@@ -100,6 +105,9 @@ describe('collections CRUD and item storage', () => {
       },
       workspace,
     );
+    const books = createCollection({ name: 'Books' }, workspace);
+    assert.equal(JSON.parse(books.schemaJson).properties[0].type, 'select');
+    const solo = createPage({ title: 'Standalone' }, workspace);
 
     const firstItem = createCollectionItem(
       {
@@ -119,8 +127,15 @@ describe('collections CRUD and item storage', () => {
       workspace,
     );
 
+    const allPages = listPages(workspace);
+    assert.equal(allPages.length, 3);
+    assert.equal(listPages(workspace, false).length, 1);
+    assert.equal(listPages(workspace, false).some((page) => page.id === solo.id), true);
+    assert.equal(listPages(workspace, false).some((page) => page.id === first.id), false);
+
     const list = listCollectionItems(collection.id, workspace);
     assert.equal(list.length, 2);
+    assert.equal(listCollectionsForPage(first.id, workspace)[0].id, collection.id);
 
     const updated = updateCollectionItemProperties(
       {
@@ -263,6 +278,48 @@ describe('pages CRUD and ordering', () => {
     rmSync(workspace, { recursive: true, force: true });
   });
 
+  it('records hidden slug aliases when pages are renamed or moved', () => {
+    const workspace = mkdtempSync(path.join(os.tmpdir(), 'arcane-codex-alias-'));
+    ensureWorkspaceDirs(workspace);
+    openWorkspace({ dataDir: workspace });
+
+    try {
+      const root = createPage({ title: 'Arcana' }, workspace);
+      const child = createPage({ title: 'Sigils', parentId: root.id }, workspace);
+      const grandchild = createPage({ title: 'Daily Notes', parentId: child.id }, workspace);
+      const originalPages = listPages(workspace);
+      const originalChildPath = buildPagePathFromPages(child.id, originalPages);
+      const originalGrandchildPath = buildPagePathFromPages(grandchild.id, originalPages);
+
+      const renamed = updatePage(child.id, { revision: child.revision, title: 'Sigil Archive' }, workspace);
+      const afterRenamePages = listPages(workspace);
+      const renamedChildResolution = resolvePageRoutePath(originalChildPath.replace(/^\/page\//, '').split('/'), workspace);
+      const renamedGrandchildResolution = resolvePageRoutePath(originalGrandchildPath.replace(/^\/page\//, '').split('/'), workspace);
+      assert.equal(renamedChildResolution?.pageId, child.id);
+      assert.equal(renamedChildResolution?.canonicalPath, buildPagePathFromPages(child.id, afterRenamePages));
+      assert.equal(renamedGrandchildResolution?.pageId, grandchild.id);
+      assert.equal(renamedGrandchildResolution?.canonicalPath, buildPagePathFromPages(grandchild.id, afterRenamePages));
+
+      const elsewhere = createPage({ title: 'Elsewhere' }, workspace);
+      const beforeMovePages = listPages(workspace);
+      const beforeMovePath = buildPagePathFromPages(child.id, beforeMovePages);
+      applyPageMoves([
+        {
+          id: child.id,
+          parentId: elsewhere.id,
+          sortKey: 1,
+          revision: renamed.revision,
+        },
+      ], workspace);
+      const afterMovePages = listPages(workspace);
+      const movedResolution = resolvePageRoutePath(beforeMovePath.replace(/^\/page\//, '').split('/'), workspace);
+      assert.equal(movedResolution?.pageId, child.id);
+      assert.equal(movedResolution?.canonicalPath, buildPagePathFromPages(child.id, afterMovePages));
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
   it('prevents cyclic hierarchy moves', () => {
     const workspace = mkdtempSync(path.join(os.tmpdir(), 'arcane-codex-'));
     ensureWorkspaceDirs(workspace);
@@ -360,7 +417,7 @@ describe('pages CRUD and ordering', () => {
             },
             {
               type: 'link',
-              href: `/page/${target.id}`,
+              href: buildPagePathFromPages(target.id, [root, target]),
               content: [{ type: 'text', text: 'same target', styles: {} }],
             },
           ],

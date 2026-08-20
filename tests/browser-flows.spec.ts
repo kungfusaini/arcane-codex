@@ -337,8 +337,10 @@ test('shows page appearance affordances and selects a searchable emoji icon', as
   await expect(page.getByRole('button', { name: 'Change page icon' })).toHaveText(/🐉/);
 
   await page.getByRole('button', { name: 'Change page icon' }).click();
-  await expect(emojiPopover.getByLabel('Generate icon')).toHaveValue('dragon');
-  await expect(emojiPopover.getByRole('button', { name: 'Regenerate' })).toBeEnabled();
+  await emojiPopover.getByRole('tab', { name: 'Settings' }).click();
+  await expect(emojiPopover.getByText('This page already uses an emoji icon.')).toBeVisible();
+  await expect(emojiPopover.getByRole('button', { name: 'Remove icon' })).toBeVisible();
+  await expect(emojiPopover.getByLabel('Generate icon')).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(emojiPopover).toBeHidden();
   await expect(page.getByRole('button', { name: 'Change page icon' })).toBeFocused();
@@ -407,6 +409,49 @@ test('allows choosing an icon image from URL', async ({ page, request }) => {
   const iconButton = page.getByRole('button', { name: 'Change page icon' });
   await expect(iconButton.locator('img')).toHaveAttribute('src', new RegExp(`/api/assets/${importedAsset.id}`));
   await page.unroute('**/api/assets/import');
+});
+
+test('shows the generated icon prompt when an image icon is selected', async ({ page, request }) => {
+  const createResponse = await request.post('/api/pages', { data: { title: 'Generated icon prompt page' } });
+  expect(createResponse.ok()).toBeTruthy();
+  const freshPage = (await createResponse.json()).page as PageRecord;
+
+  const iconImage = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+  const iconUpload = await request.post('/api/assets', {
+    multipart: {
+      file: {
+        name: 'icon-image.png',
+        mimeType: 'image/png',
+        buffer: iconImage,
+      },
+    },
+  });
+  expect(iconUpload.ok()).toBeTruthy();
+  const importedAsset = (await iconUpload.json()).asset as { id: string };
+
+  await page.route('**/api/page-icon-generate', async (route) => {
+    if (route.request().method() === 'POST') {
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({ asset: importedAsset }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto(`/page/${freshPage.id}`);
+  await page.locator('.page-identity').hover();
+  await page.getByRole('button', { name: 'Add icon' }).click();
+  const emojiPopover = page.getByRole('dialog', { name: 'Choose page icon' });
+  await emojiPopover.getByRole('tab', { name: 'Settings' }).click();
+  await emojiPopover.getByLabel('Generate icon').fill('The Mona Lisa Very simple');
+  await emojiPopover.getByRole('button', { name: 'Generate' }).click();
+  await expect(emojiPopover.getByText('Prompt: The Mona Lisa Very simple')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Change page icon' }).locator('img')).toHaveAttribute('src', new RegExp(`/api/assets/${importedAsset.id}`));
+
+  await page.unroute('**/api/page-icon-generate');
 });
 
 test('renders custom slash and mention suggestion menus without BlockNote UI context errors', async ({ page, request }) => {

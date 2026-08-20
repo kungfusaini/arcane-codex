@@ -39,8 +39,19 @@ import {
 } from '@blocknote/core/extensions';
 import { getBreadcrumbs } from '@/lib/pageTree';
 import { PageIcon } from '@/components/PageIcon';
+import { extractGrabberPaste, ImageGrabberPanel, ImageGrabberPromptForm, ImageGrabberUrlForm } from '@/components/ImageGrabberControls';
+import { ImageGrabberPopup, ImagePopupSection } from '@/components/ImageGrabberPopup';
 import { useDismissibleDetails } from '@/components/useDismissibleDetails';
 import { buildPagePathFromPages, isPagePathForId } from '@/lib/pageUrls';
+import {
+  editGrabberImageToAsset,
+  IMAGE_GRABBER_UPLOAD_TYPES,
+  importGrabberAssetFromUrl,
+  isLikelyImageUrl,
+  isSupportedGrabberUpload,
+  normalizeHttpUrl,
+  uploadGrabberAsset,
+} from '@/lib/imageGrabber';
 import { PageEditorSkeleton } from '@/components/PageEditorSkeleton';
 import {
   createCustomBlockSpecs,
@@ -148,19 +159,12 @@ function isTrulyEmptyParagraph(block: { type: string; content: unknown }) {
     ));
 }
 
-const ALLOWED_UPLOAD_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf', 'text/plain', 'text/markdown'];
-
 function isSupportedUpload(file: File): boolean {
-  return file.size <= 20 * 1024 * 1024 && ALLOWED_UPLOAD_TYPES.includes(file.type.toLowerCase());
+  return isSupportedGrabberUpload(file, IMAGE_GRABBER_UPLOAD_TYPES);
 }
 
 function getPastedUrl(value: string): string | null {
-  try {
-    const url = new URL(value.trim());
-    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null;
-  } catch {
-    return null;
-  }
+  return normalizeHttpUrl(value);
 }
 
 function parseTimestamp(value: string): number | null {
@@ -226,12 +230,7 @@ async function saveEditedImageToPage(pageId: string, blockId: string, url: strin
 }
 
 function isImageUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return /\.(?:png|jpe?g|gif|webp)(?:$|[?#])/i.test(url.pathname + url.search);
-  } catch {
-    return false;
-  }
+  return isLikelyImageUrl(value);
 }
 
 function migrateLegacyImageBlocks(blocks: PartialBlock[]): { blocks: PartialBlock[]; changed: boolean } {
@@ -422,6 +421,7 @@ export function PageEditor({ pageId, initialPages = [] }: { pageId: string; init
   const [hostCollection, setHostCollection] = useState<CollectionSummary | null>(null);
   const [pageCollections, setPageCollections] = useState<CollectionSummary[]>([]);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
+  const [iconPickerPosition, setIconPickerPosition] = useState<{ top: number; left: number } | null>(null);
   const [uploadTasks, setUploadTasks] = useState<UploadTask[]>([]);
   const [coverUrlOpen, setCoverUrlOpen] = useState(false);
   const [coverUrl, setCoverUrl] = useState('');
@@ -470,32 +470,21 @@ export function PageEditor({ pageId, initialPages = [] }: { pageId: string; init
     setUploadTasks((current) => current.filter((task) => task.id !== taskId));
   }, []);
 
-  const importAssetFromUrl = useCallback(async (url: string): Promise<AssetRecord> => {
-    const response = await fetch('/api/assets/import', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ url }),
-    });
-    const payload = (await response.json().catch(() => ({}))) as { asset?: AssetRecord; error?: string };
-    if (!response.ok || !payload.asset) {
-      throw new Error(payload.error || 'Image import failed');
-    }
-    setAssets((current) => [payload.asset!, ...current.filter((existing) => existing.id !== payload.asset!.id)]);
-    return payload.asset;
+  const rememberAsset = useCallback((asset: AssetRecord) => {
+    setAssets((current) => [asset, ...current.filter((existing) => existing.id !== asset.id)]);
   }, []);
 
-  const uploadAssetRecord = useCallback(async (file: File): Promise<AssetRecord> => {
-    const form = new FormData();
-    form.append('file', file);
-    const response = await fetch('/api/assets', { method: 'POST', body: form });
-    const payload = (await response.json().catch(() => ({}))) as { asset?: AssetRecord; error?: string };
-    if (!response.ok || !payload.asset) {
-      throw new Error(payload.error || 'Upload failed');
-    }
-    const asset = payload.asset;
-    setAssets((current) => [asset, ...current.filter((existing) => existing.id !== asset.id)]);
+  const importAssetFromUrl = useCallback(async (url: string): Promise<AssetRecord> => {
+    const asset = await importGrabberAssetFromUrl(url) as AssetRecord;
+    rememberAsset(asset);
     return asset;
-  }, []);
+  }, [rememberAsset]);
+
+  const uploadAssetRecord = useCallback(async (file: File): Promise<AssetRecord> => {
+    const asset = await uploadGrabberAsset(file) as AssetRecord;
+    rememberAsset(asset);
+    return asset;
+  }, [rememberAsset]);
 
   const editor = useCreateBlockNote({
     schema: useMemo(
@@ -922,8 +911,29 @@ export function PageEditor({ pageId, initialPages = [] }: { pageId: string; init
     }
   }, []);
 
+  const openIconPicker = useCallback(() => {
+    const trigger = iconTriggerRef.current;
+    if (trigger) {
+      const bounds = trigger.getBoundingClientRect();
+      const popupWidth = 440;
+      const popupHeight = 560;
+      const margin = 8;
+      const belowTop = bounds.bottom + margin;
+      const aboveTop = bounds.top - popupHeight - margin;
+      const top = belowTop + popupHeight <= window.innerHeight - margin ? belowTop : aboveTop;
+      setIconPickerPosition({
+        top: Math.max(margin, top),
+        left: Math.max(margin, Math.min(bounds.left, window.innerWidth - popupWidth - margin)),
+      });
+    } else {
+      setIconPickerPosition(null);
+    }
+    setIconPickerOpen(true);
+  }, []);
+
   const closeIconPicker = useCallback((reason: 'escape' | 'outside' | 'button') => {
     setIconPickerOpen(false);
+    setIconPickerPosition(null);
     if (reason !== 'outside') {
       window.requestAnimationFrame(() => iconTriggerRef.current?.focus());
     }
@@ -1667,24 +1677,9 @@ export function PageEditor({ pageId, initialPages = [] }: { pageId: string; init
     setGeneratingImage({ pageId, top: imageHover.imageTop, left: imageHover.imageLeft, width: imageHover.width, height: imageHover.height });
     setStatusMessage('Applying image edit…');
     try {
-      const source = imageHover.url.startsWith('/') ? `${window.location.origin}${imageHover.url}` : imageHover.url;
-      const response = await fetch('/api/image-edit', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ image: source, prompt: imagePrompt.trim() }),
-      });
-      const payload = await response.json() as { image?: string; error?: string };
-      if (!response.ok || !payload.image) throw new Error(payload.error || 'Image edit failed.');
-      const imageBlob = await fetch(payload.image).then(async (result) => {
-        if (!result.ok) throw new Error('Edited image could not be read.');
-        return result.blob();
-      });
-      const upload = new FormData();
-      upload.append('file', new File([imageBlob], 'codex-edit.png', { type: 'image/png' }));
-      const uploadResponse = await fetch('/api/assets', { method: 'POST', body: upload });
-      const uploadPayload = await uploadResponse.json() as { asset?: AssetRecord; error?: string };
-      if (!uploadResponse.ok || !uploadPayload.asset) throw new Error(uploadPayload.error || 'Edited image could not be saved to the media library.');
-      const editedUrl = `/api/assets/${uploadPayload.asset.id}`;
+      const grabbed = await editGrabberImageToAsset(imageHover.url, imagePrompt);
+      rememberAsset(grabbed.asset as AssetRecord);
+      const editedUrl = grabbed.url;
       if (isPagePathForId(window.location.pathname, pageId, allPages)) {
         editor.updateBlock(imageHover.blockId, { props: { url: editedUrl } });
         window.requestAnimationFrame(() => { void savePage(); });
@@ -1909,7 +1904,7 @@ export function PageEditor({ pageId, initialPages = [] }: { pageId: string; init
           {!hostCollection && ((!page.icon && !page.iconAssetId) || !coverAsset) ? (
             <div className="page-media-affordances" aria-label="Page appearance">
               {!page.icon && !page.iconAssetId ? (
-                <button ref={setIconTrigger} key="add-icon" type="button" aria-haspopup="dialog" aria-expanded={iconPickerOpen} disabled={isDeleted} onClick={() => setIconPickerOpen(true)}>Add icon</button>
+                <button ref={setIconTrigger} key="add-icon" type="button" aria-haspopup="dialog" aria-expanded={iconPickerOpen} disabled={isDeleted} onClick={() => { if (iconPickerOpen) { closeIconPicker('button'); return; } openIconPicker(); }}>Add icon</button>
               ) : null}
               {!coverAsset ? <>
                 <button type="button" disabled={isDeleted} onClick={() => coverUploadRef.current?.click()}>Add cover</button>
@@ -1920,7 +1915,7 @@ export function PageEditor({ pageId, initialPages = [] }: { pageId: string; init
           <div className="page-title-row">
             {page.icon || page.iconAssetId ? (
               <div className="page-icon-wrap">
-                <button ref={setIconTrigger} key={`icon-${page.icon ?? page.iconAssetId}`} type="button" className="page-icon" aria-label="Change page icon" aria-haspopup="dialog" aria-expanded={iconPickerOpen} disabled={isDeleted} onClick={() => setIconPickerOpen((open) => !open)}><PageIcon icon={page.icon} iconAssetId={page.iconAssetId} /></button>
+                <button ref={setIconTrigger} key={`icon-${page.icon ?? page.iconAssetId}`} type="button" className="page-icon" aria-label="Change page icon" aria-haspopup="dialog" aria-expanded={iconPickerOpen} disabled={isDeleted} onClick={() => { if (iconPickerOpen) { closeIconPicker('button'); return; } openIconPicker(); }}><PageIcon icon={page.icon} iconAssetId={page.iconAssetId} /></button>
               </div>
             ) : null}
             <textarea className="page-title" rows={1} value={title} onChange={onTitleInput} placeholder="Untitled" disabled={isDeleted} />
@@ -1932,7 +1927,9 @@ export function PageEditor({ pageId, initialPages = [] }: { pageId: string; init
               currentIconAssetId={page.iconAssetId}
               onSelect={selectPageIcon}
               onSelectAsset={selectPageIconAsset}
-              onUploadIcon={() => iconUploadRef.current?.click()}
+              onUploadIconFile={async (file) => {
+                await uploadAndHandleTask(file, 'icon');
+              }}
               onImportIconUrl={async (url) => {
                 const asset = await importAssetFromUrl(url);
                 selectPageIconAsset(asset.id);
@@ -1940,6 +1937,7 @@ export function PageEditor({ pageId, initialPages = [] }: { pageId: string; init
               }}
               onRemove={removePageIcon}
               onClose={closeIconPicker}
+              style={iconPickerPosition ? { position: 'fixed', top: iconPickerPosition.top, left: iconPickerPosition.left, transform: 'none' } : undefined}
             />
           ) : null}
           {status !== 'saving' && (!hostCollection || status === 'error' || status === 'conflict') ? (
@@ -1955,25 +1953,93 @@ export function PageEditor({ pageId, initialPages = [] }: { pageId: string; init
         <input ref={bodyUploadRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown" multiple onChange={(event) => chooseUpload(event, 'body')} disabled={isDeleted} />
 
         {coverUrlOpen ? (
-          <form className="media-url-form" aria-label="Add cover from URL" onSubmit={(event) => void addCoverFromUrl(event)}>
-            <label htmlFor="cover-image-url">Cover image URL<input id="cover-image-url" type="url" value={coverUrl} onChange={(event) => setCoverUrl(event.target.value)} placeholder="https://example.com/image.jpg" /></label>
-            <button type="submit" className="primary-btn" disabled={isDeleted || !coverUrl.trim()}>Use image</button>
-            <button type="button" onClick={() => { setCoverUrl(''); setCoverUrlOpen(false); }}>Cancel</button>
-          </form>
+          <ImageGrabberPopup
+            title="Add cover"
+            className="image-grabber-popup cover-grabber-panel"
+            onClose={() => { setCoverUrl(''); setCoverUrlOpen(false); }}
+            info={(
+              <ImagePopupSection title="Paste or upload" description="Paste a link, paste an image, or upload from disk." editorOnly>
+                <ImageGrabberPanel
+                  title="Cover image"
+                  className="image-grabber-panel"
+                  onPaste={(event) => {
+                    const { text, imageFile } = extractGrabberPaste(event);
+                    if (imageFile) {
+                      event.preventDefault();
+                      void uploadAndHandleTask(imageFile, 'cover');
+                      return;
+                    }
+                    if (text) {
+                      const pasted = normalizeHttpUrl(text);
+                      if (pasted) {
+                        event.preventDefault();
+                        setCoverUrl(pasted);
+                      }
+                    }
+                  }}
+                >
+                  <ImageGrabberUrlForm
+                    label="Image URL"
+                    inputId="cover-image-url"
+                    value={coverUrl}
+                    submitLabel="Use image"
+                    disabled={isDeleted}
+                    className="image-grabber-url-form"
+                    onChange={setCoverUrl}
+                    onSubmit={(event) => void addCoverFromUrl(event)}
+                  >
+                    <button type="button" disabled={isDeleted} onClick={() => coverUploadRef.current?.click()}>Upload image</button>
+                  </ImageGrabberUrlForm>
+                </ImageGrabberPanel>
+              </ImagePopupSection>
+            )}
+          />
         ) : null}
 
         {imageUrlOpen ? (
-          <form
-            className="media-url-form image-url-popover"
-            aria-label="Insert image from URL"
+          <ImageGrabberPopup
+            title="Add image"
+            className="image-grabber-popup image-url-popover"
             style={imageUrlPosition ? { top: imageUrlPosition.top, left: imageUrlPosition.left } : undefined}
-            onSubmit={(event) => void addImageFromUrl(event)}
-          >
-            <label htmlFor="editor-image-url">Image URL<input id="editor-image-url" type="url" autoFocus value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="https://example.com/image.jpg" /></label>
-            <button type="submit" className="primary-btn" disabled={isDeleted || !imageUrl.trim()}>Insert image</button>
-            <button type="button" disabled={isDeleted} onClick={() => bodyUploadRef.current?.click()}>Choose file</button>
-            <button type="button" onClick={() => { setImageUrl(''); setImageUrlOpen(false); setImageUrlPosition(null); }}>Cancel</button>
-          </form>
+            onClose={() => { setImageUrl(''); setImageUrlOpen(false); setImageUrlPosition(null); }}
+            info={(
+              <ImagePopupSection title="Paste or upload" description="Paste a link, paste an image, or upload from disk." editorOnly>
+                <ImageGrabberPanel
+                  title="Page image"
+                  className="image-grabber-panel"
+                  onPaste={(event) => {
+                    const { text, imageFile } = extractGrabberPaste(event);
+                    if (imageFile) {
+                      event.preventDefault();
+                      void uploadAndHandleTask(imageFile, 'body');
+                      return;
+                    }
+                    if (text) {
+                      const pasted = normalizeHttpUrl(text);
+                      if (pasted) {
+                        event.preventDefault();
+                        setImageUrl(pasted);
+                      }
+                    }
+                  }}
+                >
+                  <ImageGrabberUrlForm
+                    label="Image URL"
+                    inputId="editor-image-url"
+                    value={imageUrl}
+                    submitLabel="Insert image"
+                    autoFocus
+                    disabled={isDeleted}
+                    className="image-grabber-url-form"
+                    onChange={setImageUrl}
+                    onSubmit={(event) => void addImageFromUrl(event)}
+                  >
+                    <button type="button" disabled={isDeleted} onClick={() => bodyUploadRef.current?.click()}>Upload image</button>
+                  </ImageGrabberUrlForm>
+                </ImageGrabberPanel>
+              </ImagePopupSection>
+            )}
+          />
         ) : null}
 
         {uploadTasks.length ? (
@@ -2042,11 +2108,21 @@ export function PageEditor({ pageId, initialPages = [] }: { pageId: string; init
           ) : null}
           {imageHover && imageHover.pageId === pageId && !captionEditor ? (
             <div className="image-actions-popover" style={{ top: imageHover.top, left: imageHover.left }}>
-              <form className="image-prompt-editor" onSubmit={(event) => void applyImagePrompt(event)}>
-                <label htmlFor="image-ai-prompt" className="visually-hidden">Describe image edit</label>
-                <input id="image-ai-prompt" autoFocus value={imagePrompt} onChange={(event) => setImagePrompt(event.target.value)} placeholder="Make her look sad…" disabled={imagePromptBusy || isDeleted} />
-                <button type="submit" className="primary-btn" disabled={imagePromptBusy || isDeleted || !imagePrompt.trim()}>{imagePromptBusy ? '…' : 'Apply'}</button>
-              </form>
+              <ImageGrabberPromptForm
+                label="Describe image edit"
+                inputId="image-ai-prompt"
+                value={imagePrompt}
+                placeholder="Make her look sad…"
+                submitLabel="Apply"
+                busyLabel="…"
+                busy={imagePromptBusy}
+                disabled={isDeleted}
+                autoFocus
+                className="image-prompt-editor"
+                visuallyHiddenLabel
+                onChange={setImagePrompt}
+                onSubmit={(event) => void applyImagePrompt(event)}
+              />
               <button type="button" className="image-caption-trigger" onClick={openCaptionEditor}>{imageHover.caption ? 'Edit caption' : 'Add caption'}</button>
             </div>
           ) : null}

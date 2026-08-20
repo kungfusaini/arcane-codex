@@ -4,11 +4,19 @@ import {
   createReactBlockSpec,
   type DefaultReactSuggestionItem,
 } from '@blocknote/react';
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type TouchEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type TouchEvent } from 'react';
+import { PageIcon } from '@/components/PageIcon';
+import { buildPagePathFromPages } from '@/lib/pageUrls';
+import { editGrabberImageToAsset, normalizeHttpUrl } from '@/lib/imageGrabber';
+import { ImageGrabberPromptForm, ImageGrabberStrip, ImageGrabberUrlForm } from '@/components/ImageGrabberControls';
 
 export type ReferencedPage = {
+  id: string;
+  parentId: string | null;
+  sortKey: number;
   title: string;
   icon: string | null;
+  iconAssetId: string | null;
 };
 
 export type CustomBlockContext = {
@@ -84,7 +92,7 @@ function readGalleryState(block: { id: string; props: Record<string, unknown> })
   const images = readGalleryImages(block.props.images);
   const mode = block.props.mode === 'single' ? 'single' : 'grid';
   const groupCaption = typeof block.props.groupCaption === 'string' ? block.props.groupCaption : '';
-  const columns = Math.min(4, Math.max(1, Number(block.props.columns) || 3));
+  const columns = Math.min(6, Math.max(1, Number(block.props.columns) || 3));
   const width = Math.min(100, Math.max(5, Number(block.props.width) || 100));
   return { images, mode, groupCaption, columns, width };
 }
@@ -222,12 +230,10 @@ function GalleryBlock({
   block,
   editor,
   importAssetFromUrl,
-  uploadAssetRecord,
 }: {
   block: { id: string; props: Record<string, unknown> };
   editor: BlockNoteEditor<any>;
   importAssetFromUrl: CustomBlockContext['importAssetFromUrl'];
-  uploadAssetRecord: CustomBlockContext['uploadAssetRecord'];
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [draftWidth, setDraftWidth] = useState<number | null>(null);
@@ -235,6 +241,7 @@ function GalleryBlock({
   const resizeRef = useRef<{ startX: number; startWidth: number; parentWidth: number; pointerId: number } | null>(null);
   const { images, mode, groupCaption, columns, width } = readGalleryState(block);
   const editorOpen = block.props.editorOpen === true;
+  const gridColumns = mode === 'grid' ? Math.min(images.length || 1, columns) : columns;
   const renderedWidth = draftWidth ?? width;
   const safeActiveIndex = images.length ? Math.min(activeIndex, images.length - 1) : 0;
   const activeImage = images[safeActiveIndex];
@@ -295,7 +302,6 @@ function GalleryBlock({
         blockId={block.id}
         editor={editor}
         importAssetFromUrl={importAssetFromUrl}
-        uploadAssetRecord={uploadAssetRecord}
         onClose={() => updateBlock({ editorOpen: false })}
       />
     );
@@ -319,7 +325,7 @@ function GalleryBlock({
           {groupCaption ? <figcaption className="gallery-group-caption">{groupCaption}</figcaption> : null}
         </>
       ) : images.length ? (
-        <div className="gallery-grid" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+        <div className="gallery-grid" style={{ gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }}>
           {images.map((image, index) => (
             <figure className="gallery-item" key={`${image.url}-${index}`}>
               <img src={image.url} alt={image.name} />
@@ -347,28 +353,36 @@ export function GalleryWidgetEditorShell({
   blockId,
   editor,
   importAssetFromUrl,
-  uploadAssetRecord,
   onClose,
 }: {
   blockId: string;
   editor: BlockNoteEditor<any>;
   importAssetFromUrl: CustomBlockContext['importAssetFromUrl'];
-  uploadAssetRecord: CustomBlockContext['uploadAssetRecord'];
   onClose: () => void;
 }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const addUrlInputRef = useRef<HTMLInputElement>(null);
   const block = editor.getBlock(blockId) as { id: string; props: Record<string, unknown> } | undefined;
   const [url, setUrl] = useState('');
+  const [showAddUrl, setShowAddUrl] = useState(false);
   const [error, setError] = useState('');
+  const [imagePrompt, setImagePrompt] = useState('');
+  const [imagePromptBusy, setImagePromptBusy] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [draftWidth, setDraftWidth] = useState<number | null>(null);
   const touchStartX = useRef<number | null>(null);
-  const resizeRef = useRef<{ startX: number; startWidth: number; parentWidth: number; pointerId: number } | null>(null);
 
   const state = block ? readGalleryState(block) : { images: [], mode: 'grid' as const, groupCaption: '', columns: 3, width: 100 };
   const { images, mode, groupCaption, columns, width } = state;
-  const renderedWidth = draftWidth ?? width;
+  const gridColumns = mode === 'grid' ? Math.min(images.length || 1, columns) : columns;
+  const renderedWidth = width;
   const safeActiveIndex = images.length ? Math.min(activeIndex, images.length - 1) : 0;
   const activeImage = images[safeActiveIndex];
+
+  useEffect(() => {
+    if (showAddUrl) {
+      addUrlInputRef.current?.focus();
+    }
+  }, [showAddUrl]);
 
   useEffect(() => {
     const dismissWithEscape = (event: KeyboardEvent) => {
@@ -377,8 +391,17 @@ export function GalleryWidgetEditorShell({
         onClose();
       }
     };
+    const dismissOutside = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        onClose();
+      }
+    };
     document.addEventListener('keydown', dismissWithEscape, true);
-    return () => document.removeEventListener('keydown', dismissWithEscape, true);
+    document.addEventListener('pointerdown', dismissOutside);
+    return () => {
+      document.removeEventListener('keydown', dismissWithEscape, true);
+      document.removeEventListener('pointerdown', dismissOutside);
+    };
   }, [onClose]);
 
   if (!block) {
@@ -391,63 +414,59 @@ export function GalleryWidgetEditorShell({
 
   const updateImages = (nextImages: GalleryImage[]) => updateBlock({ images: JSON.stringify(nextImages), mode, columns, groupCaption, width });
 
-  const startResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const parent = event.currentTarget.parentElement?.parentElement;
-    if (!parent) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    resizeRef.current = { startX: event.clientX, startWidth: width, parentWidth: parent.parentElement?.getBoundingClientRect().width || parent.getBoundingClientRect().width, pointerId: event.pointerId };
+  const duplicateActiveImage = () => {
+    if (!activeImage) return;
+    const nextImages = [...images.slice(0, safeActiveIndex + 1), { ...activeImage }, ...images.slice(safeActiveIndex + 1)];
+    updateImages(nextImages);
+    setActiveIndex(safeActiveIndex + 1);
   };
 
-  const resize = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const current = resizeRef.current;
-    if (!current || current.pointerId !== event.pointerId) return;
-    const nextWidth = Math.min(100, Math.max(5, current.startWidth + ((event.clientX - current.startX) / Math.max(current.parentWidth, 1)) * 100));
-    setDraftWidth(nextWidth);
+  const moveSelectedImage = (direction: -1 | 1) => {
+    const nextIndex = safeActiveIndex + direction;
+    if (!activeImage || nextIndex < 0 || nextIndex >= images.length) return;
+    const nextImages = [...images];
+    [nextImages[safeActiveIndex], nextImages[nextIndex]] = [nextImages[nextIndex], nextImages[safeActiveIndex]];
+    updateImages(nextImages);
+    setActiveIndex(nextIndex);
   };
 
-  const finishResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  const applyImagePrompt = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    event.stopPropagation();
-    const current = resizeRef.current;
-    if (!current || current.pointerId !== event.pointerId) return;
-    resizeRef.current = null;
-    const nextWidth = draftWidth ?? width;
-    updateBlock({ images: JSON.stringify(images), mode, columns, groupCaption, width: Math.round(nextWidth) });
-    setDraftWidth(null);
-    event.currentTarget.releasePointerCapture(event.pointerId);
+    if (!activeImage || !imagePrompt.trim() || imagePromptBusy) return;
+    setImagePromptBusy(true);
+    try {
+      const grabbed = await editGrabberImageToAsset(activeImage.url, imagePrompt);
+      const nextImages = images.map((image, index) => index === safeActiveIndex ? { ...image, url: grabbed.url, name: grabbed.name } : image);
+      updateImages(nextImages);
+      setImagePrompt('');
+      setError('');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Image edit failed');
+    } finally {
+      setImagePromptBusy(false);
+    }
   };
 
   const addUrl = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmedUrl = url.trim();
+    if (!trimmedUrl) {
+      setError('Paste an image URL first.');
+      return;
+    }
     try {
-      const parsed = new URL(trimmedUrl);
-      if (!['http:', 'https:'].includes(parsed.protocol)) {
+      const normalized = normalizeHttpUrl(trimmedUrl);
+      if (!normalized) {
         throw new Error('Enter a valid HTTP(S) image URL.');
       }
-      const asset = await importAssetFromUrl(parsed.toString());
+      const asset = await importAssetFromUrl(normalized);
       updateImages([...images, { url: `/api/assets/${asset.id}`, name: asset.filename, caption: '' }]);
+      setActiveIndex(images.length);
       setUrl('');
+      setShowAddUrl(false);
       setError('');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Image import failed');
-    }
-  };
-
-  const addUploads = async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.currentTarget.files ?? []);
-    try {
-      const uploaded = await Promise.all(files.map(uploadAssetRecord));
-      updateImages([...images, ...uploaded.map((asset) => ({ url: `/api/assets/${asset.id}`, name: asset.filename, caption: '' }))]);
-      setError('');
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Upload failed');
-    } finally {
-      event.currentTarget.value = '';
     }
   };
 
@@ -477,13 +496,12 @@ export function GalleryWidgetEditorShell({
   };
 
   return (
-    <section className="gallery-widget-shell" aria-label="Gallery settings">
+    <section ref={rootRef} className="gallery-widget-shell" aria-label="Gallery settings">
       <header className="gallery-widget-shell-header">
         <div>
           <p className="gallery-widget-kicker">Widget settings</p>
           <h2>Gallery</h2>
         </div>
-        <button type="button" className="gallery-widget-close" onClick={onClose}>Close</button>
       </header>
       <div className="gallery-widget-shell-body">
         <section className="gallery-widget-preview" aria-label="Gallery preview">
@@ -502,7 +520,7 @@ export function GalleryWidgetEditorShell({
                 {groupCaption ? <figcaption className="gallery-group-caption">{groupCaption}</figcaption> : null}
               </>
             ) : images.length ? (
-              <div className="gallery-grid" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+              <div className="gallery-grid" style={{ gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }}>
                 {images.map((image, index) => (
                   <figure className="gallery-item" key={`${image.url}-${index}`}>
                     <img src={image.url} alt={image.name} />
@@ -517,7 +535,66 @@ export function GalleryWidgetEditorShell({
         </section>
 
         <aside className="gallery-widget-panel">
-          <div className="gallery-widget-section">
+          <section className="gallery-widget-section gallery-widget-primary-section" aria-label="Selected image controls">
+            <div className="gallery-widget-section-heading">
+              <h3>Selected image</h3>
+              <span>{activeImage ? `${safeActiveIndex + 1} of ${images.length}` : 'No image selected'}</span>
+            </div>
+            <ImageGrabberStrip
+              images={images}
+              activeIndex={safeActiveIndex}
+              onSelect={setActiveIndex}
+              onAdd={() => setShowAddUrl((current) => !current)}
+            />
+            {showAddUrl ? (
+              <ImageGrabberUrlForm
+                label="Paste image URL"
+                value={url}
+                submitLabel="Add image"
+                className="gallery-widget-url-form gallery-widget-inline-form"
+                fieldClassName="gallery-widget-field"
+                submitClassName=""
+                inputRef={addUrlInputRef}
+                onChange={setUrl}
+                onSubmit={addUrl}
+                onCancel={() => { setShowAddUrl(false); setUrl(''); }}
+              />
+            ) : null}
+            <label className="gallery-widget-field">Caption
+              <input type="text" value={activeImage?.caption ?? ''} onChange={(event) => updateCaption(safeActiveIndex, event.target.value)} placeholder="Add a caption" disabled={!activeImage} />
+            </label>
+            <div className="gallery-widget-actions">
+              <button type="button" onClick={() => moveSelectedImage(-1)} disabled={!activeImage || safeActiveIndex === 0}>Move left</button>
+              <button type="button" onClick={() => moveSelectedImage(1)} disabled={!activeImage || safeActiveIndex >= images.length - 1}>Move right</button>
+              <button type="button" onClick={duplicateActiveImage} disabled={!activeImage}>Duplicate</button>
+              <button type="button" onClick={() => removeImage(safeActiveIndex)} disabled={!activeImage}>Remove</button>
+            </div>
+          </section>
+
+          <section className="gallery-widget-section" aria-label="AI edit current image">
+            <ImageGrabberPromptForm
+              label="Prompt"
+              value={imagePrompt}
+              placeholder="Make her look sad"
+              submitLabel="Apply edit"
+              busy={imagePromptBusy}
+              disabled={!activeImage}
+              className="gallery-widget-ai-form"
+              fieldClassName="gallery-widget-field"
+              submitClassName=""
+              heading={(
+                <div className="gallery-widget-section-heading">
+                  <h3>AI edit</h3>
+                  <span>Current image only</span>
+                </div>
+              )}
+              onChange={setImagePrompt}
+              onSubmit={applyImagePrompt}
+            />
+          </section>
+
+          <section className="gallery-widget-section" aria-label="Gallery appearance">
+            <div className="gallery-widget-section-heading"><h3>Appearance</h3></div>
             <label className="gallery-widget-field">Display
               <select value={mode} onChange={(event) => updateBlock({ images: JSON.stringify(images), mode: event.target.value, columns, groupCaption, width })}>
                 <option value="grid">Grid</option>
@@ -527,32 +604,15 @@ export function GalleryWidgetEditorShell({
             <label className="gallery-widget-field">Width
               <input type="range" min={5} max={100} step={1} value={renderedWidth} onChange={(event) => updateBlock({ images: JSON.stringify(images), mode, columns, groupCaption, width: Number(event.currentTarget.value) })} />
             </label>
+            <label className="gallery-widget-field">Columns
+              <input type="range" min={1} max={6} step={1} value={columns} onChange={(event) => updateBlock({ images: JSON.stringify(images), mode, columns: Number(event.currentTarget.value), groupCaption, width })} disabled={mode !== 'grid'} />
+              <span>{gridColumns} per row</span>
+            </label>
             <label className="gallery-widget-field">Group caption
               <input type="text" value={groupCaption} onChange={(event) => updateBlock({ images: JSON.stringify(images), mode, columns, groupCaption: event.target.value, width })} placeholder="Add a group caption" />
             </label>
-          </div>
-
-          <div className="gallery-widget-section">
-            <form className="gallery-widget-url-form" onSubmit={addUrl}>
-              <label className="gallery-widget-field">Image URL
-                <input type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://example.com/image.jpg" />
-              </label>
-              <button type="submit" disabled={!url.trim()}>Add URL</button>
-            </form>
-            <label className="gallery-widget-upload">Upload images
-              <input className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple onChange={addUploads} />
-            </label>
-            {error ? <p className="gallery-error" role="alert">{error}</p> : null}
-          </div>
-
-          <div className="gallery-widget-section">
-            <h3>Captions</h3>
-            <div className="gallery-widget-caption-grid">
-              {images.map((image, index) => <label key={`caption-${image.url}-${index}`} className="gallery-widget-field">Caption {index + 1}
-                <input type="text" value={image.caption ?? ''} onChange={(event) => updateCaption(index, event.target.value)} placeholder="Add a caption" />
-              </label>)}
-            </div>
-          </div>
+          </section>
+          {error ? <p className="gallery-error" role="alert">{error}</p> : null}
         </aside>
       </div>
     </section>
@@ -577,11 +637,12 @@ const pageLinkBlock: CustomBlockRegistration = {
         const propsByType = props.block.props as { pageId?: string; title?: string; icon?: string; url?: string };
         const pageId = String(propsByType.pageId || '');
         const externalUrl = String(propsByType.url || '');
+        const fallbackReference = { id: pageId, parentId: null, sortKey: 0, title: propsByType.icon ? String(propsByType.title || 'Page').replace(/^\S+\s/, '') : String(propsByType.title || 'Page'), icon: propsByType.icon || null, iconAssetId: null };
         const reference = pageId
-          ? referencedPages.get(pageId) ?? { title: propsByType.icon ? String(propsByType.title || 'Page').replace(/^\S+\s/, '') : String(propsByType.title || 'Page'), icon: propsByType.icon || null }
-          : { title: propsByType.title || (externalUrl ? getUrlTitle(externalUrl) : 'Page'), icon: propsByType.icon || null };
+          ? referencedPages.get(pageId) ?? fallbackReference
+          : { id: '', parentId: null, sortKey: 0, title: propsByType.title || (externalUrl ? getUrlTitle(externalUrl) : 'Page'), icon: propsByType.icon || null, iconAssetId: null };
         const label = `${reference.icon ? `${reference.icon} ` : ''}${reference.title || String(propsByType.title || 'Page')}`;
-        const href = externalUrl || (pageId ? `/page/${pageId}` : '#');
+        const href = externalUrl || (pageId ? buildPagePathFromPages(pageId, referencedPages.size ? Array.from(referencedPages.values()) : [reference]) : '#');
 
         const openPage = (event: MouseEvent<HTMLAnchorElement>) => {
           if (!pageId) {
@@ -602,7 +663,7 @@ const pageLinkBlock: CustomBlockRegistration = {
             contentEditable={false}
             draggable={false}
           >
-            <span className="page-link-icon" aria-hidden="true">{reference.icon || '📄'}</span>
+            <PageIcon className="page-link-icon" icon={reference.icon} iconAssetId={reference.iconAssetId} />
             <span className="page-link-title">{reference.title || String(propsByType.title || 'Page')}</span>
           </a>
         );
@@ -611,12 +672,13 @@ const pageLinkBlock: CustomBlockRegistration = {
         const propsByType = props.block.props as { pageId?: string; title?: string; icon?: string; url?: string };
         const pageId = String(propsByType.pageId || '');
         const externalUrl = String(propsByType.url || '');
+        const fallbackReference = { id: pageId, parentId: null, sortKey: 0, title: propsByType.icon ? String(propsByType.title || 'Page').replace(/^\S+\s/, '') : String(propsByType.title || 'Page'), icon: propsByType.icon || null, iconAssetId: null };
         const reference = pageId
-          ? referencedPages.get(pageId) ?? { title: propsByType.icon ? String(propsByType.title || 'Page').replace(/^\S+\s/, '') : String(propsByType.title || 'Page'), icon: propsByType.icon || null }
-          : { title: propsByType.title || (externalUrl ? getUrlTitle(externalUrl) : 'Page'), icon: propsByType.icon || null };
+          ? referencedPages.get(pageId) ?? fallbackReference
+          : { id: '', parentId: null, sortKey: 0, title: propsByType.title || (externalUrl ? getUrlTitle(externalUrl) : 'Page'), icon: propsByType.icon || null, iconAssetId: null };
         return (
-          <a href={externalUrl || (pageId ? `/page/${pageId}` : '#')} target={externalUrl ? '_blank' : undefined} rel={externalUrl ? 'noreferrer' : undefined}>
-            <span aria-hidden="true">{reference.icon || '📄'}</span>
+          <a href={externalUrl || (pageId ? buildPagePathFromPages(pageId, referencedPages.size ? Array.from(referencedPages.values()) : [reference]) : '#')} target={externalUrl ? '_blank' : undefined} rel={externalUrl ? 'noreferrer' : undefined}>
+            <PageIcon icon={reference.icon} iconAssetId={reference.iconAssetId} />
             <span>{reference.title || String(propsByType.title || 'Page')}</span>
           </a>
         );
@@ -651,7 +713,7 @@ const youtubeBlock: CustomBlockRegistration = {
 
 const galleryBlock: CustomBlockRegistration = {
   type: 'gallery',
-  create: ({ importAssetFromUrl, uploadAssetRecord }) => createReactBlockSpec(
+  create: ({ importAssetFromUrl }) => createReactBlockSpec(
     {
       type: 'gallery',
       propSchema: {
@@ -671,7 +733,6 @@ const galleryBlock: CustomBlockRegistration = {
           block={props.block as unknown as { id: string; props: Record<string, unknown> }}
           editor={props.editor}
           importAssetFromUrl={importAssetFromUrl}
-          uploadAssetRecord={uploadAssetRecord}
         />
       ),
       toExternalHTML: (props) => {

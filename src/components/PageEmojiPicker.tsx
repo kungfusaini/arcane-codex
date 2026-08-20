@@ -1,6 +1,8 @@
 'use client';
 
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { type ClipboardEvent, type CSSProperties, FormEvent, useEffect, useRef, useState } from 'react';
+import { extractGrabberPaste, ImageGrabberPanel, ImageGrabberPromptForm, ImageGrabberUploadButton, ImageGrabberUrlForm } from '@/components/ImageGrabberControls';
+import { ImageGrabberPopup, ImagePopupSection } from '@/components/ImageGrabberPopup';
 
 type EmojiSelection = {
   native?: string;
@@ -17,15 +19,17 @@ type PageEmojiPickerProps = {
   currentIconAssetId: string | null;
   onSelect: (emoji: string) => void;
   onSelectAsset: (assetId: string) => void;
-  onUploadIcon: () => void;
+  onUploadIconFile: (file: File) => Promise<void>;
   onImportIconUrl: (url: string) => Promise<void>;
   onRemove: () => void;
   onClose: (reason: 'escape' | 'outside' | 'button') => void;
+  style?: CSSProperties;
 };
 
-export function PageEmojiPicker({ pageId, currentIcon, currentIconAssetId, onSelect, onSelectAsset, onUploadIcon, onImportIconUrl, onRemove, onClose }: PageEmojiPickerProps) {
-  const rootRef = useRef<HTMLDivElement>(null);
+export function PageEmojiPicker({ pageId, currentIcon, currentIconAssetId, onSelect, onSelectAsset, onUploadIconFile, onImportIconUrl, onRemove, onClose, style }: PageEmojiPickerProps) {
+  const rootRef = useRef<HTMLElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
   const selectRef = useRef(onSelect);
   const assetSelectRef = useRef(onSelectAsset);
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -154,6 +158,11 @@ export function PageEmojiPicker({ pageId, currentIcon, currentIconAssetId, onSel
     }
   };
 
+  const generateIcon = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await submitGeneratedIcon(prompt);
+  };
+
   const addIconFromUrl = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmed = iconUrl.trim();
@@ -175,84 +184,151 @@ export function PageEmojiPicker({ pageId, currentIcon, currentIconAssetId, onSel
     }
   };
 
-  const generateIcon = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    await submitGeneratedIcon(prompt);
+  const handlePaste = (event: ClipboardEvent<HTMLElement>) => {
+    const { text, imageFile } = extractGrabberPaste(event);
+    if (imageFile) {
+      event.preventDefault();
+      void onUploadIconFile(imageFile);
+      return;
+    }
+    if (text) {
+      try {
+        const parsed = new URL(text);
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+          event.preventDefault();
+          setIconUrl(parsed.toString());
+        }
+      } catch {
+        // ignore non-URL paste
+      }
+    }
   };
+
+  const handleUpload = () => uploadInputRef.current?.click();
+  const iconPrompt = prompt.trim();
+  const hasEmojiIcon = Boolean(currentIcon && !currentIconAssetId);
+  const hasImageIcon = Boolean(currentIconAssetId);
+
   return (
-    <div ref={rootRef} className="emoji-popover" role="dialog" aria-label="Choose page icon">
-      <div className="emoji-popover-header">
-        <strong>Choose an icon</strong>
-        <div className="emoji-popover-actions">
-          {currentIcon || currentIconAssetId ? <button type="button" onClick={onRemove}>Remove</button> : null}
-          <button type="button" aria-label="Close emoji picker" onClick={() => onClose('button')}>×</button>
+    <ImageGrabberPopup
+      title={currentIcon || currentIconAssetId ? 'Icon' : 'Add icon'}
+      className="image-grabber-popup emoji-popover"
+      showSettings
+      rootRef={rootRef}
+      style={style}
+      onClose={() => onClose('button')}
+      info={(
+        <div className="emoji-popover-inner" role="dialog" aria-label="Page icon information">
+          <ImagePopupSection>
+            {currentIcon ? <div className="image-popup-emoji-preview">{currentIcon}</div> : null}
+            {currentIconAssetId ? (
+              <div className="image-popup-preview-frame">
+                <img className="image-popup-preview" src={`/api/assets/${currentIconAssetId}`} alt="Page icon" />
+              </div>
+            ) : null}
+            {hasImageIcon && iconPrompt ? <p className="help">Prompt: {iconPrompt}</p> : null}
+            {currentIcon || currentIconAssetId ? (
+              <div className="toolbar"><button type="button" className="primary-btn" onClick={() => window.open(currentIconAssetId ? `/api/assets/${currentIconAssetId}` : `https://emojipedia.org/${encodeURIComponent(currentIcon ?? '')}`, '_blank')}>{currentIconAssetId ? 'Open image' : 'Open emoji'}</button></div>
+            ) : <p className="help">No icon selected.</p>}
+          </ImagePopupSection>
         </div>
-      </div>
-
-      <form className="generated-icon-form" onSubmit={(event) => void generateIcon(event)}>
-        <label htmlFor="generated-page-icon-prompt">Generate icon</label>
-        <div className="generated-icon-form-row">
-          <input
-            id="generated-page-icon-prompt"
-            value={prompt}
-            onChange={(event) => { setPrompt(event.target.value); setGenerateError(''); setGenerateState('idle'); }}
-            placeholder="Dark wizard tome with red details"
-            disabled={generateState === 'generating'}
-            maxLength={300}
-          />
-          <button type="submit" className="primary-btn" disabled={!prompt.trim() || generateState === 'generating'}>{generateState === 'generating' ? 'Generating…' : 'Generate'}</button>
-          {currentIconAssetId ? (
-            <button
-              type="button"
-              className="mini-btn"
-              disabled={!prompt.trim() || generateState === 'generating'}
-              onClick={() => void submitGeneratedIcon(prompt)}
-            >
-              Regenerate
-            </button>
+      )}
+      settings={(
+        <div className="emoji-popover-inner" role="dialog" aria-label="Choose page icon" onPaste={handlePaste}>
+          {hasEmojiIcon ? (
+            <ImagePopupSection>
+              <p className="help">This page already uses an emoji icon.</p>
+            </ImagePopupSection>
           ) : null}
+          {hasImageIcon ? (
+            <ImagePopupSection editorOnly>
+              {iconPrompt ? <p className="help">Prompt: {iconPrompt}</p> : null}
+              <ImageGrabberPanel title="Icon image" description="Generate, upload, paste a link, or paste an image." className="image-grabber-panel icon-grabber-panel">
+                <ImageGrabberPromptForm
+                  label="Generate icon"
+                  inputId="generated-page-icon-prompt"
+                  value={prompt}
+                  placeholder="Dark wizard tome with red details"
+                  submitLabel="Generate"
+                  busyLabel="Generating…"
+                  busy={generateState === 'generating'}
+                  className="generated-icon-form"
+                  onChange={(value) => { setPrompt(value); setGenerateError(''); setGenerateState('idle'); }}
+                  onSubmit={(event) => void generateIcon(event)}
+                />
+                <div className="generated-icon-form-row"><button type="button" className="mini-btn" disabled={!iconPrompt || generateState === 'generating'} onClick={() => void submitGeneratedIcon(prompt)}>Regenerate current icon</button></div>
+                {generateState === 'generating' ? <p role="status">Creating a compact emoji-style icon…</p> : null}
+                {generateState === 'error' ? <p role="alert">{generateError}</p> : null}
+                <div className="generated-icon-form-row"><ImageGrabberUploadButton label="Upload image" disabled={generateState === 'generating' || importState === 'importing'} onClick={handleUpload} /></div>
+                <ImageGrabberUrlForm
+                  label="Icon image URL"
+                  inputId="generated-page-icon-url"
+                  value={iconUrl}
+                  placeholder="https://example.com/icon.png"
+                  submitLabel={importState === 'importing' ? 'Importing…' : 'Use image URL'}
+                  disabled={importState === 'importing' || generateState === 'generating'}
+                  className="generated-icon-form"
+                  onChange={(value) => { setIconUrl(value); setImportError(''); setImportState('idle'); }}
+                  onSubmit={(event) => void addIconFromUrl(event)}
+                />
+                {importState === 'importing' ? <p role="status">Downloading icon image…</p> : null}
+                {importState === 'error' ? <p role="alert">{importError}</p> : null}
+                <input ref={uploadInputRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = '';
+                  if (file) void onUploadIconFile(file);
+                }} />
+              </ImageGrabberPanel>
+            </ImagePopupSection>
+          ) : null}
+          {!hasEmojiIcon && !hasImageIcon ? (
+            <>
+              <ImagePopupSection editorOnly>
+                <ImageGrabberPanel title="Icon image" description="Generate, upload, paste a link, or paste an image." className="image-grabber-panel icon-grabber-panel">
+                  <ImageGrabberPromptForm
+                    label="Generate icon"
+                    inputId="generated-page-icon-prompt"
+                    value={prompt}
+                    placeholder="Dark wizard tome with red details"
+                    submitLabel="Generate"
+                    busyLabel="Generating…"
+                    busy={generateState === 'generating'}
+                    className="generated-icon-form"
+                    onChange={(value) => { setPrompt(value); setGenerateError(''); setGenerateState('idle'); }}
+                    onSubmit={(event) => void generateIcon(event)}
+                  />
+                  {generateState === 'generating' ? <p role="status">Creating a compact emoji-style icon…</p> : null}
+                  {generateState === 'error' ? <p role="alert">{generateError}</p> : null}
+                  <div className="generated-icon-form-row"><ImageGrabberUploadButton label="Upload image" disabled={generateState === 'generating' || importState === 'importing'} onClick={handleUpload} /></div>
+                  <ImageGrabberUrlForm
+                    label="Icon image URL"
+                    inputId="generated-page-icon-url"
+                    value={iconUrl}
+                    placeholder="https://example.com/icon.png"
+                    submitLabel={importState === 'importing' ? 'Importing…' : 'Use image URL'}
+                    disabled={importState === 'importing' || generateState === 'generating'}
+                    className="generated-icon-form"
+                    onChange={(value) => { setIconUrl(value); setImportError(''); setImportState('idle'); }}
+                    onSubmit={(event) => void addIconFromUrl(event)}
+                  />
+                  {importState === 'importing' ? <p role="status">Downloading icon image…</p> : null}
+                  {importState === 'error' ? <p role="alert">{importError}</p> : null}
+                  <input ref={uploadInputRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = '';
+                    if (file) void onUploadIconFile(file);
+                  }} />
+                </ImageGrabberPanel>
+              </ImagePopupSection>
+              <div className="emoji-picker-divider"><span>or pick a standard emoji</span></div>
+              {loadState === 'loading' ? <div className="emoji-picker-state" role="status">Loading emojis…</div> : null}
+              {loadState === 'error' ? <div className="emoji-picker-state error" role="alert"><span>Emoji picker could not load.</span><button type="button" onClick={() => { setLoadState('loading'); setLoadAttempt((attempt) => attempt + 1); }}>Retry</button></div> : null}
+              <div ref={hostRef} className="emoji-picker-host" hidden={loadState === 'error'} />
+            </>
+          ) : null}
+          {currentIcon || currentIconAssetId ? <div className="toolbar"><button type="button" onClick={onRemove}>Remove icon</button></div> : null}
         </div>
-        {generateState === 'generating' ? <p role="status">Creating a compact emoji-style icon…</p> : null}
-        {generateState === 'error' ? <p role="alert">{generateError}</p> : null}
-      </form>
-
-      <div className="emoji-picker-divider"><span>or pick a standard emoji</span></div>
-      {loadState === 'loading' ? <div className="emoji-picker-state" role="status">Loading emojis…</div> : null}
-      {loadState === 'error' ? (
-        <div className="emoji-picker-state error" role="alert">
-          <span>Emoji picker could not load.</span>
-          <button type="button" onClick={() => { setLoadState('loading'); setLoadAttempt((attempt) => attempt + 1); }}>Retry</button>
-        </div>
-      ) : null}
-      <div ref={hostRef} className="emoji-picker-host" hidden={loadState === 'error'} />
-
-      <div className="emoji-picker-divider"><span>or upload an icon image</span></div>
-      <div className="generated-icon-form">
-        <div className="generated-icon-form-row">
-          <button type="button" onClick={onUploadIcon} disabled={generateState === 'generating' || importState === 'importing'}>Upload image</button>
-        </div>
-      </div>
-
-      <div className="emoji-picker-divider"><span>or paste an icon image URL</span></div>
-      <form className="generated-icon-form" onSubmit={(event) => void addIconFromUrl(event)}>
-        <label htmlFor="generated-page-icon-url">Icon image URL</label>
-        <div className="generated-icon-form-row">
-          <input
-            id="generated-page-icon-url"
-            type="url"
-            value={iconUrl}
-            onChange={(event) => { setIconUrl(event.target.value); setImportError(''); setImportState('idle'); }}
-            placeholder="https://example.com/icon.png"
-            disabled={importState === 'importing' || generateState === 'generating'}
-            maxLength={2048}
-          />
-          <button type="submit" className="primary-btn" disabled={!iconUrl.trim() || importState === 'importing' || generateState === 'generating'}>
-            {importState === 'importing' ? 'Importing…' : 'Use image URL'}
-          </button>
-        </div>
-        {importState === 'importing' ? <p role="status">Downloading icon image…</p> : null}
-        {importState === 'error' ? <p role="alert">{importError}</p> : null}
-      </form>
-    </div>
+      )}
+    />
   );
 }

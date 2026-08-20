@@ -11,6 +11,7 @@ import {
 } from '../src/lib/data/storage';
 import { buildWorkspaceExport, exportWorkspaceZip } from '../src/lib/data/export';
 import { ensureWorkspaceDirs } from '../src/lib/data/workspace';
+import { buildPagePathFromPages } from '../src/lib/pageUrls';
 
 function entryText(entries: ReturnType<typeof buildWorkspaceExport>['entries'], name: string): string {
   const entry = entries.find((candidate) => candidate.path === name);
@@ -35,7 +36,7 @@ describe('workspace export', () => {
           type: 'paragraph',
           content: [
             { type: 'text', text: 'See ', styles: {} },
-            { type: 'link', href: `/page/${target.id}`, content: [{ type: 'text', text: 'Target page', styles: {} }] },
+            { type: 'link', href: buildPagePathFromPages(target.id, [target]), content: [{ type: 'text', text: 'Target page', styles: {} }] },
             { type: 'text', text: ' and ', styles: {} },
             { type: 'link', href: `/page/${missingId}`, content: [{ type: 'text', text: 'lost page', styles: {} }] },
           ],

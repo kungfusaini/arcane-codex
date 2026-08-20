@@ -19,6 +19,7 @@ import type {
   CollectionSchema,
   PageRecord,
 } from './types';
+import { extractLegacyPageId, resolvePagePathSegments } from '../pageUrls';
 
 const ZIP_ENTRY_DATE = new Date('1980-01-01T00:00:00.000Z');
 const EXPORT_FORMAT_VERSION = 1;
@@ -73,6 +74,7 @@ type MarkdownContext = {
   pagePathById: Map<string, string>;
   assetPathById: Map<string, string>;
   assetById: Map<string, AssetRecord>;
+  pages: PageRecord[];
   warnings: Set<string>;
 };
 
@@ -179,9 +181,11 @@ function assetLink(assetId: string, label: string, context: MarkdownContext, ima
 }
 
 function rewriteHref(href: string, label: string, context: MarkdownContext): string {
-  const pageMatch = /^\/?page\/([0-9a-f-]+)\/?$/i.exec(href);
-  if (pageMatch) {
-    return pageLink(pageMatch[1], label, context);
+  const pageMatch = /^\/?page\/(.+?)\/?$/i.exec(href);
+  const pageSegments = pageMatch ? pageMatch[1].split('/') : [];
+  const pageId = pageSegments.length ? resolvePagePathSegments(pageSegments, context.pages) ?? extractLegacyPageId(pageSegments.at(-1)) : null;
+  if (pageId) {
+    return pageLink(pageId, label, context);
   }
   const assetMatch = /^\/?api\/assets\/([0-9a-f]+)\/?$/i.exec(href);
   if (assetMatch) {
@@ -465,7 +469,7 @@ export function buildWorkspaceExport(dataDir?: string): WorkspaceExport {
   for (const page of pages) {
     entries.push({
       path: pagePathById.get(page.id)!,
-      data: pageToMarkdown(page, { page, pagePathById, assetPathById, assetById, warnings }, dataDir),
+      data: pageToMarkdown(page, { page, pagePathById, assetPathById, assetById, pages, warnings }, dataDir),
     });
   }
 

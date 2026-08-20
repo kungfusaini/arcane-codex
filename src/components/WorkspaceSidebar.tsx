@@ -1,6 +1,7 @@
 "use client";
 
 import Link from 'next/link';
+import { PageIcon } from '@/components/PageIcon';
 import {
   FormEvent,
   useCallback,
@@ -13,6 +14,7 @@ import {
 } from 'react';
 import { buildTree, type PageTreeNode } from '@/lib/pageTree';
 import { useDismissibleDetails } from '@/components/useDismissibleDetails';
+import { buildPagePathFromPages } from '@/lib/pageUrls';
 
 type SidebarPage = {
   id: string;
@@ -20,6 +22,7 @@ type SidebarPage = {
   sortKey: number;
   title: string;
   icon: string | null;
+  iconAssetId: string | null;
   revision: number;
 };
 
@@ -108,17 +111,21 @@ function addRevisionToTree(nodes: PageTreeNode[], pagesMap: Map<string, SidebarP
 
 export function WorkspaceSidebar({
   currentPageId,
+  initialPages = [],
   onCreated,
+  showCollectionPages = false,
 }: {
   currentPageId?: string;
+  initialPages?: SidebarPage[];
   onCreated: (page?: SidebarPage) => void;
+  showCollectionPages?: boolean;
 }) {
   useDismissibleDetails('.tree-menu');
 
-  const [pages, setPages] = useState<SidebarPage[]>([]);
+  const [pages, setPages] = useState<SidebarPage[]>(initialPages);
   const [trashPages, setTrashPages] = useState<SidebarPage[]>([]);
   const [query, setQuery] = useState('');
-  const [isLoading, setLoading] = useState(true);
+  const [isLoading, setLoading] = useState(initialPages.length === 0 || !showCollectionPages);
   const [status, setStatus] = useState('');
   const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -136,10 +143,11 @@ export function WorkspaceSidebar({
   const navToggleRef = useRef<HTMLButtonElement | null>(null);
   const focusSearchOnOpenRef = useRef(false);
 
-  const fetchPages = async () => {
+  const fetchPages = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/pages');
+      const endpoint = showCollectionPages ? '/api/pages' : '/api/pages?includeCollectionPages=false';
+      const response = await fetch(endpoint);
       if (!response.ok) {
         throw new Error('Workspace pages could not be loaded.');
       }
@@ -152,9 +160,9 @@ export function WorkspaceSidebar({
     } finally {
       setLoading(false);
     }
-  };
+  }, [showCollectionPages]);
 
-  const fetchTrashPages = async () => {
+  const fetchTrashPages = useCallback(async () => {
     try {
       const response = await fetch('/api/pages?includeDeleted=true');
       if (!response.ok) {
@@ -165,9 +173,9 @@ export function WorkspaceSidebar({
     } catch {
       setStatus('Trash could not be loaded.');
     }
-  };
+  }, []);
 
-  const fetchHealth = async () => {
+  const fetchHealth = useCallback(async () => {
     try {
       const response = await fetch('/api/health', { cache: 'no-store' });
       const payload = (await response.json()) as WorkspaceHealth;
@@ -179,7 +187,7 @@ export function WorkspaceSidebar({
         recovery: ['Keep the app stopped before copying or repairing workspace files.'],
       });
     }
-  };
+  }, []);
 
   useEffect(() => {
     const storedRailState = window.localStorage.getItem('arcane-sidebar-collapsed');
@@ -201,15 +209,21 @@ export function WorkspaceSidebar({
       }
     };
     updateViewport();
-    refreshPageLists();
-    void fetchHealth();
+    if (initialPages.length === 0 || !showCollectionPages) {
+      void fetchPages();
+    }
+    const deferredChecks = window.setTimeout(() => {
+      void fetchTrashPages();
+      void fetchHealth();
+    }, 300);
     mobileQuery.addEventListener('change', updateViewport);
     window.addEventListener('arcane-pages-changed', refreshPageLists);
     return () => {
+      window.clearTimeout(deferredChecks);
       mobileQuery.removeEventListener('change', updateViewport);
       window.removeEventListener('arcane-pages-changed', refreshPageLists);
     };
-  }, []);
+  }, [fetchHealth, fetchPages, fetchTrashPages, initialPages.length]);
 
   const setDesktopRailCollapsed = useCallback((collapsed: boolean) => {
     setRailCollapsed(collapsed);
@@ -303,6 +317,7 @@ export function WorkspaceSidebar({
           parentId: page.parentId,
           title: page.title,
           icon: page.icon,
+          iconAssetId: page.iconAssetId,
           sortKey: page.sortKey,
         })),
     );
@@ -652,7 +667,7 @@ export function WorkspaceSidebar({
                 ) : (
                   <span className="tree-spacer">•</span>
                 )}
-                <span>{item.icon ?? '📄'}</span>
+                <PageIcon icon={item.icon} iconAssetId={item.iconAssetId} />
                 {editingId === item.id ? (
                   <input
                     value={editingTitle}
@@ -670,7 +685,7 @@ export function WorkspaceSidebar({
                     aria-label={`Rename ${item.title}`}
                   />
                 ) : (
-                  <Link href={`/page/${item.id}`} className={isCurrent ? 'text-link active' : 'text-link'}>
+                  <Link href={buildPagePathFromPages(item.id, pages)} className={isCurrent ? 'text-link active' : 'text-link'}>
                     {fullPage.title || 'Untitled'}
                   </Link>
                 )}
@@ -833,7 +848,7 @@ export function WorkspaceSidebar({
             <ul className="trash-list">
               {trashPages.map((trashPage) => (
                 <li key={trashPage.id}>
-                  <span>{trashPage.icon ?? '📄'} {trashPage.title || 'Untitled'}</span>
+                  <span><PageIcon icon={trashPage.icon} iconAssetId={trashPage.iconAssetId} /> {trashPage.title || 'Untitled'}</span>
                   <button type="button" className="mini-btn" onClick={() => void restoreTrashPage(trashPage.id)}>Restore</button>
                 </li>
               ))}

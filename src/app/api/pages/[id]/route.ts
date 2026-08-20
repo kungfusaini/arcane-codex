@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAsset, getPage, readBacklinks, duplicatePage, trashPage, updatePage } from '@/lib/data/storage';
+import { duplicatePage, getAsset, getPage, listCollectionsForPage, listCollectionsHostedByPage, readBacklinks, trashPage, updatePage } from '@/lib/data/storage';
 import { RevisionConflictError } from '@/lib/data/types';
 
 type PageUpdatePayload = {
   revision?: number;
   title?: string;
   icon?: string | null;
+  iconAssetId?: string | null;
   coverAssetId?: string | null;
   coverFocalX?: number;
   coverFocalY?: number;
@@ -48,7 +49,9 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
   }
 
   const backlinks = readBacklinks(params.id);
-  return NextResponse.json({ page, backlinks });
+  const collections = listCollectionsForPage(params.id);
+  const hostCollection = listCollectionsHostedByPage(params.id)[0] ?? null;
+  return NextResponse.json({ page, backlinks, collections, hostCollection });
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
@@ -85,6 +88,15 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       return NextResponse.json({ error: 'Page content contains invalid JSON.' }, { status: 400 });
     }
   }
+  if (payload.iconAssetId != null) {
+    if (typeof payload.iconAssetId !== 'string') {
+      return NextResponse.json({ error: 'Icon asset id must be a string or null.' }, { status: 400 });
+    }
+    const iconAsset = getAsset(payload.iconAssetId);
+    if (!iconAsset || !iconAsset.mimeType.startsWith('image/')) {
+      return NextResponse.json({ error: 'Icon asset must reference an uploaded image.' }, { status: 400 });
+    }
+  }
   if (payload.coverAssetId != null) {
     if (typeof payload.coverAssetId !== 'string') {
       return NextResponse.json({ error: 'Cover asset id must be a string or null.' }, { status: 400 });
@@ -105,6 +117,11 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     }
     if (Object.hasOwn(payload, 'icon')) {
       updates.icon = payload.icon ?? null;
+      if (payload.icon != null) updates.iconAssetId = null;
+    }
+    if (Object.hasOwn(payload, 'iconAssetId')) {
+      updates.iconAssetId = payload.iconAssetId ?? null;
+      if (payload.iconAssetId) updates.icon = null;
     }
     if (Object.hasOwn(payload, 'coverAssetId')) {
       updates.coverAssetId = payload.coverAssetId ?? null;

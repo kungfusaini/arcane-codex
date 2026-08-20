@@ -1,17 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createPage, listPages, listTrashPages, searchPages } from '@/lib/data/storage';
+import { createPage, getAsset, listPages, listPageSummaries, listTrashPages, listTrashPageSummaries, searchPageSummaries, searchPages } from '@/lib/data/storage';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const includeDeleted = searchParams.get('includeDeleted') === 'true';
+  const includeContent = searchParams.get('includeContent') === 'true';
+  const includeCollectionPages = searchParams.get('includeCollectionPages') !== 'false';
   const query = searchParams.get('query')?.trim();
 
   if (query && query.length > 0) {
-    const pages = searchPages(query);
+    const pages = includeContent
+      ? searchPages(query, undefined, includeCollectionPages)
+      : searchPageSummaries(query, undefined, includeCollectionPages);
     return NextResponse.json({ pages });
   }
 
-  const pages = includeDeleted ? listTrashPages() : listPages();
+  const pages = includeContent
+    ? includeDeleted
+      ? listTrashPages()
+      : listPages(undefined, includeCollectionPages)
+    : includeDeleted
+      ? listTrashPageSummaries()
+      : listPageSummaries(undefined, includeCollectionPages);
   return NextResponse.json({ pages });
 }
 
@@ -38,11 +48,22 @@ export async function POST(request: NextRequest) {
       ? payload.sortKey
       : undefined;
 
+  if (payload.iconAssetId != null) {
+    if (typeof payload.iconAssetId !== 'string') {
+      return NextResponse.json({ error: 'Icon asset id must be a string or null.' }, { status: 400 });
+    }
+    const iconAsset = getAsset(payload.iconAssetId);
+    if (!iconAsset || !iconAsset.mimeType.startsWith('image/')) {
+      return NextResponse.json({ error: 'Icon asset must reference an uploaded image.' }, { status: 400 });
+    }
+  }
+
   const page = createPage({
     parentId,
     sortKey,
     title,
-    icon: payload.icon ?? null,
+    icon: payload.iconAssetId ? null : payload.icon ?? null,
+    iconAssetId: payload.iconAssetId ?? null,
     coverAssetId: payload.coverAssetId ?? null,
     coverFocalX: clampFocal(payload.coverFocalX),
     coverFocalY: clampFocal(payload.coverFocalY),

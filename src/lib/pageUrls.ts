@@ -31,7 +31,7 @@ function pageById(pages: PageUrlPage[]): Map<string, PageUrlPage> {
   return new Map(pages.map((page) => [page.id, page]));
 }
 
-export function buildPagePathFromPages(pageId: string, pages: PageUrlPage[]): string {
+export function buildPagePathFromPages(pageId: string, pages: PageUrlPage[], basePath = '/page'): string {
   const byId = pageById(pages);
   const chain: string[] = [];
   const seen = new Set<string>();
@@ -43,7 +43,8 @@ export function buildPagePathFromPages(pageId: string, pages: PageUrlPage[]): st
     current = current.parentId ? byId.get(current.parentId) : undefined;
   }
 
-  return `/page/${chain.length ? chain.join('/') : slugifyPageTitle(byId.get(pageId)?.title)}`;
+  const trimmedBasePath = basePath.replace(/\/+$/, '') || '/page';
+  return `${trimmedBasePath}/${chain.length ? chain.join('/') : slugifyPageTitle(byId.get(pageId)?.title)}`;
 }
 
 export function resolvePagePathSegments(segments: string[], pages: PageUrlPage[]): string | null {

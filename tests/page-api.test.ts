@@ -10,6 +10,7 @@ import * as pageRoute from '../src/app/api/pages/[id]/route';
 import * as reorderRoute from '../src/app/api/pages/reorder/route';
 import * as restoreRoute from '../src/app/api/pages/[id]/restore/route';
 import { ensureWorkspaceDirs } from '../src/lib/data/workspace';
+import { createCollection, createCollectionItem, createPage } from '../src/lib/data/storage';
 
 type AnyPayload = { [key: string]: unknown };
 
@@ -264,6 +265,26 @@ describe('page API endpoints', () => {
       assert.equal(response.status, 400);
       const payload = await callJson(response);
       assert.match(String(payload.error), /revision/i);
+    });
+  });
+
+  it('filters out collection-member pages when requested', async () => {
+    await withWorkspace(async () => {
+      const included = createPage({ title: 'In collection' });
+      const excluded = createPage({ title: 'Regular page' });
+      const collection = createCollection({ name: 'Test collection' });
+      createCollectionItem({
+        collectionId: collection.id,
+        pageId: included.id,
+        properties: {},
+      });
+
+      const filteredRes = await pagesRoute.GET(new NextRequest('http://localhost/api/pages?includeCollectionPages=false'));
+      const filteredPayload = (await callJson(filteredRes)) as { pages: Array<{ id: string }> };
+      const filteredIds = new Set(filteredPayload.pages.map((page) => page.id));
+      assert.equal(filteredPayload.pages.length, 1);
+      assert.equal(filteredIds.has(included.id), false);
+      assert.equal(filteredIds.has(excluded.id), true);
     });
   });
 
