@@ -180,6 +180,8 @@
 }
 
 .youtube-play-button {
+  grid-column: 1;
+  grid-row: 1 / 3;
   display: grid;
   place-items: center;
   width: var(--space-10);
@@ -202,6 +204,8 @@
 }
 
 .youtube-track-copy {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
   display: grid;
   gap: var(--space-0);
@@ -225,7 +229,9 @@
 }
 
 .youtube-time {
-  justify-self: end;
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: start;
   color: var(--color-muted);
   font-size: var(--font-size-200);
   font-variant-numeric: tabular-nums;
@@ -233,6 +239,8 @@
 }
 
 .youtube-actions {
+  grid-column: 3;
+  grid-row: 2;
   display: inline-flex;
   align-items: center;
   justify-self: end;
@@ -277,9 +285,62 @@
 }
 
 .youtube-seeker {
-  grid-column: 2 / -1;
-  width: 100%;
+  grid-column: 1 / -1;
+  grid-row: 3;
+  width: calc(100% + var(--space-12));
+  height: var(--space-8);
+  margin-inline: calc(-1 * var(--space-6));
+  padding: 0;
+  border: 0;
+  background: transparent;
   accent-color: var(--color-ink);
+  cursor: pointer;
+  appearance: none;
+}
+
+.youtube-seeker::-webkit-slider-runnable-track {
+  height: var(--space-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-page-muted);
+}
+
+.youtube-seeker::-webkit-slider-thumb {
+  width: var(--space-4);
+  height: var(--space-4);
+  margin-top: calc((var(--space-1) - var(--space-4)) / 2);
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-ink);
+  appearance: none;
+}
+
+.youtube-seeker::-moz-range-track {
+  height: var(--space-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-page-muted);
+}
+
+.youtube-seeker::-moz-range-thumb {
+  width: var(--space-4);
+  height: var(--space-4);
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-ink);
+}
+
+.youtube-seeker:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.youtube-seeker:active::-webkit-slider-thumb {
+  transform: scale(.97);
+}
+
+.youtube-seeker:active::-moz-range-thumb {
+  transform: scale(.97);
 }
 
 .youtube-seeker:disabled {
