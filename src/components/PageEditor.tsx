@@ -1884,7 +1884,13 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
             </section>
           ) : null}
 
-          <div className="editor-view is-reading" tabIndex={-1} aria-label="Page content">
+          <div
+            className="editor-view is-reading"
+            tabIndex={-1}
+            aria-label="Page content"
+            onMouseDownCapture={onEditorViewMouseDownCapture}
+            onClickCapture={onEditorViewClick}
+          >
             <BlockNoteView editor={editor} slashMenu={false} editable={false} theme="dark">
             </BlockNoteView>
           </div>
