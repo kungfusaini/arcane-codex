@@ -43,6 +43,7 @@ import { extractGrabberPaste, ImageGrabberPanel, ImageGrabberPromptForm, ImageGr
 import { ImageGrabberPopup, ImagePopupSection } from '@/components/ImageGrabberPopup';
 import { useDismissibleDetails } from '@/components/useDismissibleDetails';
 import { buildPagePathFromPages, isPagePathForId } from '@/lib/pageUrls';
+import { findWorkspaceHomePage } from '@/lib/workspaceHome';
 import {
   editGrabberImageToAsset,
   IMAGE_GRABBER_UPLOAD_TYPES,
@@ -1732,7 +1733,12 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
         },
       ]),
     );
-    return getBreadcrumbs(breadcrumbMap as unknown as Map<string, BreadcrumbEntry>, pageId);
+    const chain = getBreadcrumbs(breadcrumbMap as unknown as Map<string, BreadcrumbEntry>, pageId);
+    const workspaceHome = findWorkspaceHomePage(allPages);
+    if (!workspaceHome || chain[0]?.id === workspaceHome.id) {
+      return chain;
+    }
+    return [workspaceHome, ...chain];
   }, [allPages, pageId]);
 
   useEffect(() => {
