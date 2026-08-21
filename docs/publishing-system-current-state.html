@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Arcane Codex Publishing System — Current State</title>
+  <style>
+    :root {
+      --bg: #191919;
+      --surface: #202020;
+      --surface-2: #252525;
+      --surface-3: #2c2c2c;
+      --border: #353535;
+      --text: #f1f1ef;
+      --muted: #d2d2cf;
+      --accent: #1f78d1;
+      --accent-on: #ffffff;
+      --shadow: rgba(0, 0, 0, 0.34);
+      --radius: 8px;
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-6: 24px;
+      --space-8: 32px;
+      --space-10: 40px;
+      --max: 1080px;
+    }
+
+    html, body { background: var(--bg); color: var(--text); margin: 0; }
+    body {
+      font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      padding: var(--space-8) var(--space-4);
+    }
+    main { max-width: var(--max); margin: 0 auto; }
+    h1, h2, h3 { line-height: 1.15; margin: 0 0 var(--space-3); }
+    h1 { font-size: 32px; }
+    h2 { font-size: 24px; margin-top: var(--space-8); }
+    h3 { font-size: 18px; margin-top: var(--space-6); }
+    p, li { color: var(--muted); }
+    p { margin: 0 0 var(--space-3); }
+    a { color: var(--accent); }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    code { color: var(--text); background: var(--surface-2); padding: 0 6px; border-radius: 4px; }
+    pre {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: var(--space-4);
+      overflow: auto;
+      box-shadow: 0 16px 40px var(--shadow);
+    }
+    .hero, section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: var(--space-6);
+      box-shadow: 0 8px 24px var(--shadow);
+      margin-bottom: var(--space-4);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: var(--space-4);
+    }
+    .card {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: var(--space-4);
+    }
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--surface-3);
+      color: var(--text);
+      font-size: 12px;
+      margin-right: 6px;
+      margin-bottom: 6px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: var(--space-3);
+      overflow: hidden;
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: var(--space-3);
+      border-top: 1px solid var(--border);
+    }
+    th { color: var(--text); width: 22%; }
+    .note { font-size: 14px; color: var(--muted); }
+    .good { border-left: 4px solid #4dab9a; }
+    .bad { border-left: 4px solid #eb5757; }
+    .summary { font-size: 18px; color: var(--text); }
+    .files li { margin-bottom: 6px; }
+    .kicker { text-transform: uppercase; letter-spacing: .08em; font-size: 12px; color: var(--accent); margin-bottom: var(--space-2); }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="hero">
+      <div class="kicker">Research note</div>
+      <h1>Arcane Codex publishing system — current state</h1>
+      <p class="summary">The current setup is a single app with a single global <code>publishedMode</code> flag. It does not really have two separate systems; it has one workspace that can route into either a private namespace or a published namespace.</p>
+    </div>
+
+    <section>
+      <h2>What the current system is</h2>
+      <p>Publishing is controlled by one boolean stored in the <code>settings</code> table: <code>publishedMode</code>. When it is true, normal private routes redirect into <code>/published</code>. The published routes themselves always exist and render a read-only view of the same data.</p>
+      <p>In other words: <strong>publish mode is a routing/state toggle, not a separate deployment or data model</strong>.</p>
+    </section>
+
+    <section>
+      <h2>How it works</h2>
+      <table>
+        <tr>
+          <th>State storage</th>
+          <td>SQLite <code>settings</code> row via <code>getSettings()</code> / <code>updateSettings()</code> in <code>src/lib/data/storage.ts</code>.</td>
+        </tr>
+        <tr>
+          <th>Toggle source</th>
+          <td>The sidebar button calls <code>PATCH /api/settings</code> with <code>{ publishedMode: true|false }</code>.</td>
+        </tr>
+        <tr>
+          <th>Private route behavior</th>
+          <td><code>src/app/page.tsx</code>, <code>src/app/page/[[...pagePath]]/page.tsx</code>, <code>src/app/collections/page.tsx</code>, and <code>src/app/collections/[collectionId]/page.tsx</code> redirect to <code>/published</code> variants when the flag is on.</td>
+        </tr>
+        <tr>
+          <th>Published route behavior</th>
+          <td><code>src/app/published/**</code> always renders read-only pages and collections. These routes do <em>not</em> check the flag before rendering.</td>
+        </tr>
+        <tr>
+          <th>Client-side navigation</th>
+          <td><code>toWorkspacePath()</code> in <code>src/lib/workspaceMode.ts</code> maps a current path into the matching private or published path after the toggle changes.</td>
+        </tr>
+        <tr>
+          <th>Editing restrictions</th>
+          <td>Most UI components accept a <code>readOnly</code> prop and hide editing controls, but the API routes themselves do not enforce published mode.</td>
+        </tr>
+      </table>
+    </section>
+
+    <section>
+      <h2>Route map</h2>
+      <pre>/                      private home, redirects to /published if publishedMode is on
+/page/...              private page route, redirects to /published/... if publishedMode is on
+/collections           private collections index, redirects to /published/collections if publishedMode is on
+/collections/...       private collection route, redirects to /published/collections/... if publishedMode is on
+
+/published             published home, always read-only
+/published/...         published page route, always read-only
+/published/collections published collections index, always read-only
+/published/collections/... published collection route, always read-only</pre>
+      <p class="note">If your deployment rewrites <code>/published</code> to <code>/public</code>, that is deployment-level behaviour, not the app code itself.</p>
+    </section>
+
+    <section class="good">
+      <h2>What is good about it</h2>
+      <ul>
+        <li>Very simple to understand: one flag, one database row, one toggle.</li>
+        <li>Both views share the same content and structure, so there is no data duplication.</li>
+        <li>Published mode is covered by browser tests.</li>
+        <li>The same page URLs can be rendered in private or published form with minimal branching.</li>
+        <li>Read-only UI state is centralized through <code>readOnly</code> props instead of scattered ad hoc checks.</li>
+      </ul>
+    </section>
+
+    <section class="bad">
+      <h2>What is bad or messy</h2>
+      <ul>
+        <li>It is not a real separation between editor and published site; it is one app with two route namespaces.</li>
+        <li>The published namespace is always live, even when <code>publishedMode</code> is off.</li>
+        <li>The sidebar still exposes the master publish toggle in published mode, so the live site can switch the workspace back to private.</li>
+        <li>Mutation APIs like <code>/api/pages</code> and <code>/api/collections</code> do not check publish state, so read-only is mostly a UI convention, not a hard server boundary.</li>
+        <li>Route logic is duplicated across private and published files, which makes maintenance awkward.</li>
+        <li>The naming mixes concerns: the toggle name, route namespace, and deployment story are all slightly different, which makes the system harder to reason about.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Short diagnosis</h2>
+      <p>The current design is functional, but it is really a <strong>mode switch</strong>, not a clean publish architecture. The editor and live site are coupled at the routing and database layer, and the UI still leaks control back into the published experience.</p>
+      <p>That is why it feels messy: the system is doing two jobs at once.</p>
+    </section>
+
+    <section>
+      <h2>Files that define the system</h2>
+      <ul class="files">
+        <li><code>src/lib/data/storage.ts</code> — persisted <code>publishedMode</code> setting</li>
+        <li><code>src/app/api/settings/route.ts</code> — toggle endpoint</li>
+        <li><code>src/components/WorkspaceSidebar.tsx</code> — publish toggle UI and redirect</li>
+        <li><code>src/lib/workspaceMode.ts</code> — private/published path mapping</li>
+        <li><code>src/app/page.tsx</code> and <code>src/app/page/[[...pagePath]]/page.tsx</code> — private page redirects</li>
+        <li><code>src/app/collections/page.tsx</code> and <code>src/app/collections/[collectionId]/page.tsx</code> — private collection redirects</li>
+        <li><code>src/app/published/**</code> — published read-only route tree</li>
+        <li><code>src/app/api/pages/route.ts</code>, <code>src/app/api/pages/[id]/route.ts</code>, <code>src/app/api/collections/route.ts</code> — mutation APIs that currently ignore publish state</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

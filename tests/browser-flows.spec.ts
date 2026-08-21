@@ -480,7 +480,8 @@ test('renders a read-only published site that reflects live workspace content', 
   await page.goto('/published');
   await expect(page.getByRole('button', { name: 'New page' })).toHaveCount(0);
   await expect(page.getByLabel('Search pages')).toBeVisible();
-  await expect(page.locator('.sidebar').getByRole('link', { name: 'Collections' })).toHaveAttribute('href', '/published/collections');
+  await expect(page.locator('.workspace-settings')).toHaveCount(0);
+  await expect(page.locator('.sidebar').getByRole('link', { name: 'Collections' })).toHaveCount(0);
 
   await page.goto('/published/collections');
   await expect(page.getByRole('heading', { name: 'Collections' })).toBeVisible();
@@ -499,33 +500,9 @@ test('renders a read-only published site that reflects live workspace content', 
   await expect(page.getByRole('button', { name: 'Add icon' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Add cover', exact: true })).toHaveCount(0);
   await expect(page.locator('.editor-view .bn-editor[contenteditable="true"]')).toHaveCount(0);
-  await expect(page.locator('.sidebar').getByRole('link', { name: 'Published child' })).toBeVisible();
+  await expect(page.locator('.sidebar').getByRole('link', { name: 'Published child' })).toHaveCount(0);
   await expect(page.getByText('Live')).toBeVisible();
   await expect(page.locator('.collection-table input')).toHaveCount(0);
-
-  await page.locator('.sidebar').getByRole('link', { name: 'Published child' }).click();
-  await expect(page).toHaveURL(/\/published\//);
-});
-
-test('toggles the whole workspace published mode from sidebar settings and back', async ({ page, request }) => {
-  const rootResponse = await request.post('/api/pages', { data: { title: 'Publish toggle root' } });
-  expect(rootResponse.ok()).toBeTruthy();
-  const root = (await rootResponse.json()).page as PageRecord;
-
-  await page.goto(`/page/${root.id}`);
-  await expect(page.getByRole('button', { name: 'Page actions' })).toBeVisible();
-  await expect(page.locator('.workspace-settings')).toBeVisible();
-
-  await page.locator('.workspace-settings').getByRole('button', { name: 'Turn on published mode' }).click();
-  await expect(page).toHaveURL(buildPagePathFromPages(root.id, [root], '/published'));
-  await expect(page.getByRole('button', { name: 'Page actions' })).toHaveCount(0);
-
-  await page.goto('/collections');
-  await expect(page).toHaveURL('/published/collections');
-
-  await page.locator('.workspace-settings').getByRole('button', { name: 'Turn off published mode' }).click();
-  await expect(page).toHaveURL('/collections');
-  await expect(page.getByRole('button', { name: 'New collection' })).toHaveCount(1);
 });
 
 test('renders custom slash and mention suggestion menus without BlockNote UI context errors', async ({ page, request }) => {

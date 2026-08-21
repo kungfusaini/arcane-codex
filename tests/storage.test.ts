@@ -37,6 +37,7 @@ import {
   getWorkspaceDbPath,
 } from '../src/lib/data/workspace';
 import { buildPagePathFromPages } from '../src/lib/pageUrls';
+import { toPublicPath } from '../src/lib/workspaceMode';
 
 describe('workspace bootstrap', () => {
   it('creates required directories and schema', () => {
@@ -201,6 +202,19 @@ describe('collections CRUD and item storage', () => {
     assert.equal(collectionUpdated.name, 'Project tracker');
     assert.equal(collectionUpdated.schemaJson.includes('Blocked'), true);
     rmSync(workspace, { recursive: true, force: true });
+  });
+});
+
+describe('page URLs', () => {
+  it('builds clean root-based public page paths', () => {
+    const root = { id: 'root', parentId: null, sortKey: 0, title: 'Root Page' };
+    const child = { id: 'child', parentId: 'root', sortKey: 1, title: 'Child Page' };
+
+    assert.equal(buildPagePathFromPages(root.id, [root, child], '/'), '/root-page');
+    assert.equal(buildPagePathFromPages(child.id, [root, child], '/'), '/root-page/child-page');
+    assert.equal(toPublicPath('/page/root-page/child-page'), '/root-page/child-page');
+    assert.equal(toPublicPath('/published/root-page/child-page'), '/root-page/child-page');
+    assert.equal(toPublicPath('/published/collections/books'), '/collections/books');
   });
 });
 

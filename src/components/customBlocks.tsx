@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { BlockNoteEditor, BlockSpec, PartialBlock } from '@blocknote/core';
-import type { DefaultReactSuggestionItem } from '@blocknote/react';
+import { createReactBlockSpec, type DefaultReactSuggestionItem } from '@blocknote/react';
 import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type TouchEvent } from 'react';
 import { PageIcon } from '@/components/PageIcon';
 import { buildPagePathFromPages } from '@/lib/pageUrls';
@@ -36,7 +36,7 @@ export type CustomBlockRegistration = {
 };
 
 function buildReactBlockSpec(config: any, implementation: any): () => BlockSpec<any, any, any> {
-  return () => ({ config, implementation } as BlockSpec<any, any, any>);
+  return createReactBlockSpec(config, implementation) as () => BlockSpec<any, any, any>;
 }
 
 function getUrlTitle(value: string): string {

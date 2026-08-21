@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { createAsset, type AssetCreateResult } from '@/lib/data/storage';
+import { rejectPublishedMutation } from '@/lib/surface';
 
 const execFileAsync = promisify(execFile);
 export const runtime = 'nodejs';
@@ -16,6 +17,8 @@ function getDataDir(): string | undefined {
 }
 
 export async function POST(request: Request) {
+  const blocked = rejectPublishedMutation('Generating images');
+  if (blocked) return blocked;
   let temp = '';
   try {
     const body = await request.json() as { prompt?: string; filename?: string };

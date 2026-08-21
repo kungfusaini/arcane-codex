@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { RevisionConflictError, type PageMoveInput } from '@/lib/data/types';
 import { applyPageMoves } from '@/lib/data/storage';
+import { rejectPublishedMutation } from '@/lib/surface';
 
 type ReorderPayload = {
   moves: PageMoveInput[];
 };
 
 export async function POST(request: NextRequest) {
+  const blocked = rejectPublishedMutation('Reordering pages');
+  if (blocked) return blocked;
   const payload = (await request.json().catch(() => ({}))) as ReorderPayload;
   const moves = Array.isArray(payload?.moves) ? payload.moves : [];
 

@@ -1,6 +1,5 @@
-import { redirect } from 'next/navigation';
-import { getSettings } from '@/lib/data/storage';
 import { CollectionWorkspace } from '@/components/CollectionWorkspace';
+import { isPublishedAppSurface } from '@/lib/surface';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,8 +8,8 @@ type RouteParams = {
 };
 
 export default function CollectionRoute({ params }: { params: RouteParams }) {
-  if (getSettings().publishedMode) {
-    redirect(`/published/collections/${params.collectionId}`);
+  if (isPublishedAppSurface()) {
+    return <CollectionWorkspace collectionId={params.collectionId} readOnly pageRouteBasePath="/" collectionHomePath="/collections" homePath="/" />;
   }
 
   return <CollectionWorkspace collectionId={params.collectionId} />;

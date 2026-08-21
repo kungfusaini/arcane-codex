@@ -43,7 +43,7 @@ export function buildPagePathFromPages(pageId: string, pages: PageUrlPage[], bas
     current = current.parentId ? byId.get(current.parentId) : undefined;
   }
 
-  const trimmedBasePath = basePath.replace(/\/+$/, '') || '/page';
+  const trimmedBasePath = basePath === '/' || basePath.trim() === '' ? '' : basePath.replace(/\/+$/, '') || '/page';
   return `${trimmedBasePath}/${chain.length ? chain.join('/') : slugifyPageTitle(byId.get(pageId)?.title)}`;
 }
 

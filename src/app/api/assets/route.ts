@@ -5,6 +5,7 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { Buffer } from 'node:buffer';
 import { createAsset, type AssetCreateResult, listAssets } from '@/lib/data/storage';
+import { rejectPublishedMutation } from '@/lib/surface';
 
 const MAX_ASSET_BYTES = 20 * 1024 * 1024;
 const MIME_EXTENSIONS: Record<string, string[]> = {
@@ -114,6 +115,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const blocked = rejectPublishedMutation('Uploading assets');
+  if (blocked) return blocked;
   let tempPath: string | null = null;
   try {
     const formData = await request.formData();

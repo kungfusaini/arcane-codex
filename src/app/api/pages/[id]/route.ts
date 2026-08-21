@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { duplicatePage, getAsset, getPage, listCollectionsForPage, listCollectionsHostedByPage, readBacklinks, trashPage, updatePage } from '@/lib/data/storage';
 import { RevisionConflictError } from '@/lib/data/types';
+import { rejectPublishedMutation } from '@/lib/surface';
 
 type PageUpdatePayload = {
   revision?: number;
@@ -55,6 +56,8 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+  const blocked = rejectPublishedMutation('Editing pages');
+  if (blocked) return blocked;
   const payload = (await request.json().catch(() => ({}))) as PageUpdatePayload;
 
   const revision = Number(payload.revision);
@@ -170,6 +173,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 }
 
 export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
+  const blocked = rejectPublishedMutation('Moving pages to trash');
+  if (blocked) return blocked;
   const existing = getPage(params.id);
   if (!existing) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -179,6 +184,8 @@ export async function DELETE(_: NextRequest, { params }: { params: { id: string 
 }
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+  const blocked = rejectPublishedMutation('Duplicating pages');
+  if (blocked) return blocked;
   const payload = await request.json().catch(() => ({}));
   const action = payload.action;
 

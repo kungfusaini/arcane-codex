@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 import { notFound, permanentRedirect, redirect } from 'next/navigation';
 import { PageWorkspaceLayout } from '../PageWorkspaceLayout';
-import { getPage, getSettings, listPageSummaries, resolvePageRoutePath } from '@/lib/data/storage';
-import { toPublishedPath } from '@/lib/workspaceMode';
+import { getPage, listPageSummaries, resolvePageRoutePath } from '@/lib/data/storage';
+import { isPublishedAppSurface } from '@/lib/surface';
+import { toPublicPath } from '@/lib/workspaceMode';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,8 +33,8 @@ export default function PageRoute({ params }: { params: { pagePath?: string[] } 
   if (!resolution) {
     notFound();
   }
-  if (getSettings().publishedMode) {
-    redirect(toPublishedPath(resolution.canonicalPath));
+  if (isPublishedAppSurface()) {
+    redirect(toPublicPath(resolution.canonicalPath));
   }
   if (resolution.requestedPath !== resolution.canonicalPath.replace(/^\/page\//, '')) {
     permanentRedirect(resolution.canonicalPath);

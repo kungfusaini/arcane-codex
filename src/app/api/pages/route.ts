@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPage, getAsset, listPages, listPageSummaries, listTrashPages, listTrashPageSummaries, searchPageSummaries, searchPages } from '@/lib/data/storage';
+import { rejectPublishedMutation } from '@/lib/surface';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -39,6 +40,8 @@ function clampFocal(value: unknown): number | undefined {
 }
 
 export async function POST(request: NextRequest) {
+  const blocked = rejectPublishedMutation('Creating pages');
+  if (blocked) return blocked;
   const payload = await request.json().catch(() => ({}));
   const title = String(payload.title ?? '').trim() || 'Untitled';
   const parentId = payload.parentId === null || typeof payload.parentId === 'string' ? payload.parentId : null;

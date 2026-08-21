@@ -15,7 +15,6 @@ import {
 import { buildTree, type PageTreeNode } from '@/lib/pageTree';
 import { useDismissibleDetails } from '@/components/useDismissibleDetails';
 import { buildPagePathFromPages } from '@/lib/pageUrls';
-import { toWorkspacePath } from '@/lib/workspaceMode';
 
 type SidebarPage = {
   id: string;
@@ -112,18 +111,14 @@ function addRevisionToTree(nodes: PageTreeNode[], pagesMap: Map<string, SidebarP
 
 export function WorkspaceSidebar({
   currentPageId,
-  initialPages = [],
   onCreated,
-  showCollectionPages = false,
   readOnly = false,
   pageRouteBasePath = '/page',
   homePath = '/',
   collectionHomePath = '/collections',
 }: {
   currentPageId?: string;
-  initialPages?: SidebarPage[];
   onCreated?: (page?: SidebarPage) => void;
-  showCollectionPages?: boolean;
   readOnly?: boolean;
   pageRouteBasePath?: string;
   homePath?: string;
@@ -131,10 +126,10 @@ export function WorkspaceSidebar({
 }) {
   useDismissibleDetails('.tree-menu');
 
-  const [pages, setPages] = useState<SidebarPage[]>(initialPages);
+  const [pages, setPages] = useState<SidebarPage[]>([]);
   const [trashPages, setTrashPages] = useState<SidebarPage[]>([]);
   const [query, setQuery] = useState('');
-  const [isLoading, setLoading] = useState(initialPages.length === 0 || !showCollectionPages);
+  const [isLoading, setLoading] = useState(true);
   const [status, setStatus] = useState('');
   const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -147,8 +142,6 @@ export function WorkspaceSidebar({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [railCollapsed, setRailCollapsed] = useState(false);
-  const [publishModeBusy, setPublishModeBusy] = useState(false);
-  const [publishModeStatus, setPublishModeStatus] = useState('');
   const sidebarRef = useRef<HTMLElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const navToggleRef = useRef<HTMLButtonElement | null>(null);
@@ -157,8 +150,7 @@ export function WorkspaceSidebar({
   const fetchPages = useCallback(async () => {
     setLoading(true);
     try {
-      const endpoint = showCollectionPages ? '/api/pages' : '/api/pages?includeCollectionPages=false';
-      const response = await fetch(endpoint);
+      const response = await fetch('/api/pages?includeCollectionPages=false');
       if (!response.ok) {
         throw new Error('Workspace pages could not be loaded.');
       }
@@ -171,7 +163,7 @@ export function WorkspaceSidebar({
     } finally {
       setLoading(false);
     }
-  }, [showCollectionPages]);
+  }, []);
 
   const fetchTrashPages = useCallback(async () => {
     try {
@@ -200,27 +192,6 @@ export function WorkspaceSidebar({
     }
   }, []);
 
-  const togglePublishMode = useCallback(async () => {
-    const nextPublishedMode = !readOnly;
-    setPublishModeStatus('');
-    setPublishModeBusy(true);
-    try {
-      const response = await fetch('/api/settings', {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ publishedMode: nextPublishedMode }),
-      });
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(payload.error || 'Publish mode could not be updated.');
-      }
-      window.location.href = toWorkspacePath(window.location.pathname, nextPublishedMode);
-    } catch (error) {
-      setPublishModeBusy(false);
-      setPublishModeStatus(error instanceof Error ? error.message : 'Publish mode could not be updated.');
-    }
-  }, [readOnly]);
-
   useEffect(() => {
     const storedRailState = window.localStorage.getItem('arcane-sidebar-collapsed');
     if (storedRailState === 'true') {
@@ -241,9 +212,7 @@ export function WorkspaceSidebar({
       }
     };
     updateViewport();
-    if (initialPages.length === 0 || !showCollectionPages) {
-      void fetchPages();
-    }
+    void fetchPages();
     const deferredChecks = readOnly ? null : window.setTimeout(() => {
       void fetchTrashPages();
       void fetchHealth();
@@ -257,7 +226,7 @@ export function WorkspaceSidebar({
       mobileQuery.removeEventListener('change', updateViewport);
       window.removeEventListener('arcane-pages-changed', refreshPageLists);
     };
-  }, [fetchHealth, fetchPages, fetchTrashPages, initialPages.length, readOnly, showCollectionPages]);
+  }, [fetchHealth, fetchPages, fetchTrashPages, readOnly]);
 
   const setDesktopRailCollapsed = useCallback((collapsed: boolean) => {
     setRailCollapsed(collapsed);
@@ -835,17 +804,6 @@ export function WorkspaceSidebar({
           <button type="button" className="sidebar-close" aria-label="Close navigation" onClick={() => setDrawerOpen(false)}>×</button>
         </div>
 
-        <section className="workspace-settings" aria-label="Workspace settings">
-          <div className="workspace-settings-copy">
-            <strong>Workspace settings</strong>
-            <p>{readOnly ? 'Published mode is on. Visitors see a read-only workspace.' : 'Turn on published mode to make the whole workspace read-only.'}</p>
-          </div>
-          <button type="button" className="primary-btn workspace-settings-toggle" onClick={() => void togglePublishMode()} disabled={publishModeBusy} aria-pressed={readOnly}>
-            {readOnly ? 'Turn off published mode' : 'Turn on published mode'}
-          </button>
-          {publishModeStatus ? <p className="status-note" role="status">{publishModeStatus}</p> : null}
-        </section>
-
         {!readOnly && health && health.status !== 'ok' ? (
           <section className={`health-notice ${health.status}`} role={health.status === 'error' ? 'alert' : 'status'}>
             <strong>{health.status === 'error' ? 'Workspace needs recovery' : 'Workspace check found issues'}</strong>
@@ -908,9 +866,11 @@ export function WorkspaceSidebar({
           </details>
         ) : null}
 
-        <div className="sidebar-site-links" aria-label="Workspace sections">
-          <Link href={collectionHomePath} className="sidebar-section-link">Collections</Link>
-        </div>
+        {!readOnly ? (
+          <div className="sidebar-site-links" aria-label="Workspace sections">
+            <Link href={collectionHomePath} className="sidebar-section-link">Collections</Link>
+          </div>
+        ) : null}
 
         {status && pages.length ? <p className="help status-note" role="status">{status}</p> : null}
       </aside>

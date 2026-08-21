@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { rejectPublishedMutation } from '@/lib/surface';
 
 const execFileAsync = promisify(execFile);
 export const runtime = 'nodejs';
@@ -15,6 +16,8 @@ function parseDataUrl(value: string) {
 }
 
 export async function POST(request: Request) {
+  const blocked = rejectPublishedMutation('Editing images');
+  if (blocked) return blocked;
   let temp = '';
   try {
     const body = await request.json() as { image?: string; prompt?: string };

@@ -81,11 +81,9 @@ export function PageWorkspaceLayout({
     <div className="layout-shell">
       <WorkspaceSidebar
         currentPageId={pageId ?? undefined}
-        initialPages={initialPages}
-        showCollectionPages={readOnly}
         readOnly={readOnly}
         pageRouteBasePath={pageRouteBasePath}
-        collectionHomePath={readOnly ? `${pageRouteBasePath}/collections` : '/collections'}
+        collectionHomePath={readOnly ? `${pageRouteBasePath.replace(/\/+$/, '')}/collections` || '/collections' : '/collections'}
         homePath={readOnly ? pageRouteBasePath : '/'}
         onCreated={readOnly ? undefined : (page) => {
           if (page) {

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { Buffer } from 'node:buffer';
 import { createAsset, type AssetCreateResult } from '@/lib/data/storage';
+import { rejectPublishedMutation } from '@/lib/surface';
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
@@ -116,6 +117,8 @@ async function fetchImage(url: URL): Promise<{ bytes: Buffer; mimeType: string; 
 }
 
 export async function POST(request: NextRequest) {
+  const blocked = rejectPublishedMutation('Importing assets');
+  if (blocked) return blocked;
   let tempPath: string | null = null;
   try {
     const payload = (await request.json().catch(() => ({}))) as { url?: unknown };

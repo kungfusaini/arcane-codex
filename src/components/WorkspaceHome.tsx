@@ -74,7 +74,7 @@ export function WorkspaceHome({
         currentPageId={undefined}
         readOnly={readOnly}
         pageRouteBasePath={pageRouteBasePath}
-        collectionHomePath={readOnly ? `${pageRouteBasePath}/collections` : '/collections'}
+        collectionHomePath={readOnly ? `${pageRouteBasePath.replace(/\/+$/, '')}/collections` || '/collections' : '/collections'}
         homePath={readOnly ? pageRouteBasePath : '/'}
         onCreated={readOnly ? undefined : async () => {
           await refreshPages();

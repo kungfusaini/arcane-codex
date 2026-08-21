@@ -5,6 +5,7 @@ import {
   listCollections,
   updateCollection,
 } from '@/lib/data/storage';
+import { rejectPublishedMutation } from '@/lib/surface';
 import {
   CollectionProperty,
   CollectionViews,
@@ -120,6 +121,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const blocked = rejectPublishedMutation('Creating collections');
+  if (blocked) return blocked;
   const payload = (await request.json().catch(() => ({}))) as {
     name?: unknown;
     hostPageId?: unknown;
@@ -149,6 +152,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
+  const blocked = rejectPublishedMutation('Editing collections');
+  if (blocked) return blocked;
   const payload = (await request.json().catch(() => ({}))) as {
     id?: string;
     name?: unknown;

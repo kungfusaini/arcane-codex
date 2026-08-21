@@ -199,7 +199,6 @@ export function CollectionsIndex({
     <div className="layout-shell">
       <WorkspaceSidebar
         currentPageId={undefined}
-        showCollectionPages={readOnly}
         readOnly={readOnly}
         pageRouteBasePath={pageRouteBasePath}
         collectionHomePath={collectionRouteBasePath}
