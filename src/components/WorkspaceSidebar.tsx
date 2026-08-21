@@ -15,12 +15,14 @@ import {
 import { buildTree, type PageTreeNode } from '@/lib/pageTree';
 import { useDismissibleDetails } from '@/components/useDismissibleDetails';
 import { buildPagePathFromPages } from '@/lib/pageUrls';
+import { WORKSPACE_HOME_SLUG, promoteWorkspaceHomeChildren } from '@/lib/workspaceHome';
 
 type SidebarPage = {
   id: string;
   parentId: string | null;
   sortKey: number;
   title: string;
+  slug?: string | null;
   icon: string | null;
   iconAssetId: string | null;
   revision: number;
@@ -113,9 +115,13 @@ export function WorkspaceSidebar({
   currentPageId,
   onCreated,
   readOnly = false,
-  pageRouteBasePath = '/page',
+  pageRouteBasePath = '/',
   homePath = '/',
   collectionHomePath = '/collections',
+  previewPublished = false,
+  canTogglePreview = false,
+  onPreviewPublishedChange,
+  hiddenRootPageSlug = WORKSPACE_HOME_SLUG,
 }: {
   currentPageId?: string;
   onCreated?: (page?: SidebarPage) => void;
@@ -123,6 +129,10 @@ export function WorkspaceSidebar({
   pageRouteBasePath?: string;
   homePath?: string;
   collectionHomePath?: string;
+  previewPublished?: boolean;
+  canTogglePreview?: boolean;
+  onPreviewPublishedChange?: (nextPreviewPublished: boolean) => void;
+  hiddenRootPageSlug?: string | null;
 }) {
   useDismissibleDetails('.tree-menu');
 
@@ -312,8 +322,9 @@ export function WorkspaceSidebar({
   }, [pages]);
 
   const baseTree = useMemo(() => {
+    const visiblePages = hiddenRootPageSlug ? promoteWorkspaceHomeChildren(pages, hiddenRootPageSlug) : pages;
     const nodes = buildTree(
-      pages
+      visiblePages
         .slice()
         .map((page) => ({
           id: page.id,
@@ -326,7 +337,7 @@ export function WorkspaceSidebar({
     );
     const trimmed = query.trim();
     return trimmed ? filterTreeByQuery(nodes, trimmed) : nodes;
-  }, [pages, query]);
+  }, [hiddenRootPageSlug, pages, query]);
 
   const tree = useMemo(() => addRevisionToTree(baseTree, pageById), [baseTree, pageById]);
 
@@ -777,7 +788,11 @@ export function WorkspaceSidebar({
           <span aria-hidden="true">☰</span>
         </button>
         <Link href={homePath} className="mobile-brand">Arcane Codex</Link>
-        {readOnly || !onCreated ? null : <button type="button" className="mobile-new" onClick={() => onCreatePage(null)}>New</button>}
+        {canTogglePreview ? (
+          <button type="button" className="mobile-preview-toggle" aria-pressed={previewPublished} onClick={() => onPreviewPublishedChange?.(!previewPublished)}>
+            {previewPublished ? 'Editor' : 'Preview'}
+          </button>
+        ) : readOnly || !onCreated ? null : <button type="button" className="mobile-new" onClick={() => onCreatePage(null)}>New</button>}
       </header>
       <button
         type="button"
@@ -803,6 +818,18 @@ export function WorkspaceSidebar({
           <button type="button" className="sidebar-collapse" aria-label="Collapse sidebar" onClick={() => setDesktopRailCollapsed(true)}>‹</button>
           <button type="button" className="sidebar-close" aria-label="Close navigation" onClick={() => setDrawerOpen(false)}>×</button>
         </div>
+
+        {canTogglePreview ? (
+          <section className={`preview-mode-control ${previewPublished ? 'active' : ''}`} aria-label="Published preview mode">
+            <div>
+              <strong>{previewPublished ? 'Published preview' : 'Editor mode'}</strong>
+              <span>{previewPublished ? 'Read-only view on this URL.' : 'Preview the read-only surface locally.'}</span>
+            </div>
+            <button type="button" className={previewPublished ? 'primary-btn' : 'quiet-btn'} aria-pressed={previewPublished} onClick={() => onPreviewPublishedChange?.(!previewPublished)}>
+              {previewPublished ? 'Back to editor' : 'Preview published'}
+            </button>
+          </section>
+        ) : null}
 
         {!readOnly && health && health.status !== 'ok' ? (
           <section className={`health-notice ${health.status}`} role={health.status === 'error' ? 'alert' : 'status'}>

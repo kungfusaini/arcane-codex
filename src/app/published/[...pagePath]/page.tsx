@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound, permanentRedirect, redirect } from 'next/navigation';
+import { PageEditorRoute } from '@/app/page/PageEditorRoute';
 import { PageWorkspaceLayout } from '@/app/page/PageWorkspaceLayout';
 import { getPage, listPageSummaries, resolvePageRoutePath } from '@/lib/data/storage';
 import { isPublishedAppSurface } from '@/lib/surface';
@@ -36,7 +37,7 @@ export default function PublishedPageRoute({ params }: { params: { pagePath?: st
   if (isPublishedAppSurface()) {
     redirect(toPublicPath(resolution.canonicalPath));
   }
-  if (resolution.requestedPath !== resolution.canonicalPath.replace(/^\/page\//, '')) {
+  if (resolution.requestedPath !== resolution.canonicalPath.replace(/^\/page\//, '').replace(/^\//, '')) {
     permanentRedirect(toPublishedPath(resolution.canonicalPath));
   }
 
@@ -51,5 +52,9 @@ export default function PublishedPageRoute({ params }: { params: { pagePath?: st
     revision: page.revision,
   }));
 
-  return <PageWorkspaceLayout initialPageId={resolution.pageId} initialPages={initialPages} readOnly pageRouteBasePath="/published" />;
+  return (
+    <PageWorkspaceLayout readOnly pageRouteBasePath="/published">
+      <PageEditorRoute pageId={resolution.pageId} initialPages={initialPages} readOnly pageRouteBasePath="/published" />
+    </PageWorkspaceLayout>
+  );
 }

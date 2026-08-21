@@ -3,6 +3,8 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { WorkspaceSidebar } from '@/components/WorkspaceSidebar';
+import { usePublishedPreview } from '@/components/usePublishedPreview';
+import { getWorkspaceHomePathFromBase } from '@/lib/workspaceHome';
 
 type CollectionPropertyType = 'text' | 'number' | 'select' | 'multi-select' | 'checkbox' | 'date' | 'url';
 
@@ -103,12 +105,13 @@ function safeParseSchema(schemaJson: string): { properties: { id: string; name: 
 export function CollectionsIndex({
   readOnly = false,
   collectionRouteBasePath = '/collections',
-  pageRouteBasePath = '/page',
+  pageRouteBasePath = '/',
 }: {
   readOnly?: boolean;
   collectionRouteBasePath?: string;
   pageRouteBasePath?: string;
 }) {
+  const { previewPublished, effectiveReadOnly, canTogglePreview, setPreviewPublished } = usePublishedPreview(readOnly);
   const [collections, setCollections] = useState<CollectionSummary[]>([]);
   const [isLoading, setLoading] = useState(true);
   const [name, setName] = useState('');
@@ -153,7 +156,7 @@ export function CollectionsIndex({
   const onCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmed = name.trim();
-    if (readOnly || !trimmed) {
+    if (effectiveReadOnly || !trimmed) {
       return;
     }
 
@@ -199,11 +202,14 @@ export function CollectionsIndex({
     <div className="layout-shell">
       <WorkspaceSidebar
         currentPageId={undefined}
-        readOnly={readOnly}
+        readOnly={effectiveReadOnly}
         pageRouteBasePath={pageRouteBasePath}
         collectionHomePath={collectionRouteBasePath}
-        homePath={readOnly ? pageRouteBasePath : '/'}
-        onCreated={readOnly ? undefined : () => {
+        homePath={getWorkspaceHomePathFromBase(pageRouteBasePath)}
+        previewPublished={previewPublished}
+        canTogglePreview={canTogglePreview}
+        onPreviewPublishedChange={setPreviewPublished}
+        onCreated={effectiveReadOnly ? undefined : () => {
           loadCollections().catch(() => {
             setStatus('Unable to refresh collections');
           });
@@ -216,7 +222,7 @@ export function CollectionsIndex({
               <p className="eyebrow">Structured knowledge</p>
               <h1>Collections</h1>
             </div>
-            {readOnly ? null : (
+            {effectiveReadOnly ? null : (
               <details className="create-collection-menu">
                 <summary role="button" aria-label="New collection">New collection</summary>
                 <form onSubmit={onCreate} className="collections-create-form">

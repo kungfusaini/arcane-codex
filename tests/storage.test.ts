@@ -210,8 +210,9 @@ describe('page URLs', () => {
     const root = { id: 'root', parentId: null, sortKey: 0, title: 'Root Page' };
     const child = { id: 'child', parentId: 'root', sortKey: 1, title: 'Child Page' };
 
-    assert.equal(buildPagePathFromPages(root.id, [root, child], '/'), '/root-page');
-    assert.equal(buildPagePathFromPages(child.id, [root, child], '/'), '/root-page/child-page');
+    assert.equal(buildPagePathFromPages(root.id, [root, child]), '/root-page');
+    assert.equal(buildPagePathFromPages(child.id, [root, child]), '/root-page/child-page');
+    assert.equal(buildPagePathFromPages(child.id, [root, child], '/page'), '/page/root-page/child-page');
     assert.equal(toPublicPath('/page/root-page/child-page'), '/root-page/child-page');
     assert.equal(toPublicPath('/published/root-page/child-page'), '/root-page/child-page');
     assert.equal(toPublicPath('/published/collections/books'), '/collections/books');
@@ -332,8 +333,8 @@ describe('pages CRUD and ordering', () => {
 
       const renamed = updatePage(child.id, { revision: child.revision, title: 'Sigil Archive' }, workspace);
       const afterRenamePages = listPages(workspace);
-      const renamedChildResolution = resolvePageRoutePath(originalChildPath.replace(/^\/page\//, '').split('/'), workspace);
-      const renamedGrandchildResolution = resolvePageRoutePath(originalGrandchildPath.replace(/^\/page\//, '').split('/'), workspace);
+      const renamedChildResolution = resolvePageRoutePath(originalChildPath.replace(/^\//, '').split('/'), workspace);
+      const renamedGrandchildResolution = resolvePageRoutePath(originalGrandchildPath.replace(/^\//, '').split('/'), workspace);
       assert.equal(renamedChildResolution?.pageId, child.id);
       assert.equal(renamedChildResolution?.canonicalPath, buildPagePathFromPages(child.id, afterRenamePages));
       assert.equal(renamedGrandchildResolution?.pageId, grandchild.id);
@@ -351,7 +352,7 @@ describe('pages CRUD and ordering', () => {
         },
       ], workspace);
       const afterMovePages = listPages(workspace);
-      const movedResolution = resolvePageRoutePath(beforeMovePath.replace(/^\/page\//, '').split('/'), workspace);
+      const movedResolution = resolvePageRoutePath(beforeMovePath.replace(/^\//, '').split('/'), workspace);
       assert.equal(movedResolution?.pageId, child.id);
       assert.equal(movedResolution?.canonicalPath, buildPagePathFromPages(child.id, afterMovePages));
     } finally {

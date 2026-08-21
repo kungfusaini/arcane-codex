@@ -407,7 +407,7 @@ function ArcaneSuggestionMenu<T extends DefaultReactSuggestionItem>({
 
 type PageEditorProps = { pageId: string; initialPages?: SidebarPage[]; readOnly?: boolean; pageRouteBasePath?: string };
 
-export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRouteBasePath = '/page' }: PageEditorProps) {
+export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRouteBasePath = '/' }: PageEditorProps) {
   useDismissibleDetails('.action-menu');
 
   const [page, setPage] = useState<PageRecord | null>(null);
@@ -422,7 +422,6 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
   const [assets, setAssets] = useState<AssetRecord[]>([]);
   const [hostCollection, setHostCollection] = useState<CollectionSummary | null>(null);
   const [pageCollections, setPageCollections] = useState<CollectionSummary[]>([]);
-  const [backlinks, setBacklinks] = useState<SidebarPage[]>([]);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [iconPickerPosition, setIconPickerPosition] = useState<{ top: number; left: number } | null>(null);
   const [uploadTasks, setUploadTasks] = useState<UploadTask[]>([]);
@@ -657,7 +656,6 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
 
       const payload = (await response.json()) as { page: PageRecord; backlinks?: SidebarPage[] } & PageCollectionsPayload;
       setPage(payload.page);
-      setBacklinks(payload.backlinks ?? []);
       setPageCollections(payload.collections ?? []);
       setHostCollection(payload.hostCollection ?? null);
       pendingRevision.current = payload.page.revision;
@@ -700,7 +698,6 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
       setEditorReady(true);
     } catch (error) {
       setPage(null);
-      setBacklinks([]);
       setEditorReady(false);
       setStatus('error');
       setStatusMessage(error instanceof Error ? error.message : 'Page could not be loaded');
@@ -1769,6 +1766,9 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
 
   useEffect(() => {
     setShowLoadingSkeleton(false);
+    if (page) {
+      return;
+    }
     loadingTimerRef.current = window.setTimeout(() => setShowLoadingSkeleton(true), 1000);
     return () => {
       if (loadingTimerRef.current !== null) {
@@ -1776,7 +1776,7 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
         loadingTimerRef.current = null;
       }
     };
-  }, [pageId]);
+  }, [page, pageId]);
 
   if (!page) {
     return status === 'error' ? (

@@ -182,7 +182,10 @@ function assetLink(assetId: string, label: string, context: MarkdownContext, ima
 
 function rewriteHref(href: string, label: string, context: MarkdownContext): string {
   const pageMatch = /^\/?page\/(.+?)\/?$/i.exec(href);
-  const pageSegments = pageMatch ? pageMatch[1].split('/') : [];
+  const rootPageMatch = !pageMatch && href.startsWith('/') && !href.startsWith('/api/') && !href.startsWith('/collections')
+    ? /^\/(.+?)\/?$/i.exec(href)
+    : null;
+  const pageSegments = pageMatch ? pageMatch[1].split('/') : rootPageMatch ? rootPageMatch[1].split('/') : [];
   const pageId = pageSegments.length ? resolvePagePathSegments(pageSegments, context.pages) ?? extractLegacyPageId(pageSegments.at(-1)) : null;
   if (pageId) {
     return pageLink(pageId, label, context);

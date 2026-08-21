@@ -5,7 +5,9 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { PageEditorSkeleton } from '@/components/PageEditorSkeleton';
 import { WorkspaceSidebar } from '@/components/WorkspaceSidebar';
+import { usePublishedPreview } from '@/components/usePublishedPreview';
 import { buildPagePathFromPages, resolvePagePathname, type PageUrlPage } from '@/lib/pageUrls';
+import { getWorkspaceHomePath } from '@/lib/workspaceHome';
 
 type LayoutPage = PageUrlPage & {
   icon: string | null;
@@ -31,21 +33,18 @@ function DelayedPageEditorSkeleton() {
 
 export function PageWorkspaceLayout({
   children,
-  initialPageId = null,
-  initialPages = [],
   readOnly = false,
-  pageRouteBasePath = '/page',
+  pageRouteBasePath = '/',
 }: {
-  children?: React.ReactNode;
-  initialPageId?: string | null;
-  initialPages?: LayoutPage[];
+  children: React.ReactNode;
   readOnly?: boolean;
   pageRouteBasePath?: string;
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [pages, setPages] = useState<LayoutPage[]>(initialPages);
-  const [loaded, setLoaded] = useState(initialPageId !== null || initialPages.length > 0);
+  const { previewPublished, effectiveReadOnly, canTogglePreview, setPreviewPublished } = usePublishedPreview(readOnly);
+  const [pages, setPages] = useState<LayoutPage[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,37 +61,41 @@ export function PageWorkspaceLayout({
         }
       }
     };
-    if (!loaded) {
-      void loadPages();
-    }
+
+    void loadPages();
     const refresh = () => void loadPages();
     window.addEventListener('arcane-pages-changed', refresh);
     return () => {
       cancelled = true;
       window.removeEventListener('arcane-pages-changed', refresh);
     };
-  }, [loaded]);
+  }, []);
 
-  const resolvedPageId = loaded && pathname ? resolvePagePathname(pathname, pages) : null;
-  const pageId = initialPageId ?? resolvedPageId;
-  const isPageRoute = Boolean(pathname?.startsWith(pageRouteBasePath));
+  const pageId = loaded && pathname ? resolvePagePathname(pathname, pages) : null;
+  const isManagedPageRoute = pageRouteBasePath === '/page' && Boolean(pathname?.startsWith('/page'));
+  const homePath = getWorkspaceHomePath(pages, pageRouteBasePath);
 
   return (
     <div className="layout-shell">
       <WorkspaceSidebar
         currentPageId={pageId ?? undefined}
-        readOnly={readOnly}
+        readOnly={effectiveReadOnly}
         pageRouteBasePath={pageRouteBasePath}
         collectionHomePath={readOnly ? `${pageRouteBasePath.replace(/\/+$/, '')}/collections` || '/collections' : '/collections'}
-        homePath={readOnly ? pageRouteBasePath : '/'}
-        onCreated={readOnly ? undefined : (page) => {
+        homePath={homePath}
+        previewPublished={previewPublished}
+        canTogglePreview={canTogglePreview}
+        onPreviewPublishedChange={setPreviewPublished}
+        onCreated={effectiveReadOnly ? undefined : (page) => {
           if (page) {
             router.push(buildPagePathFromPages(page.id, [...pages, page], pageRouteBasePath));
           }
         }}
       />
       <main className="main-column page-main">
-        {!loaded && isPageRoute ? <DelayedPageEditorSkeleton /> : pageId ? <PageEditor pageId={pageId} initialPages={initialPages} readOnly={readOnly} pageRouteBasePath={pageRouteBasePath} /> : children}
+        {isManagedPageRoute ? (
+          !loaded ? <DelayedPageEditorSkeleton /> : pageId ? <PageEditor pageId={pageId} initialPages={pages} readOnly={effectiveReadOnly} pageRouteBasePath={pageRouteBasePath} /> : children
+        ) : children}
       </main>
     </div>
   );

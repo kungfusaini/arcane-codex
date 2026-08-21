@@ -31,7 +31,7 @@ function pageById(pages: PageUrlPage[]): Map<string, PageUrlPage> {
   return new Map(pages.map((page) => [page.id, page]));
 }
 
-export function buildPagePathFromPages(pageId: string, pages: PageUrlPage[], basePath = '/page'): string {
+export function buildPagePathFromPages(pageId: string, pages: PageUrlPage[], basePath = '/'): string {
   const byId = pageById(pages);
   const chain: string[] = [];
   const seen = new Set<string>();
@@ -43,7 +43,7 @@ export function buildPagePathFromPages(pageId: string, pages: PageUrlPage[], bas
     current = current.parentId ? byId.get(current.parentId) : undefined;
   }
 
-  const trimmedBasePath = basePath === '/' || basePath.trim() === '' ? '' : basePath.replace(/\/+$/, '') || '/page';
+  const trimmedBasePath = basePath === '/' || basePath.trim() === '' ? '' : basePath.replace(/\/+$/, '') || '';
   return `${trimmedBasePath}/${chain.length ? chain.join('/') : slugifyPageTitle(byId.get(pageId)?.title)}`;
 }
 
@@ -78,7 +78,14 @@ export function resolvePagePathSegments(segments: string[], pages: PageUrlPage[]
 export function resolvePagePathname(pathname: string, pages: PageUrlPage[]): string | null {
   const segments = pathname.split('/').filter(Boolean);
   const pageIndex = segments.indexOf('page');
-  return pageIndex >= 0 ? resolvePagePathSegments(segments.slice(pageIndex + 1), pages) : null;
+  if (pageIndex >= 0) {
+    return resolvePagePathSegments(segments.slice(pageIndex + 1), pages);
+  }
+  const publishedIndex = segments.indexOf('published');
+  if (publishedIndex >= 0) {
+    return resolvePagePathSegments(segments.slice(publishedIndex + 1), pages);
+  }
+  return resolvePagePathSegments(segments, pages);
 }
 
 export function extractLegacyPageId(segment: string | null | undefined): string | null {

@@ -3,14 +3,17 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { WorkspaceSidebar } from '@/components/WorkspaceSidebar';
+import { usePublishedPreview } from '@/components/usePublishedPreview';
 import { PageIcon } from '@/components/PageIcon';
 import { buildPagePathFromPages } from '@/lib/pageUrls';
+import { getWorkspaceHomePath } from '@/lib/workspaceHome';
 
 type PageSummary = {
   id: string;
   parentId: string | null;
   sortKey: number;
   title: string;
+  slug?: string | null;
   icon: string | null;
   iconAssetId: string | null;
   revision: number;
@@ -18,11 +21,12 @@ type PageSummary = {
 
 export function WorkspaceHome({
   readOnly = false,
-  pageRouteBasePath = '/page',
+  pageRouteBasePath = '/',
 }: {
   readOnly?: boolean;
   pageRouteBasePath?: string;
 }) {
+  const { previewPublished, effectiveReadOnly, canTogglePreview, setPreviewPublished } = usePublishedPreview(readOnly);
   const [pages, setPages] = useState<PageSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -49,7 +53,7 @@ export function WorkspaceHome({
   }, []);
 
   const createFirstPage = async () => {
-    if (readOnly) {
+    if (effectiveReadOnly) {
       return;
     }
     try {
@@ -68,15 +72,20 @@ export function WorkspaceHome({
     }
   };
 
+  const homePath = getWorkspaceHomePath(pages, pageRouteBasePath);
+
   return (
     <div className="layout-shell">
       <WorkspaceSidebar
         currentPageId={undefined}
-        readOnly={readOnly}
+        readOnly={effectiveReadOnly}
         pageRouteBasePath={pageRouteBasePath}
         collectionHomePath={readOnly ? `${pageRouteBasePath.replace(/\/+$/, '')}/collections` || '/collections' : '/collections'}
-        homePath={readOnly ? pageRouteBasePath : '/'}
-        onCreated={readOnly ? undefined : async () => {
+        homePath={homePath}
+        previewPublished={previewPublished}
+        canTogglePreview={canTogglePreview}
+        onPreviewPublishedChange={setPreviewPublished}
+        onCreated={effectiveReadOnly ? undefined : async () => {
           await refreshPages();
         }}
       />
@@ -93,18 +102,18 @@ export function WorkspaceHome({
             <>
               <header className="home-header">
                 <div>
-                  <p className="eyebrow">{readOnly ? 'Published workspace' : 'Private workspace'}</p>
-                  <h1>{readOnly ? 'Browse pages' : 'Continue writing'}</h1>
+                  <p className="eyebrow">{effectiveReadOnly ? 'Published workspace' : 'Private workspace'}</p>
+                  <h1>{effectiveReadOnly ? 'Browse pages' : 'Continue writing'}</h1>
                 </div>
-                {readOnly ? null : <button type="button" className="primary-btn" onClick={createFirstPage}>New page</button>}
+                {effectiveReadOnly ? null : <button type="button" className="primary-btn" onClick={createFirstPage}>New page</button>}
               </header>
               <Link href={buildPagePathFromPages(pages[0].id, pages, pageRouteBasePath)} className="recent-page">
                 <PageIcon className="recent-page-icon" icon={pages[0].icon} iconAssetId={pages[0].iconAssetId} />
-                <span><strong>{pages[0].title || 'Untitled'}</strong><small>{readOnly ? 'Open the first published page' : 'Open most recent page'}</small></span>
+                <span><strong>{pages[0].title || 'Untitled'}</strong><small>{effectiveReadOnly ? 'Open the first published page' : 'Open most recent page'}</small></span>
                 <span aria-hidden="true">→</span>
               </Link>
             </>
-          ) : readOnly ? (
+          ) : effectiveReadOnly ? (
             <div className="home-empty">
               <span className="empty-mark" aria-hidden="true">✦</span>
               <h1>Nothing published yet</h1>

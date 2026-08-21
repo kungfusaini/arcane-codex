@@ -71,7 +71,7 @@ export function toPrivatePath(pathname: string): string {
     return normalized.replace(/^\/published\/collections/, '/collections');
   }
   if (normalized.startsWith('/published/')) {
-    return normalized.replace(/^\/published/, '/page');
+    return normalized.replace(/^\/published/, '');
   }
   return normalized;
 }

@@ -455,7 +455,7 @@ function syncPagePathAliases(db: DatabaseSync, beforePages: PageUrlPage[], after
     if (!afterPath || beforePath === afterPath) {
       continue;
     }
-    stmt.run(beforePath.replace(/^\/page\//, ''), pageId, now);
+    stmt.run(beforePath.replace(/^\/page\//, '').replace(/^\//, ''), pageId, now);
   }
 }
 

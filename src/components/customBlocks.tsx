@@ -706,7 +706,7 @@ export function GalleryWidgetEditorShell({
 const pageLinkBlock: CustomBlockRegistration = {
   type: 'pageLink',
   create: ({ referencedPages, pageRouteBasePath }) => {
-    const routeBasePath = pageRouteBasePath ?? '/page';
+    const routeBasePath = pageRouteBasePath ?? '/';
     return buildReactBlockSpec(
     {
       type: 'pageLink',

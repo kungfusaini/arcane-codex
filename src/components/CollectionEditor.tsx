@@ -789,7 +789,7 @@ function renderFocusedPropertyValue(property: CollectionProperty, value: unknown
   return property.type === 'url' ? <a href={text} className="text-link" target="_blank" rel="noreferrer">{normalizeUrl(text)}</a> : <span>{text}</span>;
 }
 
-export function CollectionEditor({ collectionId, embedded = false, focusPageId, readOnly = false, pageRouteBasePath = '/page' }: { collectionId: string; embedded?: boolean; focusPageId?: string; readOnly?: boolean; pageRouteBasePath?: string }) {
+export function CollectionEditor({ collectionId, embedded = false, focusPageId, readOnly = false, pageRouteBasePath = '/' }: { collectionId: string; embedded?: boolean; focusPageId?: string; readOnly?: boolean; pageRouteBasePath?: string }) {
   useDismissibleDetails('.add-entry-menu, .row-menu');
 
   const [collection, setCollection] = useState<CollectionRecord | null>(null);

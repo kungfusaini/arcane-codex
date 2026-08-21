@@ -453,6 +453,40 @@ test('shows the generated icon prompt when an image icon is selected', async ({ 
   await page.unroute('**/api/page-icon-generate');
 });
 
+test('toggles local published preview on editor routes without changing the URL', async ({ page, request }) => {
+  const createResponse = await request.post('/api/pages', { data: { title: 'Preview toggle source' } });
+  expect(createResponse.ok()).toBeTruthy();
+  const previewPage = (await createResponse.json()).page as PageRecord;
+
+  await page.goto(`/page/${previewPage.id}`);
+  await expect(page.locator('.editor-view')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Page actions' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add icon' })).toBeVisible();
+
+  const previewButton = page.locator('section[aria-label="Published preview mode"]').getByRole('button');
+  await expect(previewButton).toHaveText('Preview published');
+  const editorUrl = page.url();
+
+  await previewButton.click();
+  await expect(page).toHaveURL(editorUrl);
+  await expect(previewButton).toHaveText('Back to editor');
+  await expect(page.getByRole('button', { name: 'Page actions' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Add icon' })).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'Untitled' })).toHaveCount(0);
+
+  await page.reload();
+  await expect(page).toHaveURL(editorUrl);
+  await expect(page.locator('section[aria-label="Published preview mode"]').getByRole('button')).toHaveText('Back to editor');
+  await expect(page.getByRole('button', { name: 'Page actions' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Add icon' })).toHaveCount(0);
+
+  await page.locator('section[aria-label="Published preview mode"]').getByRole('button').click();
+  await expect(page).toHaveURL(editorUrl);
+  await expect(page.locator('section[aria-label="Published preview mode"]').getByRole('button')).toHaveText('Preview published');
+  await expect(page.getByRole('button', { name: 'Page actions' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add icon' })).toBeVisible();
+});
+
 test('renders a read-only published site that reflects live workspace content', async ({ page, request }) => {
   const rootResponse = await request.post('/api/pages', { data: { title: 'Published root' } });
   expect(rootResponse.ok()).toBeTruthy();
@@ -477,6 +511,9 @@ test('renders a read-only published site that reflects live workspace content', 
   expect(itemResponse.ok()).toBeTruthy();
 
   await page.goto('/published');
+  await expect(page.locator('section[aria-label="Published preview mode"]')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Preview published' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Back to editor' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'New page' })).toHaveCount(0);
   await expect(page.getByLabel('Search pages')).toBeVisible();
   await expect(page.locator('.workspace-settings')).toHaveCount(0);
@@ -495,6 +532,9 @@ test('renders a read-only published site that reflects live workspace content', 
 
   const publishedPath = buildPagePathFromPages(root.id, [root, child], '/published');
   await page.goto(publishedPath);
+  await expect(page.locator('section[aria-label="Published preview mode"]')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Preview published' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Back to editor' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Page actions' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Add icon' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Add cover', exact: true })).toHaveCount(0);

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound, permanentRedirect } from 'next/navigation';
+import { PageEditorRoute } from '@/app/page/PageEditorRoute';
 import { PageWorkspaceLayout } from '@/app/page/PageWorkspaceLayout';
 import { getPage, listPageSummaries, resolvePageRoutePath } from '@/lib/data/storage';
 import { isPublishedAppSurface } from '@/lib/surface';
@@ -8,9 +9,6 @@ import { buildPagePathFromPages } from '@/lib/pageUrls';
 export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({ params }: { params: { pagePath?: string[] } }): Promise<Metadata> {
-  if (!isPublishedAppSurface()) {
-    return { title: 'Page not found' };
-  }
   const resolution = resolvePageRoutePath(params.pagePath ?? []);
   if (!resolution) {
     return { title: 'Page not found' };
@@ -33,10 +31,7 @@ export async function generateMetadata({ params }: { params: { pagePath?: string
 }
 
 export default function PublicPageRoute({ params }: { params: { pagePath?: string[] } }) {
-  if (!isPublishedAppSurface()) {
-    notFound();
-  }
-
+  const readOnly = isPublishedAppSurface();
   const resolution = resolvePageRoutePath(params.pagePath ?? []);
   if (!resolution) {
     notFound();
@@ -57,5 +52,9 @@ export default function PublicPageRoute({ params }: { params: { pagePath?: strin
     permanentRedirect(canonicalPath);
   }
 
-  return <PageWorkspaceLayout initialPageId={resolution.pageId} initialPages={initialPages} readOnly pageRouteBasePath="/" />;
+  return (
+    <PageWorkspaceLayout readOnly={readOnly} pageRouteBasePath="/">
+      <PageEditorRoute pageId={resolution.pageId} initialPages={initialPages} readOnly={readOnly} pageRouteBasePath="/" />
+    </PageWorkspaceLayout>
+  );
 }

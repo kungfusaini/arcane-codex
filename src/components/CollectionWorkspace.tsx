@@ -2,13 +2,15 @@
 
 import { CollectionEditor } from '@/components/CollectionEditor';
 import { WorkspaceSidebar } from '@/components/WorkspaceSidebar';
+import { usePublishedPreview } from '@/components/usePublishedPreview';
+import { getWorkspaceHomePathFromBase } from '@/lib/workspaceHome';
 
 export function CollectionWorkspace({
   collectionId,
   readOnly = false,
-  pageRouteBasePath = '/page',
+  pageRouteBasePath = '/',
   collectionHomePath = '/collections',
-  homePath = '/',
+  homePath = getWorkspaceHomePathFromBase(pageRouteBasePath),
 }: {
   collectionId: string;
   readOnly?: boolean;
@@ -16,7 +18,8 @@ export function CollectionWorkspace({
   collectionHomePath?: string;
   homePath?: string;
 }) {
-  const onCreated = readOnly ? undefined : () => {
+  const { previewPublished, effectiveReadOnly, canTogglePreview, setPreviewPublished } = usePublishedPreview(readOnly);
+  const onCreated = effectiveReadOnly ? undefined : () => {
     window.dispatchEvent(new Event('arcane-pages-changed'));
   };
 
@@ -24,14 +27,17 @@ export function CollectionWorkspace({
     <div className="layout-shell">
       <WorkspaceSidebar
         currentPageId={undefined}
-        readOnly={readOnly}
+        readOnly={effectiveReadOnly}
         pageRouteBasePath={pageRouteBasePath}
         collectionHomePath={collectionHomePath}
         homePath={homePath}
+        previewPublished={previewPublished}
+        canTogglePreview={canTogglePreview}
+        onPreviewPublishedChange={setPreviewPublished}
         onCreated={onCreated}
       />
       <main className="main-column collection-main">
-        <CollectionEditor collectionId={collectionId} readOnly={readOnly} pageRouteBasePath={pageRouteBasePath} />
+        <CollectionEditor collectionId={collectionId} readOnly={effectiveReadOnly} pageRouteBasePath={pageRouteBasePath} />
       </main>
     </div>
   );
