@@ -255,8 +255,7 @@ test('core local workspace flows survive reload and remain recoverable', async (
   await page.waitForLoadState('networkidle');
 
   await page.goto(`/page/${child.id}`);
-  await expect(page.getByRole('heading', { name: 'Backlinks' })).toBeVisible();
-  await expect(page.locator('.backlinks').getByRole('link', { name: 'Latest queued title' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Backlinks' })).toHaveCount(0);
 
   const collectionResponse = await request.post('/api/collections', {
     data: {

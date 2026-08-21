@@ -1804,22 +1804,6 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
   const coverAsset = page.coverAssetId
     ? assets.find((asset) => asset.id === page.coverAssetId) ?? { id: page.coverAssetId, filename: 'Cover image' }
     : null;
-  const backlinksSection = backlinks.length ? (
-    <details className="backlinks">
-      <summary>
-        <h3>Backlinks</h3>
-        <span>{backlinks.length}</span>
-      </summary>
-      <ul>
-        {backlinks.map((backlink) => (
-          <li key={backlink.id}>
-            <Link className="text-link" href={buildPagePathFromPages(backlink.id, allPages, pageRouteBasePath)}>{backlink.title || 'Untitled'}</Link>
-          </li>
-        ))}
-      </ul>
-    </details>
-  ) : null;
-
   if (readOnly) {
     return (
       <section className="document-shell" aria-live="polite">
@@ -1894,7 +1878,6 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
             <BlockNoteView editor={editor} slashMenu={false} editable={false} theme="dark">
             </BlockNoteView>
           </div>
-          {backlinksSection}
         </div>
       </section>
     );
@@ -2240,7 +2223,6 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
               <button type="submit" className="primary-btn">Save</button>
             </form>
           ) : null}
-          {backlinksSection}
         </div>
 
       </div>
