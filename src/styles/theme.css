@@ -1,0 +1,241 @@
+/* Canonical Arcane Codex theme source.
+   Keep visual values here; component CSS should consume semantic/component tokens. */
+:root {
+  /* Primitive palette */
+  --color-neutral: #191919;
+  --color-ink: #f1f1ef;
+  --color-muted: #d2d2cf;
+  --color-border: #353535;
+  --color-accent: #1f78d1;
+  --color-accent-on: #ffffff;
+  --color-shadow: rgba(0, 0, 0, 0.34);
+  --color-card: #252525;
+  --color-page: #202020;
+  --color-page-muted: #2c2c2c;
+  --color-success: #4dab9a;
+  --color-warning: #dca65c;
+  --color-danger: #eb5757;
+  --color-danger-muted: #3a2426;
+
+  /* Typography */
+  --font-base: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: var(--font-base);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-brand-mono: 'Arcane ProFont', var(--font-mono);
+  --font-brand-display: 'Arcane Eagle', var(--font-display);
+
+  --font-size-100: 12px;
+  --font-size-200: 14px;
+  --font-size-300: 16px;
+  --font-size-400: 18px;
+  --font-size-500: 20px;
+  --font-size-600: 24px;
+  --font-size-700: 32px;
+  --font-size-800: 48px;
+  --font-size-brand-hero: 56px;
+
+  /* 8px rhythm + small optical steps */
+  --space-0: 0px;
+  --space-px: 1px;
+  --space-half: 2px;
+  --space-1: 4px;
+  --space-1-5: 6px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 8px;
+  --radius-round: 50%;
+
+  --elevation-none: none;
+  --elevation-sm: 0 1px 2px var(--color-shadow);
+  --elevation-md: 0 8px 24px var(--color-shadow);
+  --elevation-lg: 0 16px 40px var(--color-shadow);
+  --elevation-xl: 0 24px 64px var(--color-shadow);
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --motion-fast: 100ms;
+  --motion-base: 150ms;
+  --motion-slow: 200ms;
+  --motion-enter-title-delay: 0ms;
+  --motion-enter-editor-delay: 0ms;
+  --motion-stagger-step: 0ms;
+  --motion-stagger-max: 0;
+  --motion-small: var(--space-half);
+  --motion-medium: var(--space-1);
+  --motion-large: var(--space-2);
+  --route-translate: 0px;
+
+  /* Layout and measures */
+  --rail-width: 264px;
+  --reading-width: 768px;
+  --measure-content-sm: 440px;
+  --measure-empty: 520px;
+  --measure-popover-sm: 320px;
+  --measure-popover-md: 360px;
+  --measure-popover-lg: 560px;
+  --measure-form-panel: 420px;
+  --measure-menu-min: 176px;
+  --measure-home: 880px;
+  --measure-document-wide: 1120px;
+  --measure-collection: 1184px;
+  --measure-collection-wide: 1280px;
+  --measure-gallery-wide: 1440px;
+  --breakpoint-mobile: 40rem;
+  --breakpoint-tablet: 64rem;
+  --breakpoint-collection: 720px;
+  --z-popover: 20;
+  --z-drawer: 30;
+  --z-player: 40;
+
+  /* Component dimensions */
+  --cover-height-sm: 224px;
+  --cover-height-md: 304px;
+  --cover-toolbar-track-min: 160px;
+  --preview-panel-width: 288px;
+  --collection-state-min-height: 240px;
+  --collection-surface-min-height: 320px;
+  --collection-table-min-width: 720px;
+  --collection-table-wide-min-width: 960px;
+  --collection-table-books-min-width: 1280px;
+  --collection-title-min-width: 208px;
+  --collection-title-column-width: 248px;
+  --collection-property-text-width: 176px;
+  --collection-property-status-width: 132px;
+  --collection-property-compact-width: 104px;
+  --collection-property-number-width: 128px;
+  --collection-property-tags-width: 312px;
+  --collection-focus-label-min: 220px;
+  --collection-focus-label-max: 280px;
+  --collection-focus-width: 900px;
+  --collection-gallery-min-card: 240px;
+  --collection-gallery-compact-min-card: 224px;
+  --collection-cover-height: 160px;
+  --collection-cover-compact-height: 144px;
+  --collection-settings-aside-width: 240px;
+  --editor-min-height: 480px;
+  --emoji-preview-size: 112px;
+
+  /* Semantic surfaces */
+  --surface-canvas: var(--color-neutral);
+  --surface-page: var(--color-page);
+  --surface-page-muted: var(--color-page-muted);
+  --surface-panel: var(--color-card);
+  --surface-popover: var(--color-card);
+  --surface-hover: var(--color-page-muted);
+  --surface-selected: var(--color-page-muted);
+  --surface-field: var(--color-page-muted);
+  --surface-danger: var(--color-danger-muted);
+  --surface-transparent: transparent;
+
+  --text-primary: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --text-accent: var(--color-accent);
+  --text-on-accent: var(--color-accent-on);
+  --text-success: var(--color-success);
+  --text-warning: var(--color-warning);
+  --text-danger: var(--color-danger);
+  --divider-subtle: var(--color-border);
+  --focus-ring: var(--color-accent);
+
+  /* Shared state contract */
+  --state-hover-bg: var(--surface-hover);
+  --state-selected-bg: var(--surface-selected);
+  --state-active-scale: 0.97;
+  --state-disabled-opacity: 0.5;
+  --state-disabled-opacity-strong: 0.55;
+  --state-focus-outline-width: 2px;
+  --state-focus-outline-offset: 2px;
+  --state-error-text: var(--text-danger);
+  --state-error-bg: var(--surface-danger);
+  --state-loading-bg: var(--surface-panel);
+  --state-empty-text: var(--text-muted);
+  --state-placeholder-opacity: 0.8;
+  --state-scrim-opacity: 0.55;
+  --state-subtle-opacity: 0.72;
+  --state-route-opacity: 0.94;
+
+  /* Shared controls */
+  --control-height-sm: var(--space-8);
+  --control-height-md: var(--space-10);
+  --control-height-lg: var(--space-12);
+  --control-padding-y: var(--space-1);
+  --control-padding-x: var(--space-2);
+  --control-padding-x-lg: var(--space-3);
+  --control-radius: var(--radius-sm);
+  --control-bg: var(--surface-transparent);
+  --control-fg: var(--text-primary);
+  --control-hover-bg: var(--state-hover-bg);
+  --control-disabled-opacity: var(--state-disabled-opacity);
+
+  --input-height: var(--space-8);
+  --input-padding-y: var(--space-1);
+  --input-padding-x: var(--space-2);
+  --input-bg: var(--surface-field);
+  --input-fg: var(--text-primary);
+  --input-placeholder: var(--text-muted);
+  --input-border: transparent;
+  --input-radius: var(--radius-sm);
+
+  --button-primary-bg: var(--color-accent);
+  --button-primary-fg: var(--color-accent-on);
+  --button-danger-bg: var(--color-danger-muted);
+  --button-danger-fg: var(--color-danger);
+  --button-quiet-fg: var(--text-muted);
+
+  --popover-bg: var(--surface-popover);
+  --popover-radius: var(--radius-md);
+  --popover-shadow: var(--elevation-md);
+  --menu-item-height: var(--space-8);
+
+  /* Domain component tokens */
+  --shell-bg: var(--surface-panel);
+  --shell-main-bg: var(--surface-canvas);
+  --sidebar-bg: var(--surface-page);
+  --document-bg: var(--surface-canvas);
+  --editor-block-hover-bg: var(--surface-hover);
+  --table-row-hover-bg: color-mix(in oklab, var(--surface-page-muted) 55%, transparent);
+  --selection-bg: color-mix(in oklab, var(--color-accent) 38%, transparent);
+
+  --card-bg: var(--surface-panel);
+  --card-radius: var(--radius-md);
+  --card-shadow: var(--elevation-none);
+  --gallery-card-bg: var(--surface-panel);
+  --gallery-card-radius: var(--radius-md);
+  --collection-token-bg: color-mix(in oklab, var(--color-muted) 16%, var(--color-page-muted));
+  --collection-token-accent-bg: color-mix(in oklab, var(--color-accent) 24%, var(--color-page-muted));
+  --collection-token-success-bg: color-mix(in oklab, var(--color-success) 26%, var(--color-page-muted));
+  --collection-token-warning-bg: color-mix(in oklab, var(--color-warning) 30%, var(--color-page-muted));
+  --collection-token-danger-bg: color-mix(in oklab, var(--color-danger) 24%, var(--color-page-muted));
+
+  --media-panel-bg: var(--surface-page);
+  --media-player-bg: var(--surface-panel);
+  --media-player-fg: var(--text-primary);
+  --media-player-muted: var(--text-muted);
+  --media-player-control-bg: var(--surface-page-muted);
+  --media-player-control-hover-bg: var(--state-hover-bg);
+  --media-player-radius: var(--radius-md);
+  --media-player-shadow: var(--elevation-lg);
+  --media-player-width: var(--measure-popover-lg);
+  --media-player-z: var(--z-player);
+
+  --image-tool-bg: var(--surface-popover);
+  --image-tool-radius: var(--radius-md);
+  --image-tool-shadow: var(--elevation-md);
+  --image-actions-width: 280px;
+
+  --skeleton-bg: var(--surface-panel);
+}

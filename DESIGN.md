@@ -1,104 +1,153 @@
 ---
+version: alpha
+name: Arcane Codex
+description: Dark, dense, content-first local workspace with quiet Notion-calibrated chrome.
 colors:
+  primary: "#1f78d1"
+  primary-on: "#ffffff"
   neutral: "#191919"
   neutral-ink: "#f1f1ef"
   neutral-muted: "#d2d2cf"
   neutral-border: "#353535"
-  accent: "#1f78d1"
-  accent-on: "#ffffff"
-  shadow: "rgba(0, 0, 0, 0.34)"
+  panel: "#252525"
+  rail: "#202020"
+  field: "#2c2c2c"
   success: "#4dab9a"
   warning: "#dca65c"
   danger: "#eb5757"
-  danger-muted: "#3a2426"
-  card: "#252525"
-  page: "#202020"
-  page-muted: "#2c2c2c"
-
+  danger-container: "#3a2426"
+  shadow: "rgba(0, 0, 0, 0.34)"
 typography:
-  family:
-    base: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
-    display: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
-    mono: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
-  scale:
-    100: "12px"
-    200: "14px"
-    300: "16px"
-    400: "18px"
-    500: "20px"
-    600: "24px"
-    700: "32px"
-    800: "48px"
-
+  body:
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+    fontSize: 16px
+    fontWeight: 400
+    lineHeight: 1.5
+  body-sm:
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+    fontSize: 14px
+    fontWeight: 400
+    lineHeight: 1.4
+  caption:
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+    fontSize: 12px
+    fontWeight: 600
+    lineHeight: 1.2
+  title:
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+    fontSize: 32px
+    fontWeight: 700
+    lineHeight: 1.08
+    letterSpacing: -0.03em
+  display:
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+    fontSize: 48px
+    fontWeight: 700
+    lineHeight: 1.08
+    letterSpacing: -0.03em
+  mono-label:
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+    fontSize: 12px
+    fontWeight: 700
+    lineHeight: 1.1
 spacing:
-  0: 0
-  1: 4px
-  2: 8px
-  3: 12px
-  4: 16px
-  5: 20px
-  6: 24px
-  8: 32px
-  10: 40px
-  12: 48px
-  16: 64px
-
+  none: 0px
+  hairline: 1px
+  micro: 2px
+  xs: 4px
+  sm: 8px
+  md: 12px
+  lg: 16px
+  xl: 24px
+  2xl: 32px
+  3xl: 48px
+  4xl: 64px
+  5xl: 80px
 rounded:
   sm: 4px
   md: 6px
   lg: 8px
   xl: 8px
-
-motion:
-  easing:
-    primary: "cubic-bezier(0.23, 1, 0.32, 1)"
-    secondary: "cubic-bezier(0.77, 0, 0.175, 1)"
-  duration:
-    fast: 100ms
-    standard: 150ms
-    slow: 200ms
-  distance:
-    small: 2px
-    medium: 4px
-
-elevation:
-  none: "none"
-  sm: "0 1px 2px var(--shadow)"
-  md: "0 8px 24px var(--shadow)"
-  lg: "0 16px 40px var(--shadow)"
-  xl: "0 24px 64px var(--shadow)"
-
 components:
   body:
-    background: "var(--color-neutral)"
-    color: "var(--color-ink)"
-    font-family: "var(--font-base)"
-    line-height: 1.5
+    backgroundColor: "{colors.neutral}"
+    textColor: "{colors.neutral-ink}"
+    typography: "{typography.body}"
   sidebar:
-    width: "264px"
-    background: "var(--color-page)"
-  button:
-    background: "transparent"
-    color: "var(--color-ink)"
-    border: "none"
-    border-radius: "var(--radius-sm)"
-    padding: "4px 8px"
-    font-size: "var(--font-size-200)"
-    line-height: 1.2
-  link:
-    color: "var(--color-accent)"
-    hover: "var(--color-ink)"
+    backgroundColor: "{colors.rail}"
+    textColor: "{colors.neutral-ink}"
+    width: 264px
+  document:
+    backgroundColor: "{colors.neutral}"
+    textColor: "{colors.neutral-ink}"
+    width: 768px
+  button-primary:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.primary-on}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.sm}"
+    padding: 8px
+    height: 32px
+  button-danger:
+    backgroundColor: "{colors.danger-container}"
+    textColor: "{colors.neutral-ink}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.sm}"
+    padding: 8px
+    height: 32px
   input:
-    background: "var(--color-page-muted)"
-    border: "1px solid transparent"
-    border-radius: "var(--radius-sm)"
+    backgroundColor: "{colors.field}"
+    textColor: "{colors.neutral-ink}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.sm}"
+    padding: 8px
+    height: 32px
+  popover:
+    backgroundColor: "{colors.panel}"
+    textColor: "{colors.neutral-ink}"
+    rounded: "{rounded.md}"
+    padding: 8px
+  media-player:
+    backgroundColor: "{colors.panel}"
+    textColor: "{colors.neutral-ink}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.md}"
+    width: 560px
+  collection-token-success:
+    backgroundColor: "{colors.success}"
+    textColor: "{colors.neutral}"
+    typography: "{typography.caption}"
+    rounded: "{rounded.sm}"
+  collection-token-warning:
+    backgroundColor: "{colors.warning}"
+    textColor: "{colors.neutral}"
+    typography: "{typography.caption}"
+    rounded: "{rounded.sm}"
+  collection-token-muted:
+    backgroundColor: "{colors.neutral-muted}"
+    textColor: "{colors.neutral}"
+    typography: "{typography.caption}"
+    rounded: "{rounded.sm}"
+  divider:
+    backgroundColor: "{colors.neutral-border}"
+    height: 1px
+  shadow-reference:
+    backgroundColor: "{colors.shadow}"
+    size: 1px
 ---
-
 # Arcane Codex Design System
 
 ## Overview
 
 A dark, dense, content-first local workspace calibrated to the supplied Notion reference. The document, cover, and structured data carry the visual identity; application chrome stays quiet and contextual.
+
+## Implementation Source
+
+The canonical runtime token source is `src/styles/theme.css`. It owns primitives plus semantic, state, component, layout, media/player, image-tool, card, popover, and collection/gallery aliases. Product CSS may be split by surface, but visual values must flow through those tokens rather than being redefined per component.
+
+## Component Coverage
+
+The theme contract covers the app shell, sidebar/tree navigation, document/page/editor surfaces, BlockNote overrides, collections table/gallery/settings/forms, image grabber and image editing popovers, gallery blocks, page media controls, inline YouTube embeds, mini music player dock, menus/popovers, skeleton/loading/empty/no-results/error states, and mobile drawer/bar behavior.
 
 ## Colors
 
