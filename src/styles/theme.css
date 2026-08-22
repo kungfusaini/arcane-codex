@@ -1,27 +1,30 @@
 /* Canonical Arcane Codex theme source.
    Keep visual values here; component CSS should consume semantic/component tokens. */
 :root {
-  /* Primitive palette */
-  --color-neutral: #191919;
-  --color-ink: #f1f1ef;
-  --color-muted: #d2d2cf;
-  --color-border: #353535;
-  --color-accent: #1f78d1;
-  --color-accent-on: #ffffff;
-  --color-shadow: rgba(0, 0, 0, 0.34);
-  --color-card: #252525;
-  --color-page: #202020;
-  --color-page-muted: #2c2c2c;
-  --color-success: #4dab9a;
-  --color-warning: #dca65c;
-  --color-danger: #eb5757;
-  --color-danger-muted: #3a2426;
+  /* Primitive palette: Gruvbox dark theme sheet */
+  --color-neutral: #1d2021;
+  --color-ink: #ebdbb2;
+  --color-ink-strong: #fbf1c7;
+  --color-muted: #ebdbb2;
+  --color-border: #504945;
+  --color-accent: #fe8019;
+  --color-accent-deep: #af3a03;
+  --color-accent-on: #fbf1c7;
+  --color-shadow: rgba(0, 0, 0, 0.42);
+  --color-card: #3c3836;
+  --color-page: #282828;
+  --color-page-muted: #504945;
+  --color-surface-muted: #665c54;
+  --color-success: #b8bb26;
+  --color-warning: #fabd2f;
+  --color-danger: #fb4934;
+  --color-danger-muted: #3c2826;
 
   /* Typography */
-  --font-base: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-base: 'Arcane ProFont', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --font-display: var(--font-base);
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  --font-brand-mono: 'Arcane ProFont', var(--font-mono);
+  --font-mono: var(--font-base);
+  --font-brand-mono: var(--font-base);
   --font-brand-display: 'Arcane Eagle', var(--font-display);
 
   --font-size-100: 12px;
@@ -80,7 +83,7 @@
   --route-translate: 0px;
 
   /* Layout and measures */
-  --rail-width: 264px;
+  --rail-width: 336px;
   --reading-width: 768px;
   --measure-content-sm: 440px;
   --measure-empty: 520px;
@@ -123,6 +126,9 @@
   --collection-focus-width: 900px;
   --collection-gallery-min-card: 240px;
   --collection-gallery-compact-min-card: 224px;
+  --gallery-image-size-min: 120px;
+  --gallery-image-size-default: 240px;
+  --gallery-image-size-max: 480px;
   --collection-cover-height: 160px;
   --collection-cover-compact-height: 144px;
   --collection-settings-aside-width: 240px;
@@ -130,18 +136,23 @@
   --emoji-preview-size: 112px;
 
   /* Semantic surfaces */
-  --surface-canvas: var(--color-neutral);
-  --surface-page: var(--color-page);
-  --surface-page-muted: var(--color-page-muted);
-  --surface-panel: var(--color-card);
+  --surface-canvas: color-mix(in oklab, var(--color-neutral) 92%, transparent);
+  --surface-page: color-mix(in oklab, var(--color-page) 90%, transparent);
+  --surface-page-muted: color-mix(in oklab, var(--color-page-muted) 86%, transparent);
+  --surface-panel: color-mix(in oklab, var(--color-card) 88%, transparent);
   --surface-popover: var(--color-card);
   --surface-hover: var(--color-page-muted);
   --surface-selected: var(--color-page-muted);
   --surface-field: var(--color-page-muted);
   --surface-danger: var(--color-danger-muted);
   --surface-transparent: transparent;
+  --art-canvas-image: url('/theme-background-pandora-ships.jpg');
+  --art-veil-strong: color-mix(in oklab, var(--surface-canvas) 86%, transparent);
+  --art-veil-panel: color-mix(in oklab, var(--surface-page) 88%, transparent);
+  --art-veil-raised: color-mix(in oklab, var(--surface-popover) 92%, transparent);
 
   --text-primary: var(--color-ink);
+  --text-strong: var(--color-ink-strong);
   --text-muted: var(--color-muted);
   --text-accent: var(--color-accent);
   --text-on-accent: var(--color-accent-on);
@@ -149,7 +160,7 @@
   --text-warning: var(--color-warning);
   --text-danger: var(--color-danger);
   --divider-subtle: var(--color-border);
-  --focus-ring: var(--color-accent);
+  --focus-ring: var(--color-warning);
 
   /* Shared state contract */
   --state-hover-bg: var(--surface-hover);
@@ -190,10 +201,10 @@
   --input-border: transparent;
   --input-radius: var(--radius-sm);
 
-  --button-primary-bg: var(--color-accent);
+  --button-primary-bg: var(--color-accent-deep);
   --button-primary-fg: var(--color-accent-on);
   --button-danger-bg: var(--color-danger-muted);
-  --button-danger-fg: var(--color-danger);
+  --button-danger-fg: var(--text-strong);
   --button-quiet-fg: var(--text-muted);
 
   --popover-bg: var(--surface-popover);
@@ -202,18 +213,18 @@
   --menu-item-height: var(--space-8);
 
   /* Domain component tokens */
-  --shell-bg: var(--surface-panel);
-  --shell-main-bg: var(--surface-canvas);
-  --sidebar-bg: var(--surface-page);
+  --shell-bg: var(--art-veil-strong);
+  --shell-main-bg: var(--art-veil-strong);
+  --sidebar-bg: var(--art-veil-panel);
   --document-bg: var(--surface-canvas);
   --editor-block-hover-bg: var(--surface-hover);
   --table-row-hover-bg: color-mix(in oklab, var(--surface-page-muted) 55%, transparent);
   --selection-bg: color-mix(in oklab, var(--color-accent) 38%, transparent);
 
-  --card-bg: var(--surface-panel);
+  --card-bg: var(--art-veil-raised);
   --card-radius: var(--radius-md);
   --card-shadow: var(--elevation-none);
-  --gallery-card-bg: var(--surface-panel);
+  --gallery-card-bg: var(--art-veil-raised);
   --gallery-card-radius: var(--radius-md);
   --collection-token-bg: color-mix(in oklab, var(--color-muted) 16%, var(--color-page-muted));
   --collection-token-accent-bg: color-mix(in oklab, var(--color-accent) 24%, var(--color-page-muted));
@@ -222,7 +233,7 @@
   --collection-token-danger-bg: color-mix(in oklab, var(--color-danger) 24%, var(--color-page-muted));
 
   --media-panel-bg: var(--surface-page);
-  --media-player-bg: var(--surface-panel);
+  --media-player-bg: var(--art-veil-raised);
   --media-player-fg: var(--text-primary);
   --media-player-muted: var(--text-muted);
   --media-player-control-bg: var(--surface-page-muted);
@@ -232,10 +243,13 @@
   --media-player-width: var(--measure-popover-lg);
   --media-player-z: var(--z-player);
 
-  --image-tool-bg: var(--surface-popover);
+  --image-tool-bg: var(--art-veil-raised);
   --image-tool-radius: var(--radius-md);
   --image-tool-shadow: var(--elevation-md);
-  --image-actions-width: 280px;
+  --image-actions-width: calc(var(--space-20) * 3 + var(--space-10));
+  --media-modal-scrim: color-mix(in oklab, var(--surface-canvas) 96%, transparent);
+  --media-modal-panel-bg: transparent;
+  --media-modal-panel-shadow: var(--elevation-none);
 
   --skeleton-bg: var(--surface-panel);
 }

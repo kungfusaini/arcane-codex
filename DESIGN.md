@@ -1,46 +1,46 @@
 ---
 version: alpha
 name: Arcane Codex
-description: Dark, dense, content-first local workspace with quiet Notion-calibrated chrome.
+description: Gruvbox-dark, dense, content-first local workspace with ProFont chrome, orange accent, and a veiled arcane artwork backdrop.
 colors:
-  primary: "#1f78d1"
-  primary-on: "#ffffff"
-  neutral: "#191919"
-  neutral-ink: "#f1f1ef"
-  neutral-muted: "#d2d2cf"
-  neutral-border: "#353535"
-  panel: "#252525"
-  rail: "#202020"
-  field: "#2c2c2c"
-  success: "#4dab9a"
-  warning: "#dca65c"
-  danger: "#eb5757"
-  danger-container: "#3a2426"
-  shadow: "rgba(0, 0, 0, 0.34)"
+  primary: "#af3a03"
+  primary-on: "#fbf1c7"
+  neutral: "#1d2021"
+  neutral-ink: "#ebdbb2"
+  neutral-muted: "#ebdbb2"
+  neutral-border: "#504945"
+  panel: "#3c3836"
+  rail: "#282828"
+  field: "#504945"
+  success: "#b8bb26"
+  warning: "#fabd2f"
+  danger: "#fb4934"
+  danger-container: "#3c2826"
+  shadow: "rgba(0, 0, 0, 0.42)"
 typography:
   body:
-    fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+    fontFamily: "Arcane ProFont, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
     fontSize: 16px
     fontWeight: 400
     lineHeight: 1.5
   body-sm:
-    fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+    fontFamily: "Arcane ProFont, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
     fontSize: 14px
     fontWeight: 400
     lineHeight: 1.4
   caption:
-    fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+    fontFamily: "Arcane ProFont, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
     fontSize: 12px
     fontWeight: 600
     lineHeight: 1.2
   title:
-    fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+    fontFamily: "Arcane ProFont, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
     fontSize: 32px
     fontWeight: 700
     lineHeight: 1.08
     letterSpacing: -0.03em
   display:
-    fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+    fontFamily: "Arcane ProFont, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
     fontSize: 48px
     fontWeight: 700
     lineHeight: 1.08
@@ -76,7 +76,7 @@ components:
   sidebar:
     backgroundColor: "{colors.rail}"
     textColor: "{colors.neutral-ink}"
-    width: 264px
+    width: 336px
   document:
     backgroundColor: "{colors.neutral}"
     textColor: "{colors.neutral-ink}"
@@ -113,6 +113,11 @@ components:
     typography: "{typography.body-sm}"
     rounded: "{rounded.md}"
     width: 560px
+  publish-media-modal:
+    scrimColor: "color-mix(in oklab, {colors.neutral} 96%, transparent)"
+    panelBackgroundColor: "transparent"
+    panelShadow: "none"
+    rounded: "{rounded.md}"
   collection-token-success:
     backgroundColor: "{colors.success}"
     textColor: "{colors.neutral}"
@@ -139,7 +144,7 @@ components:
 
 ## Overview
 
-A dark, dense, content-first local workspace calibrated to the supplied Notion reference. The document, cover, and structured data carry the visual identity; application chrome stays quiet and contextual.
+A Gruvbox-dark, dense, content-first local workspace calibrated to the approved theme specimen. ProFont, orange accent marks, and a veiled artwork backdrop carry the visual identity; application chrome stays compact and contextual.
 
 ## Implementation Source
 
@@ -147,24 +152,25 @@ The canonical runtime token source is `src/styles/theme.css`. It owns primitives
 
 ## Component Coverage
 
-The theme contract covers the app shell, sidebar/tree navigation, document/page/editor surfaces, BlockNote overrides, collections table/gallery/settings/forms, image grabber and image editing popovers, gallery blocks, page media controls, inline YouTube embeds, mini music player dock, menus/popovers, skeleton/loading/empty/no-results/error states, and mobile drawer/bar behavior.
+The theme contract covers the app shell, sidebar/tree navigation, document/page/editor surfaces, BlockNote overrides, collections table/gallery/settings/forms, image grabber and image editing popovers, gallery blocks, the publish media modal baseline for opened images/future rich media, page media controls, inline YouTube embeds, mini music player dock, menus/popovers, skeleton/loading/empty/no-results/error states, and mobile drawer/bar behavior.
 
 ## Colors
 
-- `neutral` is the continuous document canvas.
+- `neutral` is the dark Gruvbox canvas, veiled over the artwork backdrop.
 - `page` separates the navigation rail without a decorative border.
 - `card` is reserved for temporary raised surfaces such as menus and popovers.
 - `page-muted` provides hover and selected states.
-- `accent` is the only strong interface colour and is reserved for focus, links, selection, and primary creation.
+- `accent` is the only strong interface colour and is reserved for primary creation, active marks, branches, and selection accents.
 - Content images, emoji, and user-authored property values may carry their own semantic colour.
+- Published images open in the shared media modal baseline: a darker page scrim with a transparent media panel so the opened media, not a card, dominates. Future video, 3D, or other rich media viewers should reuse the same modal shell before adding type-specific controls.
 
 ## Typography
 
-Use the system sans family throughout navigation, titles, editing, and collections. Hierarchy comes from weight, density, and placement rather than a contrasting display face. Page titles use the scale; controls never invent smaller or larger one-off sizes.
+Use Arcane ProFont throughout navigation, titles, editing, and collections. Hierarchy comes from weight, density, and placement rather than a contrasting display face. Page titles use the scale; controls never invent smaller or larger one-off sizes.
 
 ## Layout
 
-The 264px desktop rail is persistent and compact. The main canvas is continuous and unframed. Covers run full width; the page icon overlaps the cover edge; documents use a readable measure while hosted collections may expand to the available width. On narrow screens the rail becomes a focus-managed drawer and content remains primary.
+The 336px desktop rail is persistent and compact, giving nested page titles enough room before truncation. When collapsed on desktop, the rail slides out on the inline axis while the grid track closes so the main canvas shifts into the freed space instead of being covered. The main canvas is continuous and unframed. Covers run full width; the page icon overlaps the cover edge; documents use a readable measure while hosted collections may expand to the available width. Gallery images use one selected slider-controlled image size across the block, bounded by theme min/default/max sizing tokens; grid columns are dynamic and fit as many same-size images as the available width allows. On narrow screens the dynamic grid collapses to preserve usable image proportions. On narrow screens the rail becomes a focus-managed drawer and content remains primary.
 
 ## Elevation
 
@@ -176,7 +182,7 @@ Use small radii. Dense rows and the document canvas do not become cards. Hairlin
 
 ## Motion
 
-- Use 100–200ms motion for drawer continuity, menu/popover opening, selection, drag/reorder feedback, and state changes.
+- Use 100–200ms motion for drawer continuity, desktop rail collapse/restore, menu/popover opening, selection, drag/reorder feedback, and state changes.
 - High-frequency editor and table actions should feel immediate.
 - Prefer opacity and transform; never use `transition: all`.
 - No route-wide entrances, repeated row staggers, bounce, glow, or decorative animation.
@@ -192,5 +198,5 @@ Every interactive element defines default, hover where applicable, focus-visible
 - Do use progressive disclosure for media, administration, and destructive actions.
 - Do keep one obvious primary action per region.
 - Do not frame the editor, page, collection, or navigation groups as cards.
-- Do not use warm paper, serif display type, moss accents, gradients, glow, glass effects, decorative borders, fake metrics, or filler copy.
+- Do not use warm paper, blue accents, moss accents, glow, glass effects, decorative borders, fake metrics, or filler copy.
 - Do not expose raw administration forms in the primary work surface.
