@@ -1,7 +1,7 @@
 ---
 version: alpha
 name: Arcane Codex
-description: Gruvbox-dark, dense, content-first local workspace with ProFont chrome, orange accent, and a veiled arcane artwork backdrop.
+description: Gruvbox-dark, 85%-density, content-first local workspace with ProFont chrome, orange accent, and a veiled arcane artwork backdrop.
 colors:
   primary: "#af3a03"
   primary-on: "#fbf1c7"
@@ -20,54 +20,54 @@ colors:
 typography:
   body:
     fontFamily: "Arcane ProFont, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
-    fontSize: 16px
+    fontSize: 13.6px
     fontWeight: 400
     lineHeight: 1.5
   body-sm:
     fontFamily: "Arcane ProFont, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
-    fontSize: 14px
+    fontSize: 11.9px
     fontWeight: 400
     lineHeight: 1.4
   caption:
     fontFamily: "Arcane ProFont, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
-    fontSize: 12px
+    fontSize: 10.2px
     fontWeight: 600
     lineHeight: 1.2
   title:
     fontFamily: "Arcane ProFont, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
-    fontSize: 32px
+    fontSize: 27.2px
     fontWeight: 700
     lineHeight: 1.08
     letterSpacing: -0.03em
   display:
     fontFamily: "Arcane ProFont, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
-    fontSize: 48px
+    fontSize: 40.8px
     fontWeight: 700
     lineHeight: 1.08
     letterSpacing: -0.03em
   mono-label:
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
-    fontSize: 12px
+    fontSize: 10.2px
     fontWeight: 700
     lineHeight: 1.1
 spacing:
   none: 0px
   hairline: 1px
-  micro: 2px
-  xs: 4px
-  sm: 8px
-  md: 12px
-  lg: 16px
-  xl: 24px
-  2xl: 32px
-  3xl: 48px
-  4xl: 64px
-  5xl: 80px
+  micro: 1.7px
+  xs: 3.4px
+  sm: 6.8px
+  md: 10.2px
+  lg: 13.6px
+  xl: 20.4px
+  2xl: 27.2px
+  3xl: 40.8px
+  4xl: 54.4px
+  5xl: 68px
 rounded:
-  sm: 4px
-  md: 6px
-  lg: 8px
-  xl: 8px
+  sm: 3.4px
+  md: 5.1px
+  lg: 6.8px
+  xl: 6.8px
 components:
   body:
     backgroundColor: "{colors.neutral}"
@@ -76,43 +76,43 @@ components:
   sidebar:
     backgroundColor: "{colors.rail}"
     textColor: "{colors.neutral-ink}"
-    width: 336px
+    width: 285.6px
   document:
     backgroundColor: "{colors.neutral}"
     textColor: "{colors.neutral-ink}"
-    width: 768px
+    width: 652.8px
   button-primary:
     backgroundColor: "{colors.primary}"
     textColor: "{colors.primary-on}"
     typography: "{typography.body-sm}"
     rounded: "{rounded.sm}"
-    padding: 8px
-    height: 32px
+    padding: 6.8px
+    height: 27.2px
   button-danger:
     backgroundColor: "{colors.danger-container}"
     textColor: "{colors.neutral-ink}"
     typography: "{typography.body-sm}"
     rounded: "{rounded.sm}"
-    padding: 8px
-    height: 32px
+    padding: 6.8px
+    height: 27.2px
   input:
     backgroundColor: "{colors.field}"
-    textColor: "{colors.neutral-ink}"
+    textColor: "{colors.primary-on}"
     typography: "{typography.body-sm}"
     rounded: "{rounded.sm}"
-    padding: 8px
-    height: 32px
+    padding: 6.8px
+    height: 27.2px
   popover:
     backgroundColor: "{colors.panel}"
     textColor: "{colors.neutral-ink}"
     rounded: "{rounded.md}"
-    padding: 8px
+    padding: 6.8px
   media-player:
     backgroundColor: "{colors.panel}"
     textColor: "{colors.neutral-ink}"
     typography: "{typography.body-sm}"
     rounded: "{rounded.md}"
-    width: 560px
+    width: 476px
   publish-media-modal:
     scrimColor: "color-mix(in oklab, {colors.neutral} 96%, transparent)"
     panelBackgroundColor: "transparent"
@@ -144,7 +144,7 @@ components:
 
 ## Overview
 
-A Gruvbox-dark, dense, content-first local workspace calibrated to the approved theme specimen. ProFont, orange accent marks, and a veiled artwork backdrop carry the visual identity; application chrome stays compact and contextual.
+A Gruvbox-dark, 85%-density, content-first local workspace calibrated to the approved theme specimen. ProFont, orange accent marks, and a veiled artwork backdrop carry the visual identity; application chrome stays compact and contextual.
 
 ## Implementation Source
 
@@ -170,7 +170,7 @@ Use Arcane ProFont throughout navigation, titles, editing, and collections. Hier
 
 ## Layout
 
-The 336px desktop rail is persistent and compact, giving nested page titles enough room before truncation. When collapsed on desktop, the rail slides out on the inline axis while the grid track closes so the main canvas shifts into the freed space instead of being covered. The main canvas is continuous and unframed. Covers run full width; the page icon overlaps the cover edge; documents use a readable measure while hosted collections may expand to the available width. Gallery images use one selected slider-controlled image size across the block, bounded by theme min/default/max sizing tokens; grid columns are dynamic and fit as many same-size images as the available width allows. On narrow screens the dynamic grid collapses to preserve usable image proportions. On narrow screens the rail becomes a focus-managed drawer and content remains primary.
+The 285.6px desktop rail is persistent and compact, giving nested page titles enough room before truncation. When collapsed on desktop, the rail slides out on the inline axis while the grid track closes so the main canvas shifts into the freed space instead of being covered. The main canvas is continuous and unframed. Covers run full width; the page icon overlaps the cover edge; documents use a readable measure while hosted collections may expand to the available width. Gallery images use one selected slider-controlled image size across the block, bounded by theme min/default/max sizing tokens; grid columns are dynamic and fit as many same-size images as the available width allows. On narrow screens the dynamic grid collapses to preserve usable image proportions. On narrow screens the rail becomes a focus-managed drawer and content remains primary.
 
 ## Elevation
 

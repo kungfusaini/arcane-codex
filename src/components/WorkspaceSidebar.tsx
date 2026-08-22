@@ -251,7 +251,7 @@ export function WorkspaceSidebar({
   const setDesktopRailCollapsed = useCallback((collapsed: boolean) => {
     setRailCollapsed(collapsed);
     window.localStorage.setItem('arcane-sidebar-collapsed', String(collapsed));
-    document.documentElement.style.setProperty('--rail-width', collapsed ? '0px' : '336px');
+    document.documentElement.style.setProperty('--rail-width', collapsed ? '0px' : 'var(--rail-expanded-width)');
   }, []);
 
   useEffect(() => {
