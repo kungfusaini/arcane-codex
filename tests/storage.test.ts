@@ -69,12 +69,14 @@ describe('workspace bootstrap', () => {
       const columnY = pageColumns.find((row) => row.name === 'cover_focal_y');
       const columnScale = pageColumns.find((row) => row.name === 'cover_scale');
       const iconAssetColumn = pageColumns.find((row) => row.name === 'icon_asset_id');
-      assert.equal(version.user_version, 7);
+      const isArticleColumn = pageColumns.find((row) => row.name === 'is_article');
+      assert.equal(version.user_version, 8);
       assert.ok(assetIndex);
       assert.ok(columnX);
       assert.ok(columnY);
       assert.ok(columnScale);
       assert.ok(iconAssetColumn);
+      assert.ok(isArticleColumn);
       const settingsColumns = migrated.prepare("PRAGMA table_info(settings)").all() as Array<{ name: string }>;
       assert.ok(settingsColumns.some((row) => row.name === 'published_mode'));
       migrated.exec('PRAGMA user_version = 99;');
@@ -233,6 +235,7 @@ describe('pages CRUD and ordering', () => {
 
     const loaded = getPage(root.id, workspace);
     assert.equal(loaded?.revision, 0);
+    assert.equal(loaded?.isArticle, false);
 
     const updated = updatePage(
       childA.id,
@@ -242,16 +245,19 @@ describe('pages CRUD and ordering', () => {
         contentJson: '[{"type":"paragraph","content":"Hello"}]',
         coverFocalX: 12,
         coverFocalY: 88,
+        isArticle: true,
       },
       workspace,
     );
     assert.equal(updated.title, 'Renamed Child A');
     assert.equal(updated.coverFocalX, 12);
     assert.equal(updated.coverFocalY, 88);
+    assert.equal(updated.isArticle, true);
 
     const reloaded = getPage(childA.id, workspace);
     assert.equal(reloaded?.coverFocalX, 12);
     assert.equal(reloaded?.coverFocalY, 88);
+    assert.equal(reloaded?.isArticle, true);
     assert.throws(
       () =>
         updatePage(

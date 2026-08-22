@@ -12,6 +12,7 @@ type PageUpdatePayload = {
   coverFocalX?: number;
   coverFocalY?: number;
   coverScale?: number;
+  isArticle?: boolean;
   parentId?: string | null;
   sortKey?: number;
   contentJson?: string;
@@ -137,6 +138,9 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     }
     if (Object.hasOwn(payload, 'coverScale')) {
       updates.coverScale = clampCoverScale(payload.coverScale);
+    }
+    if (Object.hasOwn(payload, 'isArticle')) {
+      updates.isArticle = payload.isArticle === true;
     }
     if (Object.hasOwn(payload, 'parentId')) {
       updates.parentId = payload.parentId ?? null;

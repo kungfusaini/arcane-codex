@@ -16,6 +16,7 @@ type InitialPage = {
   coverFocalX: number;
   coverFocalY: number;
   coverScale: number;
+  isArticle: boolean;
   contentJson: string;
   revision: number;
   createdAt: number;

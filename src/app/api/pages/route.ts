@@ -70,6 +70,7 @@ export async function POST(request: NextRequest) {
     coverAssetId: payload.coverAssetId ?? null,
     coverFocalX: clampFocal(payload.coverFocalX),
     coverFocalY: clampFocal(payload.coverFocalY),
+    isArticle: payload.isArticle === true,
     contentJson: payload.contentJson ?? '[]',
   });
 

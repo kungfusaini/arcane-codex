@@ -74,6 +74,7 @@ type PageRecord = {
   coverFocalX: number;
   coverFocalY: number;
   coverScale: number;
+  isArticle: boolean;
   contentJson: string;
   revision: number;
   createdAt: number;
@@ -876,7 +877,7 @@ export function PageEditor({ pageId, initialPage, initialPages = [], readOnly = 
     setStatusMessage('Discarded browser recovery draft');
   }, [draftKey]);
 
-  const updateMetadata = useCallback(async (updates: { icon?: string | null; iconAssetId?: string | null; coverAssetId?: string | null; coverFocalX?: number; coverFocalY?: number; coverScale?: number }) => {
+  const updateMetadata = useCallback(async (updates: { icon?: string | null; iconAssetId?: string | null; coverAssetId?: string | null; coverFocalX?: number; coverFocalY?: number; coverScale?: number; isArticle?: boolean }) => {
     if (!page || page.deletedAt) {
       return false;
     }
@@ -2000,6 +2001,7 @@ export function PageEditor({ pageId, initialPage, initialPages = [], readOnly = 
               {coverAsset ? <button type="button" disabled={isDeleted} onClick={() => void updateMetadata({ coverAssetId: null })}>Remove cover</button> : null}
               <button type="button" disabled={isDeleted} onClick={() => bodyUploadRef.current?.click()}>Upload file</button>
               <button type="button" disabled={isDeleted || (!page.icon && !page.iconAssetId)} onClick={() => void updateMetadata({ icon: null, iconAssetId: null })}>Remove icon</button>
+              <button type="button" aria-pressed={page.isArticle} disabled={isDeleted} onClick={() => void updateMetadata({ isArticle: !page.isArticle })}>{page.isArticle ? 'Article: on' : 'Article: off'}</button>
               <button type="button" onClick={duplicate} disabled={isDeleted}>Duplicate</button>
               <button type="button" onClick={trash} className="danger-action">{page.deletedAt ? 'Restore' : 'Move to trash'}</button>
             </div>

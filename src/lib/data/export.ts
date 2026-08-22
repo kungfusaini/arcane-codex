@@ -41,6 +41,7 @@ export type ExportManifest = {
     path: string;
     title: string;
     parentId: string | null;
+    isArticle: boolean;
     revision: number;
     updatedAt: number;
   }>;
@@ -393,6 +394,7 @@ function pageToMarkdown(page: PageRecord, context: MarkdownContext, dataDir?: st
     `parent_id: ${page.parentId ? escapeYaml(page.parentId) : 'null'}`,
     `icon: ${page.icon ? escapeYaml(page.icon) : 'null'}`,
     `cover: ${coverPath ? escapeYaml(relativeLink(pagePath, coverPath)) : 'null'}`,
+    `is_article: ${page.isArticle ? 'true' : 'false'}`,
     `revision: ${page.revision}`,
     `created_at: ${escapeYaml(new Date(page.createdAt).toISOString())}`,
     `updated_at: ${escapeYaml(new Date(page.updatedAt).toISOString())}`,
@@ -570,6 +572,7 @@ export function buildWorkspaceExport(dataDir?: string): WorkspaceExport {
       path: pagePathById.get(page.id)!,
       title: page.title,
       parentId: page.parentId,
+      isArticle: page.isArticle,
       revision: page.revision,
       updatedAt: page.updatedAt,
     })),
