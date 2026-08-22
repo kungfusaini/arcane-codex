@@ -17,6 +17,17 @@ type CollectionSummary = {
   updatedAt: number;
 };
 
+type PageSummary = {
+  id: string;
+  parentId: string | null;
+  sortKey: number;
+  title: string;
+  slug?: string | null;
+  icon: string | null;
+  iconAssetId: string | null;
+  revision: number;
+};
+
 type DraftProperty = {
   id: string;
   name: string;
@@ -103,10 +114,12 @@ function safeParseSchema(schemaJson: string): { properties: { id: string; name: 
 }
 
 export function CollectionsIndex({
+  initialPages = [],
   readOnly = false,
   collectionRouteBasePath = '/collections',
   pageRouteBasePath = '/',
 }: {
+  initialPages?: PageSummary[];
   readOnly?: boolean;
   collectionRouteBasePath?: string;
   pageRouteBasePath?: string;
@@ -202,6 +215,7 @@ export function CollectionsIndex({
     <div className="layout-shell">
       <WorkspaceSidebar
         currentPageId={undefined}
+        initialPages={initialPages}
         readOnly={effectiveReadOnly}
         pageRouteBasePath={pageRouteBasePath}
         collectionHomePath={collectionRouteBasePath}

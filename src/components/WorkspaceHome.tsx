@@ -5,8 +5,7 @@ import { useEffect, useState } from 'react';
 import { WorkspaceSidebar } from '@/components/WorkspaceSidebar';
 import { usePublishedPreview } from '@/components/usePublishedPreview';
 import { PageIcon } from '@/components/PageIcon';
-import { buildPagePathFromPages } from '@/lib/pageUrls';
-import { getWorkspaceHomePath } from '@/lib/workspaceHome';
+import { buildWorkspacePagePathFromPages, getWorkspaceHomePath } from '@/lib/workspaceHome';
 
 type PageSummary = {
   id: string;
@@ -20,15 +19,17 @@ type PageSummary = {
 };
 
 export function WorkspaceHome({
+  initialPages = [],
   readOnly = false,
   pageRouteBasePath = '/',
 }: {
+  initialPages?: PageSummary[];
   readOnly?: boolean;
   pageRouteBasePath?: string;
 }) {
   const { previewPublished, effectiveReadOnly, canTogglePreview, setPreviewPublished } = usePublishedPreview(readOnly);
-  const [pages, setPages] = useState<PageSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [pages, setPages] = useState<PageSummary[]>(initialPages);
+  const [loading, setLoading] = useState(initialPages.length === 0);
   const [error, setError] = useState('');
 
   const refreshPages = async () => {
@@ -49,8 +50,17 @@ export function WorkspaceHome({
   };
 
   useEffect(() => {
-    void refreshPages();
-  }, []);
+    if (initialPages.length === 0) {
+      void refreshPages();
+    }
+  }, [initialPages.length]);
+
+  useEffect(() => {
+    if (initialPages.length > 0) {
+      setPages(initialPages);
+      setLoading(false);
+    }
+  }, [initialPages]);
 
   const createFirstPage = async () => {
     if (effectiveReadOnly) {
@@ -66,7 +76,7 @@ export function WorkspaceHome({
       if (!response.ok || !payload.page) {
         throw new Error(payload.error || 'Page could not be created.');
       }
-      window.location.href = buildPagePathFromPages(payload.page.id, [...pages, payload.page], pageRouteBasePath);
+      window.location.href = buildWorkspacePagePathFromPages(payload.page.id, [...pages, payload.page], pageRouteBasePath);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Page could not be created.');
     }
@@ -78,6 +88,7 @@ export function WorkspaceHome({
     <div className="layout-shell">
       <WorkspaceSidebar
         currentPageId={undefined}
+        initialPages={initialPages}
         readOnly={effectiveReadOnly}
         pageRouteBasePath={pageRouteBasePath}
         collectionHomePath={readOnly ? `${pageRouteBasePath.replace(/\/+$/, '')}/collections` || '/collections' : '/collections'}
@@ -107,7 +118,7 @@ export function WorkspaceHome({
                 </div>
                 {effectiveReadOnly ? null : <button type="button" className="primary-btn" onClick={createFirstPage}>New page</button>}
               </header>
-              <Link href={buildPagePathFromPages(pages[0].id, pages, pageRouteBasePath)} className="recent-page">
+              <Link href={buildWorkspacePagePathFromPages(pages[0].id, pages, pageRouteBasePath)} className="recent-page">
                 <PageIcon className="recent-page-icon" icon={pages[0].icon} iconAssetId={pages[0].iconAssetId} />
                 <span><strong>{pages[0].title || 'Untitled'}</strong><small>{effectiveReadOnly ? 'Open the first published page' : 'Open most recent page'}</small></span>
                 <span aria-hidden="true">→</span>

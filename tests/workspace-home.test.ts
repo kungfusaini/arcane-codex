@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getWorkspaceHomePath, promoteWorkspaceHomeChildren } from '../src/lib/workspaceHome';
+import { buildWorkspacePagePathFromPages, getWorkspaceHomePath, promoteWorkspaceHomeChildren, resolveWorkspacePagePathSegments } from '../src/lib/workspaceHome';
 
 const pages = [
   { id: 'home', parentId: null, sortKey: 1, title: 'Arcane Codex', slug: 'arcane-codex' },
@@ -9,9 +9,19 @@ const pages = [
   { id: 'other', parentId: null, sortKey: 2, title: 'Other', slug: 'other' },
 ];
 
-test('workspace home path points at the arcane-codex root page', () => {
-  assert.equal(getWorkspaceHomePath(pages), '/arcane-codex');
-  assert.equal(getWorkspaceHomePath(pages, '/published'), '/published/arcane-codex');
+test('workspace home path points at the website root', () => {
+  assert.equal(getWorkspaceHomePath(pages), '/');
+  assert.equal(getWorkspaceHomePath(pages, '/published'), '/published');
+  assert.equal(buildWorkspacePagePathFromPages('home', pages), '/');
+  assert.equal(buildWorkspacePagePathFromPages('child', pages), '/child');
+  assert.equal(buildWorkspacePagePathFromPages('grandchild', pages), '/child/grandchild');
+});
+
+test('workspace path resolver treats hidden home children as root paths', () => {
+  assert.equal(resolveWorkspacePagePathSegments([], pages), 'home');
+  assert.equal(resolveWorkspacePagePathSegments(['arcane-codex'], pages), 'home');
+  assert.equal(resolveWorkspacePagePathSegments(['child'], pages), 'child');
+  assert.equal(resolveWorkspacePagePathSegments(['arcane-codex', 'child'], pages), 'child');
 });
 
 test('workspace sidebar hides the home root and promotes its children', () => {

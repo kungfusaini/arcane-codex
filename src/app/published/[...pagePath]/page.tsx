@@ -41,7 +41,18 @@ export default function PublishedPageRoute({ params }: { params: { pagePath?: st
     permanentRedirect(toPublishedPath(resolution.canonicalPath));
   }
 
+  const initialPage = getPage(resolution.pageId) ?? undefined;
   const initialPages = listPageSummaries().map((page) => ({
+    id: page.id,
+    parentId: page.parentId,
+    sortKey: page.sortKey,
+    title: page.title,
+    slug: page.slug,
+    icon: page.icon,
+    iconAssetId: page.iconAssetId,
+    revision: page.revision,
+  }));
+  const initialSidebarPages = listPageSummaries(undefined, false).map((page) => ({
     id: page.id,
     parentId: page.parentId,
     sortKey: page.sortKey,
@@ -53,8 +64,8 @@ export default function PublishedPageRoute({ params }: { params: { pagePath?: st
   }));
 
   return (
-    <PageWorkspaceLayout readOnly pageRouteBasePath="/published">
-      <PageEditorRoute pageId={resolution.pageId} initialPages={initialPages} readOnly pageRouteBasePath="/published" />
+    <PageWorkspaceLayout initialPageId={resolution.pageId} initialPages={initialPages} initialSidebarPages={initialSidebarPages} readOnly pageRouteBasePath="/published">
+      <PageEditorRoute pageId={resolution.pageId} initialPage={initialPage} initialPages={initialPages} readOnly pageRouteBasePath="/published" />
     </PageWorkspaceLayout>
   );
 }

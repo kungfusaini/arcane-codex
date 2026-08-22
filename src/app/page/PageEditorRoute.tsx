@@ -5,6 +5,24 @@ import { useEffect, useState } from 'react';
 import { PageEditorSkeleton } from '@/components/PageEditorSkeleton';
 import type { PageUrlPage } from '@/lib/pageUrls';
 
+type InitialPage = {
+  id: string;
+  parentId: string | null;
+  sortKey: number;
+  title: string;
+  icon: string | null;
+  iconAssetId: string | null;
+  coverAssetId: string | null;
+  coverFocalX: number;
+  coverFocalY: number;
+  coverScale: number;
+  contentJson: string;
+  revision: number;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt: number | null;
+};
+
 type LayoutPage = PageUrlPage & {
   icon: string | null;
   iconAssetId: string | null;
@@ -29,14 +47,16 @@ function DelayedPageEditorSkeleton() {
 
 export function PageEditorRoute({
   pageId,
+  initialPage,
   initialPages = [],
   readOnly = false,
   pageRouteBasePath = '/',
 }: {
   pageId: string;
+  initialPage?: InitialPage;
   initialPages?: LayoutPage[];
   readOnly?: boolean;
   pageRouteBasePath?: string;
 }) {
-  return <PageEditor pageId={pageId} initialPages={initialPages} readOnly={readOnly} pageRouteBasePath={pageRouteBasePath} />;
+  return <PageEditor pageId={pageId} initialPage={initialPage} initialPages={initialPages} readOnly={readOnly} pageRouteBasePath={pageRouteBasePath} />;
 }

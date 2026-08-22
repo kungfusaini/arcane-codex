@@ -14,8 +14,7 @@ import {
 } from 'react';
 import { buildTree, type PageTreeNode } from '@/lib/pageTree';
 import { useDismissibleDetails } from '@/components/useDismissibleDetails';
-import { buildPagePathFromPages } from '@/lib/pageUrls';
-import { WORKSPACE_HOME_SLUG, promoteWorkspaceHomeChildren } from '@/lib/workspaceHome';
+import { WORKSPACE_HOME_SLUG, buildWorkspacePagePathFromPages, promoteWorkspaceHomeChildren } from '@/lib/workspaceHome';
 
 type SidebarPage = {
   id: string;
@@ -113,6 +112,7 @@ function addRevisionToTree(nodes: PageTreeNode[], pagesMap: Map<string, SidebarP
 
 export function WorkspaceSidebar({
   currentPageId,
+  initialPages = [],
   onCreated,
   readOnly = false,
   pageRouteBasePath = '/',
@@ -124,6 +124,7 @@ export function WorkspaceSidebar({
   hiddenRootPageSlug = WORKSPACE_HOME_SLUG,
 }: {
   currentPageId?: string;
+  initialPages?: SidebarPage[];
   onCreated?: (page?: SidebarPage) => void;
   readOnly?: boolean;
   pageRouteBasePath?: string;
@@ -136,10 +137,10 @@ export function WorkspaceSidebar({
 }) {
   useDismissibleDetails('.tree-menu');
 
-  const [pages, setPages] = useState<SidebarPage[]>([]);
+  const [pages, setPages] = useState<SidebarPage[]>(initialPages);
   const [trashPages, setTrashPages] = useState<SidebarPage[]>([]);
   const [query, setQuery] = useState('');
-  const [isLoading, setLoading] = useState(true);
+  const [isLoading, setLoading] = useState(initialPages.length === 0);
   const [status, setStatus] = useState('');
   const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -222,7 +223,9 @@ export function WorkspaceSidebar({
       }
     };
     updateViewport();
-    void fetchPages();
+    if (initialPages.length === 0) {
+      void fetchPages();
+    }
     const deferredChecks = readOnly ? null : window.setTimeout(() => {
       void fetchTrashPages();
       void fetchHealth();
@@ -236,12 +239,19 @@ export function WorkspaceSidebar({
       mobileQuery.removeEventListener('change', updateViewport);
       window.removeEventListener('arcane-pages-changed', refreshPageLists);
     };
-  }, [fetchHealth, fetchPages, fetchTrashPages, readOnly]);
+  }, [fetchHealth, fetchPages, fetchTrashPages, initialPages.length, readOnly]);
+
+  useEffect(() => {
+    if (initialPages.length > 0) {
+      setPages(initialPages);
+      setLoading(false);
+    }
+  }, [initialPages]);
 
   const setDesktopRailCollapsed = useCallback((collapsed: boolean) => {
     setRailCollapsed(collapsed);
     window.localStorage.setItem('arcane-sidebar-collapsed', String(collapsed));
-    document.documentElement.style.setProperty('--rail-width', collapsed ? '0px' : '264px');
+    document.documentElement.style.setProperty('--rail-width', collapsed ? '0px' : '336px');
   }, []);
 
   useEffect(() => {
@@ -702,7 +712,11 @@ export function WorkspaceSidebar({
                     aria-label={`Rename ${item.title}`}
                   />
                 ) : (
-                  <Link href={buildPagePathFromPages(item.id, pages, pageRouteBasePath)} className={isCurrent ? 'text-link active' : 'text-link'}>
+                  <Link
+                    href={buildWorkspacePagePathFromPages(item.id, pages, pageRouteBasePath)}
+                    className={isCurrent ? 'text-link active' : 'text-link'}
+                    title={fullPage.title || 'Untitled'}
+                  >
                     {fullPage.title || 'Untitled'}
                   </Link>
                 )}
@@ -773,7 +787,7 @@ export function WorkspaceSidebar({
   return (
     <>
       {!isMobile && railCollapsed ? (
-        <button type="button" className="sidebar-reopen" aria-label="Open sidebar" onClick={() => setDesktopRailCollapsed(false)}>›</button>
+        <button type="button" className="sidebar-reopen" aria-label="Open sidebar" onClick={() => setDesktopRailCollapsed(false)}><span aria-hidden="true">☰</span></button>
       ) : null}
       <header className="mobile-bar">
         <button

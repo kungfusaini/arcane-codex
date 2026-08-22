@@ -2,12 +2,12 @@
 
 import dynamic from 'next/dynamic';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { cloneElement, isValidElement, useEffect, useState, type ReactElement } from 'react';
 import { PageEditorSkeleton } from '@/components/PageEditorSkeleton';
 import { WorkspaceSidebar } from '@/components/WorkspaceSidebar';
 import { usePublishedPreview } from '@/components/usePublishedPreview';
-import { buildPagePathFromPages, resolvePagePathname, type PageUrlPage } from '@/lib/pageUrls';
-import { getWorkspaceHomePath } from '@/lib/workspaceHome';
+import type { PageUrlPage } from '@/lib/pageUrls';
+import { buildWorkspacePagePathFromPages, getWorkspaceHomePath, resolveWorkspacePagePathname } from '@/lib/workspaceHome';
 
 type LayoutPage = PageUrlPage & {
   icon: string | null;
@@ -33,18 +33,25 @@ function DelayedPageEditorSkeleton() {
 
 export function PageWorkspaceLayout({
   children,
+  initialPageId = null,
+  initialPages = [],
+  initialSidebarPages,
   readOnly = false,
   pageRouteBasePath = '/',
 }: {
-  children: React.ReactNode;
+  children?: React.ReactNode;
+  initialPageId?: string | null;
+  initialPages?: LayoutPage[];
+  initialSidebarPages?: LayoutPage[];
   readOnly?: boolean;
   pageRouteBasePath?: string;
 }) {
   const pathname = usePathname();
   const router = useRouter();
   const { previewPublished, effectiveReadOnly, canTogglePreview, setPreviewPublished } = usePublishedPreview(readOnly);
-  const [pages, setPages] = useState<LayoutPage[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const sidebarPages = initialSidebarPages ?? initialPages;
+  const [pages, setPages] = useState<LayoutPage[]>(initialPages);
+  const [loaded, setLoaded] = useState(initialPageId !== null || initialPages.length > 0);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,23 +69,38 @@ export function PageWorkspaceLayout({
       }
     };
 
-    void loadPages();
+    if (!loaded) {
+      void loadPages();
+    }
     const refresh = () => void loadPages();
     window.addEventListener('arcane-pages-changed', refresh);
     return () => {
       cancelled = true;
       window.removeEventListener('arcane-pages-changed', refresh);
     };
-  }, []);
+  }, [loaded]);
 
-  const pageId = loaded && pathname ? resolvePagePathname(pathname, pages) : null;
+  useEffect(() => {
+    if (initialPages.length > 0) {
+      setPages(initialPages);
+      setLoaded(true);
+    }
+  }, [initialPages]);
+
+  const resolvedPageId = loaded && pathname ? resolveWorkspacePagePathname(pathname, pages) : null;
+  const pageId = initialPageId ?? resolvedPageId;
   const isManagedPageRoute = pageRouteBasePath === '/page' && Boolean(pathname?.startsWith('/page'));
   const homePath = getWorkspaceHomePath(pages, pageRouteBasePath);
+  const workspaceModeKey = effectiveReadOnly ? 'published' : 'editor';
+  const renderedChildren = isValidElement(children)
+    ? cloneElement(children as ReactElement<{ readOnly?: boolean }>, { readOnly: effectiveReadOnly, key: workspaceModeKey })
+    : children;
 
   return (
     <div className="layout-shell">
       <WorkspaceSidebar
         currentPageId={pageId ?? undefined}
+        initialPages={sidebarPages}
         readOnly={effectiveReadOnly}
         pageRouteBasePath={pageRouteBasePath}
         collectionHomePath={readOnly ? `${pageRouteBasePath.replace(/\/+$/, '')}/collections` || '/collections' : '/collections'}
@@ -88,14 +110,14 @@ export function PageWorkspaceLayout({
         onPreviewPublishedChange={setPreviewPublished}
         onCreated={effectiveReadOnly ? undefined : (page) => {
           if (page) {
-            router.push(buildPagePathFromPages(page.id, [...pages, page], pageRouteBasePath));
+            router.push(buildWorkspacePagePathFromPages(page.id, [...pages, page], pageRouteBasePath));
           }
         }}
       />
       <main className="main-column page-main">
         {isManagedPageRoute ? (
-          !loaded ? <DelayedPageEditorSkeleton /> : pageId ? <PageEditor pageId={pageId} initialPages={pages} readOnly={effectiveReadOnly} pageRouteBasePath={pageRouteBasePath} /> : children
-        ) : children}
+          !loaded ? <DelayedPageEditorSkeleton /> : pageId ? <PageEditor key={`${pageId}:${workspaceModeKey}`} pageId={pageId} initialPages={pages} readOnly={effectiveReadOnly} pageRouteBasePath={pageRouteBasePath} /> : renderedChildren
+        ) : renderedChildren}
       </main>
     </div>
   );

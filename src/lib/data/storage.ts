@@ -23,7 +23,8 @@ import {
   getWorkspaceDbPath,
   getWorkspaceBaseDir,
 } from './workspace';
-import { buildPagePathFromPages, extractLegacyPageId, resolvePagePathSegments, slugifyPageTitle, type PageUrlPage } from '../pageUrls';
+import { buildPagePathFromPages, extractLegacyPageId, slugifyPageTitle, type PageUrlPage } from '../pageUrls';
+import { buildWorkspacePagePathFromPages, resolveWorkspacePagePathSegments } from '../workspaceHome';
 
 const CURRENT_SCHEMA_VERSION = 7;
 
@@ -495,19 +496,15 @@ export type PageRouteResolution = {
 
 export function resolvePageRoutePath(segments: string[], dataDir?: string): PageRouteResolution | null {
   const cleanSegments = segments.map((segment) => segment.trim()).filter(Boolean);
-  if (!cleanSegments.length) {
-    return null;
-  }
-
   const db = createStorageConnection(dataDir);
   try {
     const pages = getLivePageUrlPages(db);
     const requestedPath = cleanSegments.join('/');
-    const resolvedPageId = resolvePagePathSegments(cleanSegments, pages);
+    const resolvedPageId = resolveWorkspacePagePathSegments(cleanSegments, pages);
     if (resolvedPageId) {
       return {
         pageId: resolvedPageId,
-        canonicalPath: buildPagePathFromPages(resolvedPageId, pages),
+        canonicalPath: buildWorkspacePagePathFromPages(resolvedPageId, pages),
         requestedPath,
       };
     }
@@ -516,7 +513,7 @@ export function resolvePageRoutePath(segments: string[], dataDir?: string): Page
     if (legacyId && pages.some((page) => page.id === legacyId)) {
       return {
         pageId: legacyId,
-        canonicalPath: buildPagePathFromPages(legacyId, pages),
+        canonicalPath: buildWorkspacePagePathFromPages(legacyId, pages),
         requestedPath,
       };
     }
@@ -526,7 +523,7 @@ export function resolvePageRoutePath(segments: string[], dataDir?: string): Page
     if (aliasPageId && pages.some((page) => page.id === aliasPageId)) {
       return {
         pageId: aliasPageId,
-        canonicalPath: buildPagePathFromPages(aliasPageId, pages),
+        canonicalPath: buildWorkspacePagePathFromPages(aliasPageId, pages),
         requestedPath,
       };
     }
@@ -1274,6 +1271,7 @@ function normalizeCollectionSchema(input: unknown): CollectionSchema {
         name?: unknown;
         type?: unknown;
         options?: unknown;
+        optionColors?: unknown;
       };
 
       if (typeof candidateProperty.id !== 'string' || typeof candidateProperty.name !== 'string') {
@@ -1292,20 +1290,32 @@ function normalizeCollectionSchema(input: unknown): CollectionSchema {
           ? type
           : 'text';
 
+      const options =
+        parsedType === 'select' || parsedType === 'multi-select'
+          ? Array.from(new Set(
+              Array.isArray(candidateProperty.options)
+                ? candidateProperty.options
+                    .map((option) => (typeof option === 'string' ? option.trim() : ''))
+                    .filter(Boolean)
+                : [],
+            ))
+          : undefined;
+      const optionSet = new Set(options ?? []);
+      const optionColors = candidateProperty.optionColors && typeof candidateProperty.optionColors === 'object'
+        ? Object.entries(candidateProperty.optionColors as Record<string, unknown>).reduce<Record<string, 'accent' | 'success' | 'warning' | 'danger'>>((next, [option, color]) => {
+            if (optionSet.has(option) && (color === 'accent' || color === 'success' || color === 'warning' || color === 'danger')) {
+              next[option] = color;
+            }
+            return next;
+          }, {})
+        : undefined;
+
       return {
         id: candidateProperty.id,
         name: candidateProperty.name.trim() || 'Property',
         type: parsedType,
-        options:
-          parsedType === 'select' || parsedType === 'multi-select'
-            ? Array.from(new Set(
-                Array.isArray(candidateProperty.options)
-                  ? candidateProperty.options
-                      .map((option) => (typeof option === 'string' ? option.trim() : ''))
-                      .filter(Boolean)
-                  : [],
-              ))
-            : undefined,
+        options,
+        optionColors: optionColors && Object.keys(optionColors).length ? optionColors : undefined,
       };
     })
     .filter(Boolean) as CollectionSchema['properties'];

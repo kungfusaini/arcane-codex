@@ -4,7 +4,7 @@ import { PageEditorRoute } from '@/app/page/PageEditorRoute';
 import { PageWorkspaceLayout } from '@/app/page/PageWorkspaceLayout';
 import { getPage, listPageSummaries, resolvePageRoutePath } from '@/lib/data/storage';
 import { isPublishedAppSurface } from '@/lib/surface';
-import { buildPagePathFromPages } from '@/lib/pageUrls';
+import { buildWorkspacePagePathFromPages } from '@/lib/workspaceHome';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,7 +25,7 @@ export async function generateMetadata({ params }: { params: { pagePath?: string
     title,
     description: `Arcane Codex published page: ${title}`,
     alternates: {
-      canonical: buildPagePathFromPages(resolution.pageId, pages, '/'),
+      canonical: buildWorkspacePagePathFromPages(resolution.pageId, pages, '/'),
     },
   };
 }
@@ -37,6 +37,7 @@ export default function PublicPageRoute({ params }: { params: { pagePath?: strin
     notFound();
   }
 
+  const initialPage = getPage(resolution.pageId) ?? undefined;
   const initialPages = listPageSummaries().map((page) => ({
     id: page.id,
     parentId: page.parentId,
@@ -47,14 +48,24 @@ export default function PublicPageRoute({ params }: { params: { pagePath?: strin
     iconAssetId: page.iconAssetId,
     revision: page.revision,
   }));
-  const canonicalPath = buildPagePathFromPages(resolution.pageId, initialPages, '/');
+  const initialSidebarPages = listPageSummaries(undefined, false).map((page) => ({
+    id: page.id,
+    parentId: page.parentId,
+    sortKey: page.sortKey,
+    title: page.title,
+    slug: page.slug,
+    icon: page.icon,
+    iconAssetId: page.iconAssetId,
+    revision: page.revision,
+  }));
+  const canonicalPath = buildWorkspacePagePathFromPages(resolution.pageId, initialPages, '/');
   if (`/${resolution.requestedPath}` !== canonicalPath) {
     permanentRedirect(canonicalPath);
   }
 
   return (
-    <PageWorkspaceLayout readOnly={readOnly} pageRouteBasePath="/">
-      <PageEditorRoute pageId={resolution.pageId} initialPages={initialPages} readOnly={readOnly} pageRouteBasePath="/" />
+    <PageWorkspaceLayout initialPageId={resolution.pageId} initialPages={initialPages} initialSidebarPages={initialSidebarPages} readOnly={readOnly} pageRouteBasePath="/">
+      <PageEditorRoute pageId={resolution.pageId} initialPage={initialPage} initialPages={initialPages} readOnly={readOnly} pageRouteBasePath="/" />
     </PageWorkspaceLayout>
   );
 }
