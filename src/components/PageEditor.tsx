@@ -41,9 +41,9 @@ import { getBreadcrumbs } from '@/lib/pageTree';
 import { PageIcon } from '@/components/PageIcon';
 import { extractGrabberPaste, ImageGrabberPanel, ImageGrabberPromptForm, ImageGrabberUrlForm } from '@/components/ImageGrabberControls';
 import { ImageGrabberPopup, ImagePopupSection } from '@/components/ImageGrabberPopup';
+import { PublishMediaModal, PublishMediaTrigger, type PublishMediaItem } from '@/components/PublishMediaModal';
 import { useDismissibleDetails } from '@/components/useDismissibleDetails';
-import { buildPagePathFromPages, isPagePathForId } from '@/lib/pageUrls';
-import { findWorkspaceHomePage } from '@/lib/workspaceHome';
+import { buildWorkspacePagePathFromPages, findWorkspaceHomePage, isWorkspacePagePathForId } from '@/lib/workspaceHome';
 import {
   editGrabberImageToAsset,
   IMAGE_GRABBER_UPLOAD_TYPES,
@@ -113,6 +113,9 @@ const CollectionEditor = dynamic(
 
 const COVER_FOCAL_STEP = 5;
 const COVER_SCALE_STEP = 5;
+const defaultBlockSpecsWithoutImage = Object.fromEntries(
+  Object.entries(defaultBlockSpecs).filter(([type]) => type !== 'image'),
+) as typeof defaultBlockSpecs;
 
 type AssetRecord = {
   id: string;
@@ -250,11 +253,10 @@ function migrateLegacyImageBlocks(blocks: PartialBlock[]): { blocks: PartialBloc
             name,
             caption: typeof record.props.caption === 'string' ? record.props.caption : '',
           }]),
-          columns: 2,
+          imageSize: 240,
           mode: 'single',
           captionMode: 'individual',
           groupCaption: '',
-          width: 100,
         },
       } as unknown as PartialBlock & { props?: Record<string, unknown>; children?: PartialBlock[] };
       changed = true;
@@ -406,15 +408,15 @@ function ArcaneSuggestionMenu<T extends DefaultReactSuggestionItem>({
   );
 }
 
-type PageEditorProps = { pageId: string; initialPages?: SidebarPage[]; readOnly?: boolean; pageRouteBasePath?: string };
+type PageEditorProps = { pageId: string; initialPage?: PageRecord; initialPages?: SidebarPage[]; readOnly?: boolean; pageRouteBasePath?: string };
 
-export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRouteBasePath = '/' }: PageEditorProps) {
+export function PageEditor({ pageId, initialPage, initialPages = [], readOnly = false, pageRouteBasePath = '/' }: PageEditorProps) {
   useDismissibleDetails('.action-menu');
 
-  const [page, setPage] = useState<PageRecord | null>(null);
+  const [page, setPage] = useState<PageRecord | null>(initialPage ?? null);
   const [showLoadingSkeleton, setShowLoadingSkeleton] = useState(false);
   const loadingTimerRef = useRef<number | null>(null);
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState(initialPage?.title ?? '');
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error' | 'conflict'>('idle');
   const [statusMessage, setStatusMessage] = useState('');
   const [allPages, setAllPages] = useState<SidebarPage[]>(initialPages);
@@ -425,6 +427,7 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
   const [pageCollections, setPageCollections] = useState<CollectionSummary[]>([]);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [iconPickerPosition, setIconPickerPosition] = useState<{ top: number; left: number } | null>(null);
+  const [pageIconPrompt, setPageIconPrompt] = useState('');
   const [uploadTasks, setUploadTasks] = useState<UploadTask[]>([]);
   const [coverUrlOpen, setCoverUrlOpen] = useState(false);
   const [coverUrl, setCoverUrl] = useState('');
@@ -439,6 +442,8 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
   const [imagePrompt, setImagePrompt] = useState('');
   const [imagePromptBusy, setImagePromptBusy] = useState(false);
   const [captionEditor, setCaptionEditor] = useState<{ blockId: string; top: number; left: number; value: string } | null>(null);
+  const [publishMediaItems, setPublishMediaItems] = useState<PublishMediaItem[]>([]);
+  const [publishMediaIndex, setPublishMediaIndex] = useState<number | null>(null);
   const [conflictPage, setConflictPage] = useState<PageRecord | null>(null);
   const [recoveryDraft, setRecoveryDraft] = useState<RecoveryDraft | null>(null);
   const [coverDraft, setCoverDraft] = useState<{ x: number; y: number; scale: number } | null>(null);
@@ -450,6 +455,16 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
     }
     return map;
   }, [allPages]);
+
+  useEffect(() => {
+    try {
+      setPageIconPrompt(window.localStorage.getItem(`arcane-page-icon-prompt:${pageId}`)?.trim() ?? '');
+    } catch {
+      setPageIconPrompt('');
+    }
+  }, [pageId]);
+
+  const pageIconPromptCaption = pageIconPrompt ? `Prompt: ${pageIconPrompt}` : undefined;
 
   const setUploadTask = useCallback((taskId: string, patch: Partial<UploadTask>) => {
     setUploadTasks((current) =>
@@ -494,7 +509,7 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
       () =>
         BlockNoteSchema.create({
           blockSpecs: {
-            ...defaultBlockSpecs,
+            ...defaultBlockSpecsWithoutImage,
             ...createCustomBlockSpecs({ referencedPages, importAssetFromUrl, uploadAssetRecord, readOnly, pageRouteBasePath }),
           },
         }),
@@ -538,9 +553,9 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
   const editVersionRef = useRef(0);
   const isApplyingRemoteContent = useRef(false);
   const hasPendingContent = useRef(false);
-  const pendingRevision = useRef(0);
-  const savedDocRef = useRef('[]');
-  const titleRef = useRef('');
+  const pendingRevision = useRef(initialPage?.revision ?? 0);
+  const savedDocRef = useRef(initialPage?.contentJson ?? '[]');
+  const titleRef = useRef(initialPage?.title ?? '');
   const bodyUploadRef = useRef<HTMLInputElement>(null);
   const coverUploadRef = useRef<HTMLInputElement>(null);
   const iconUploadRef = useRef<HTMLInputElement>(null);
@@ -1018,7 +1033,7 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
   const insertAsset = useCallback((asset: AssetRecord, blockId?: string) => {
     const url = `/api/assets/${asset.id}`;
     const block = asset.mimeType.startsWith('image/')
-      ? { type: 'gallery', props: { images: JSON.stringify([{ url, name: asset.filename, caption: '' }]), columns: 3, mode: 'grid', captionMode: 'individual', groupCaption: '', width: 100 } }
+      ? { type: 'gallery', props: { images: JSON.stringify([{ url, name: asset.filename, caption: '' }]), imageSize: 240, mode: 'grid', captionMode: 'individual', groupCaption: '' } }
       : { type: 'file', props: { url, name: asset.filename, caption: asset.filename } };
 
     if (blockId) {
@@ -1162,7 +1177,7 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
     }
 
     const payload = (await response.json()) as { page: PageRecord };
-    window.location.href = buildPagePathFromPages(payload.page.id, [...allPages, payload.page]);
+    window.location.href = buildWorkspacePagePathFromPages(payload.page.id, [...allPages, payload.page], pageRouteBasePath);
   };
 
   const trash = async () => {
@@ -1396,6 +1411,11 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
     setTimeComposerError('');
   }, [editor, timeComposerValue]);
 
+  const openPublishMedia = useCallback((item: PublishMediaItem) => {
+    setPublishMediaItems([item]);
+    setPublishMediaIndex(0);
+  }, []);
+
   const openImageUrlPicker = useCallback(() => {
     const selection = editor.getSelectionBoundingBox();
     setImageUrlPosition(selection ? {
@@ -1406,9 +1426,8 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
   }, [editor]);
 
   const getSlashMenuItems = useCallback(async (query: string): Promise<(DefaultReactSuggestionItem & { pageId?: string })[]> => {
-    const defaultItems = filterSuggestionItems(getDefaultReactSlashMenuItems(editor), query).map((item) => (item as DefaultReactSuggestionItem & { key?: string }).key === 'image'
-      ? { ...item, onItemClick: openImageUrlPicker }
-      : item);
+    const defaultItems = filterSuggestionItems(getDefaultReactSlashMenuItems(editor), query)
+      .filter((item) => (item as DefaultReactSuggestionItem & { key?: string }).key !== 'image');
     const normalized = query.trim().toLowerCase();
     const customItems = getCustomSlashMenuItems({
       editor,
@@ -1435,10 +1454,10 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
           group: 'Media',
         }]
       : [];
-    const imageUrlItem = !normalized || 'image from url'.includes(normalized)
+    const imageUrlItem = !normalized || 'gallery from url image'.includes(normalized)
       ? [{
-          title: 'Image from URL',
-          subtext: 'Download an image into the media library',
+          title: 'Gallery from URL',
+          subtext: 'Create a gallery block from an image URL',
           onItemClick: openImageUrlPicker,
           group: 'Media',
         }]
@@ -1461,7 +1480,7 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
     (item: MentionItem) => {
       editor.insertInlineContent([{
         type: 'link',
-        href: buildPagePathFromPages(item.id, allPages),
+        href: buildWorkspacePagePathFromPages(item.id, allPages, pageRouteBasePath),
         content: item.label,
       }]);
     },
@@ -1532,8 +1551,22 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
     if (target.closest('a[href^="#youtube-time-"], a[href^="youtube-time:"]')) {
       event.preventDefault();
       event.stopPropagation();
+      return;
     }
-  }, []);
+
+    if (!readOnly) {
+      return;
+    }
+
+    const publishMediaTrigger = target.closest('.publish-media-trigger');
+    const publishImage = target.closest<HTMLImageElement>('img');
+    const readonlyNodeView = target.closest('.bn-react-node-view-renderer');
+    const readonlyMediaBlock = target.closest('.bn-block-content[data-content-type="image"], .bn-block-content[data-content-type="file"]');
+    if (publishMediaTrigger || readonlyNodeView || readonlyMediaBlock || (publishImage && !publishImage.closest('a, button'))) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }, [readOnly]);
 
   const onEditorViewClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
@@ -1547,6 +1580,17 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
         event.preventDefault();
         window.dispatchEvent(new CustomEvent('arcane-youtube-seek', { detail: { seconds } }));
       }
+      return;
+    }
+    const publishImage = readOnly ? target.closest<HTMLImageElement>('img') : null;
+    if (publishImage && !publishImage.closest('a, button')) {
+      event.preventDefault();
+      openPublishMedia({
+        type: 'image',
+        src: publishImage.currentSrc || publishImage.src,
+        alt: publishImage.alt,
+        label: publishImage.alt || 'Published image',
+      });
       return;
     }
     if (target.closest('a, button, input, textarea, .bn-trailing-block')) {
@@ -1564,7 +1608,7 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
       return;
     }
     appendParagraphBlock();
-  }, [appendParagraphBlock, enterEditing, isEditing]);
+  }, [appendParagraphBlock, enterEditing, isEditing, openPublishMedia, readOnly]);
 
   const onEditorViewBlur = useCallback((event: ReactFocusEvent<HTMLDivElement>) => {
     if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) {
@@ -1683,7 +1727,7 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
       const grabbed = await editGrabberImageToAsset(imageHover.url, imagePrompt);
       rememberAsset(grabbed.asset as AssetRecord);
       const editedUrl = grabbed.url;
-      if (isPagePathForId(window.location.pathname, pageId, allPages)) {
+      if (isWorkspacePagePathForId(window.location.pathname, pageId, allPages)) {
         editor.updateBlock(imageHover.blockId, { props: { url: editedUrl } });
         window.requestAnimationFrame(() => { void savePage(); });
       } else {
@@ -1742,6 +1786,19 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
   }, [allPages, pageId]);
 
   useEffect(() => {
+    if (initialPage) {
+      setPage(initialPage);
+      setTitle(initialPage.title);
+      titleRef.current = initialPage.title;
+      pendingRevision.current = initialPage.revision;
+      setShowLoadingSkeleton(false);
+      if (loadingTimerRef.current !== null) {
+        window.clearTimeout(loadingTimerRef.current);
+        loadingTimerRef.current = null;
+      }
+      applyInitialContent(initialPage.contentJson);
+      setEditorReady(true);
+    }
     void loadPage();
     if (initialPages.length === 0) {
       void loadPageList();
@@ -1768,7 +1825,7 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
         clearTimeout(saveTimerRef.current);
       }
     };
-  }, [initialPages.length, loadPage, loadPageList, savePage]);
+  }, [applyInitialContent, initialPage, initialPages.length, loadPage, loadPageList, savePage]);
 
   useEffect(() => {
     setShowLoadingSkeleton(false);
@@ -1819,7 +1876,7 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
               <span key={crumb.id} className="breadcrumb-group">
                 <span className="breadcrumb-entry">
                   {crumb.icon || crumb.iconAssetId ? <PageIcon className="breadcrumb-icon" icon={crumb.icon} iconAssetId={crumb.iconAssetId} /> : null}
-                  <Link className="text-link" href={buildPagePathFromPages(crumb.id, allPages, pageRouteBasePath)}>{crumb.title}</Link>
+                  <Link className="text-link" href={buildWorkspacePagePathFromPages(crumb.id, allPages, pageRouteBasePath)}>{crumb.title}</Link>
                 </span>
                 {index + 1 < breadcrumbs.length ? <span className="breadcrumb-separator" aria-hidden="true">/</span> : null}
               </span>
@@ -1829,19 +1886,24 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
 
         {coverAsset ? (
           <div className="cover-preview">
-            <Image
-              src={`/api/assets/${coverAsset.id}`}
-              alt={coverAsset.filename}
-              width={1200}
-              height={320}
-              className="cover-preview-image"
-              style={displayedCoverPosition ? {
-                objectPosition: `${displayedCoverPosition.x}% ${displayedCoverPosition.y}%`,
-                transform: `scale(${displayedCoverPosition.scale / 100})`,
-              } : undefined}
-              draggable={false}
-              unoptimized
-            />
+            <PublishMediaTrigger
+              item={{ type: 'image', src: `/api/assets/${coverAsset.id}`, alt: coverAsset.filename, label: 'Page cover' }}
+              className="cover-preview-media"
+            >
+              <Image
+                src={`/api/assets/${coverAsset.id}`}
+                alt={coverAsset.filename}
+                width={1200}
+                height={320}
+                className="cover-preview-image"
+                style={displayedCoverPosition ? {
+                  objectPosition: `${displayedCoverPosition.x}% ${displayedCoverPosition.y}%`,
+                  transform: `scale(${displayedCoverPosition.scale / 100})`,
+                } : undefined}
+                draggable={false}
+                unoptimized
+              />
+            </PublishMediaTrigger>
           </div>
         ) : null}
 
@@ -1850,7 +1912,21 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
             <div className="page-title-row">
               {page.icon || page.iconAssetId ? (
                 <div className="page-icon-wrap">
-                  <span className="page-icon page-icon-static"><PageIcon icon={page.icon} iconAssetId={page.iconAssetId} /></span>
+                  {page.iconAssetId ? (
+                    <PublishMediaTrigger
+                      item={{ type: 'image', src: `/api/assets/${page.iconAssetId}`, alt: title || 'Page icon', label: 'Page icon', caption: pageIconPromptCaption }}
+                      className="page-icon page-icon-static"
+                    >
+                      <PageIcon icon={page.icon} iconAssetId={page.iconAssetId} />
+                    </PublishMediaTrigger>
+                  ) : (
+                    <PublishMediaTrigger
+                      item={{ type: 'emoji', symbol: page.icon || '📄', label: 'Page icon' }}
+                      className="page-icon page-icon-static"
+                    >
+                      <PageIcon icon={page.icon} iconAssetId={page.iconAssetId} />
+                    </PublishMediaTrigger>
+                  )}
                 </div>
               ) : null}
               <h1 className="page-title page-title-readonly">{title || 'Untitled'}</h1>
@@ -1885,6 +1961,7 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
             </BlockNoteView>
           </div>
         </div>
+        <PublishMediaModal items={publishMediaItems} activeIndex={publishMediaIndex} onActiveIndexChange={setPublishMediaIndex} />
       </section>
     );
   }
@@ -1897,7 +1974,7 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
             <span key={crumb.id} className="breadcrumb-group">
               <span className="breadcrumb-entry">
                 {crumb.icon || crumb.iconAssetId ? <PageIcon className="breadcrumb-icon" icon={crumb.icon} iconAssetId={crumb.iconAssetId} /> : null}
-                <Link className="text-link" href={buildPagePathFromPages(crumb.id, allPages)}>{crumb.title}</Link>
+                <Link className="text-link" href={buildWorkspacePagePathFromPages(crumb.id, allPages, pageRouteBasePath)}>{crumb.title}</Link>
               </span>
               {index + 1 < breadcrumbs.length ? <span className="breadcrumb-separator" aria-hidden="true">/</span> : null}
             </span>
@@ -2026,6 +2103,7 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
               }}
               onRemove={removePageIcon}
               onClose={closeIconPicker}
+              onPromptChange={setPageIconPrompt}
               style={iconPickerPosition ? { position: 'fixed', top: iconPickerPosition.top, left: iconPickerPosition.left, transform: 'none' } : undefined}
             />
           ) : null}
@@ -2087,14 +2165,14 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
 
         {imageUrlOpen ? (
           <ImageGrabberPopup
-            title="Add image"
+            title="Add gallery image"
             className="image-grabber-popup image-url-popover"
             style={imageUrlPosition ? { top: imageUrlPosition.top, left: imageUrlPosition.left } : undefined}
             onClose={() => { setImageUrl(''); setImageUrlOpen(false); setImageUrlPosition(null); }}
             info={(
               <ImagePopupSection title="Paste or upload" description="Paste a link, paste an image, or upload from disk." editorOnly>
                 <ImageGrabberPanel
-                  title="Page image"
+                  title="Gallery image"
                   className="image-grabber-panel"
                   onPaste={(event) => {
                     const { text, imageFile } = extractGrabberPaste(event);
@@ -2116,7 +2194,7 @@ export function PageEditor({ pageId, initialPages = [], readOnly = false, pageRo
                     label="Image URL"
                     inputId="editor-image-url"
                     value={imageUrl}
-                    submitLabel="Insert image"
+                    submitLabel="Insert gallery"
                     autoFocus
                     disabled={isDeleted}
                     className="image-grabber-url-form"

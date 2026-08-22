@@ -62,11 +62,14 @@ export type PageLinkRecord = {
 
 export type CollectionPropertyType = 'text' | 'number' | 'select' | 'multi-select' | 'checkbox' | 'date' | 'url';
 
+export type CollectionOptionColor = 'default' | 'accent' | 'success' | 'warning' | 'danger';
+
 export type CollectionProperty = {
   id: string;
   name: string;
   type: CollectionPropertyType;
   options?: string[];
+  optionColors?: Record<string, CollectionOptionColor>;
 };
 
 export type CollectionSchema = {

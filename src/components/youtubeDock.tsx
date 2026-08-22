@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 export type YouTubeDockSession = {
   sourceBlockId: string;
@@ -14,9 +14,17 @@ export type YouTubeDockSession = {
 };
 
 type Listener = () => void;
+type YouTubeDockCommand = {
+  sourceBlockId: string;
+  command: 'playVideo' | 'pauseVideo' | 'getCurrentTime' | 'getDuration' | 'seekTo';
+  args?: unknown[];
+};
+
+type CommandListener = (command: YouTubeDockCommand) => void;
 
 let session: YouTubeDockSession | null = null;
 const listeners = new Set<Listener>();
+const commandListeners = new Set<CommandListener>();
 
 function emit() {
   for (const listener of [...listeners]) {
@@ -55,8 +63,21 @@ export function clearYouTubeDockSession(sourceBlockId?: string) {
 
 export function updateYouTubeDockSession(partial: Partial<YouTubeDockSession>) {
   if (!session) return;
-  session = { ...session, ...partial };
+  const next = { ...session, ...partial };
+  const changed = (Object.keys(partial) as Array<keyof YouTubeDockSession>).some((key) => session?.[key] !== next[key]);
+  if (!changed) return;
+  session = next;
   emit();
+}
+
+export function requestYouTubeDockCommand(command: YouTubeDockCommand) {
+  for (const listener of [...commandListeners]) {
+    try {
+      listener(command);
+    } catch {
+      commandListeners.delete(listener);
+    }
+  }
 }
 
 export function YouTubeMiniPlayerDock() {
@@ -72,9 +93,9 @@ export function YouTubeMiniPlayerDock() {
     return `${Math.floor(wholeSeconds / 60)}:${String(wholeSeconds % 60).padStart(2, '0')}`;
   };
 
-  const sendCommand = (command: 'playVideo' | 'pauseVideo' | 'getCurrentTime' | 'getDuration' | 'seekTo', args: unknown[] = []) => {
+  const sendCommand = useCallback((command: 'playVideo' | 'pauseVideo' | 'getCurrentTime' | 'getDuration' | 'seekTo', args: unknown[] = []) => {
     iframeRef.current?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: command, args }), '*');
-  };
+  }, []);
 
   useEffect(() => {
     setCurrentTime(dockSession?.currentTime ?? 0);
@@ -82,8 +103,14 @@ export function YouTubeMiniPlayerDock() {
     setIsPlaying(dockSession?.isPlaying ?? false);
   }, [dockSession?.currentTime, dockSession?.duration, dockSession?.isPlaying, dockSession?.videoId]);
 
+  const dockSessionSourceBlockId = dockSession?.sourceBlockId;
+
   useEffect(() => {
-    if (!dockSession) return;
+    if (!dockSessionSourceBlockId) return;
+    const handleCommand = (dockCommand: YouTubeDockCommand) => {
+      if (dockCommand.sourceBlockId !== dockSessionSourceBlockId) return;
+      sendCommand(dockCommand.command, dockCommand.args ?? []);
+    };
     const handleMessage = (event: MessageEvent) => {
       if (event.source !== iframeRef.current?.contentWindow || typeof event.data !== 'string') return;
       try {
@@ -116,20 +143,21 @@ export function YouTubeMiniPlayerDock() {
       sendCommand('getDuration');
     }, 500);
 
+    commandListeners.add(handleCommand);
     window.addEventListener('message', handleMessage);
     return () => {
+      commandListeners.delete(handleCommand);
       window.removeEventListener('message', handleMessage);
       window.clearInterval(poll);
     };
-  }, [dockSession?.videoId]);
+  }, [dockSessionSourceBlockId, dockSession?.videoId, sendCommand]);
 
-  if (!dockSession || !dockSession.isVisible) {
+  if (!dockSession) {
     return null;
   }
 
-  return (
-    <aside className="youtube-mini-player" aria-label="Mini music player">
-      <iframe
+  const transport = (
+    <iframe
         ref={iframeRef}
         onLoad={() => {
           const target = iframeRef.current?.contentWindow;
@@ -149,7 +177,12 @@ export function YouTubeMiniPlayerDock() {
         aria-hidden="true"
         allow="autoplay; encrypted-media"
       />
-      <button type="button" className="youtube-mini-player-main" onClick={() => {
+  );
+
+  return (
+    <aside className={`youtube-mini-player ${dockSession.isVisible ? '' : 'youtube-mini-player--hidden'}`} aria-label="Mini music player">
+      {transport}
+      {dockSession.isVisible ? <button type="button" className="youtube-mini-player-main" onClick={() => {
         const nextPlaying = !isPlaying;
         setIsPlaying(nextPlaying);
         updateYouTubeDockSession({ isPlaying: nextPlaying });
@@ -160,8 +193,8 @@ export function YouTubeMiniPlayerDock() {
           <strong>{dockSession.title}</strong>
           <span>{formatTime(currentTime)} / {duration ? formatTime(duration) : '--:--'}</span>
         </span>
-      </button>
-      <input
+      </button> : null}
+      {dockSession.isVisible ? <input
         className="youtube-mini-player-seeker"
         type="range"
         min="0"
@@ -175,10 +208,10 @@ export function YouTubeMiniPlayerDock() {
           sendCommand('seekTo', [nextTime, true]);
         }}
         aria-label="Seek through audio"
-      />
-      <button type="button" className="youtube-mini-player-close" onClick={() => clearYouTubeDockSession(dockSession.sourceBlockId)} aria-label="Dismiss mini player">
+      /> : null}
+      {dockSession.isVisible ? <button type="button" className="youtube-mini-player-close" onClick={() => clearYouTubeDockSession(dockSession.sourceBlockId)} aria-label="Dismiss mini player">
         ×
-      </button>
+      </button> : null}
     </aside>
   );
 }

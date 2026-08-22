@@ -1,13 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { deleteCollection, getCollection, listCollectionItems, listPages, updateCollection } from '@/lib/data/storage';
-import { CollectionPropertyType, CollectionSchema, CollectionViews } from '@/lib/data/types';
+import { CollectionOptionColor, CollectionPropertyType, CollectionSchema, CollectionViews } from '@/lib/data/types';
 
 type CollectionProperty = {
   id: string;
   name: string;
   type: CollectionPropertyType;
   options?: string[];
+  optionColors?: Record<string, CollectionOptionColor>;
 };
+
+function isCollectionOptionColor(value: unknown): value is CollectionOptionColor {
+  return value === 'default' || value === 'accent' || value === 'success' || value === 'warning' || value === 'danger';
+}
+
+function normalizeOptionColors(raw: unknown, options: string[]): Record<string, CollectionOptionColor> | undefined {
+  if (!raw || typeof raw !== 'object') {
+    return undefined;
+  }
+
+  const optionSet = new Set(options);
+  const colors = Object.entries(raw as Record<string, unknown>).reduce<Record<string, CollectionOptionColor>>((next, [option, color]) => {
+    if (optionSet.has(option) && isCollectionOptionColor(color) && color !== 'default') {
+      next[option] = color;
+    }
+    return next;
+  }, {});
+
+  return Object.keys(colors).length ? colors : undefined;
+}
 
 type CollectionPayload = {
   name?: unknown;
@@ -68,6 +89,7 @@ function parseCollectionSchema(payload: unknown): CollectionSchema {
         name?: unknown;
         type?: unknown;
         options?: unknown;
+        optionColors?: unknown;
       };
 
       if (typeof raw.id !== 'string' || typeof raw.name !== 'string') {
@@ -75,18 +97,20 @@ function parseCollectionSchema(payload: unknown): CollectionSchema {
       }
 
       const type = parseCollectionType(raw.type);
+      const options =
+        type === 'select' || type === 'multi-select'
+          ? Array.from(new Set(
+              Array.isArray(raw.options)
+                ? raw.options.map((option) => (typeof option === 'string' ? option.trim() : '')).filter(Boolean)
+                : [],
+            ))
+          : undefined;
       return {
         id: raw.id.trim(),
         name: raw.name.trim() || 'Property',
         type,
-        options:
-          type === 'select' || type === 'multi-select'
-            ? Array.from(new Set(
-                Array.isArray(raw.options)
-                  ? raw.options.map((option) => (typeof option === 'string' ? option.trim() : '')).filter(Boolean)
-                  : [],
-              ))
-            : undefined,
+        options,
+        optionColors: options ? normalizeOptionColors(raw.optionColors, options) : undefined,
       } as CollectionProperty;
     })
     .filter((property): property is CollectionProperty => Boolean(property));

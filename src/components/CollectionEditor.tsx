@@ -2,8 +2,10 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import { PublishMediaTrigger } from '@/components/PublishMediaModal';
 import { useDismissibleDetails } from '@/components/useDismissibleDetails';
-import { buildPagePathFromPages, type PageUrlPage } from '@/lib/pageUrls';
+import type { PageUrlPage } from '@/lib/pageUrls';
+import { buildWorkspacePagePathFromPages } from '@/lib/workspaceHome';
 import {
   ChangeEvent,
   FormEvent,
@@ -18,11 +20,14 @@ import {
 
 type CollectionPropertyType = 'text' | 'number' | 'select' | 'multi-select' | 'checkbox' | 'date' | 'url';
 
+type OptionColor = 'default' | 'accent' | 'success' | 'warning' | 'danger';
+
 type CollectionProperty = {
   id: string;
   name: string;
   type: CollectionPropertyType;
   options?: string[];
+  optionColors?: Record<string, OptionColor>;
 };
 
 type CollectionSchema = {
@@ -124,6 +129,38 @@ const PROPERTY_ICONS: Record<CollectionPropertyType, string> = {
   url: '↗',
 };
 
+const OPTION_COLORS: Array<{ value: OptionColor; label: string }> = [
+  { value: 'default', label: 'Default' },
+  { value: 'accent', label: 'Blue' },
+  { value: 'success', label: 'Green' },
+  { value: 'warning', label: 'Yellow' },
+  { value: 'danger', label: 'Red' },
+];
+
+function isOptionColor(value: unknown): value is OptionColor {
+  return value === 'default' || value === 'accent' || value === 'success' || value === 'warning' || value === 'danger';
+}
+
+function normalizeOptionColors(raw: unknown, options: string[]): Record<string, OptionColor> | undefined {
+  if (!raw || typeof raw !== 'object') {
+    return undefined;
+  }
+
+  const optionSet = new Set(options);
+  const colors = Object.entries(raw as Record<string, unknown>).reduce<Record<string, OptionColor>>((next, [option, color]) => {
+    if (optionSet.has(option) && isOptionColor(color) && color !== 'default') {
+      next[option] = color;
+    }
+    return next;
+  }, {});
+
+  return Object.keys(colors).length ? colors : undefined;
+}
+
+function getOptionColor(property: CollectionProperty, option: string): OptionColor {
+  return property.optionColors?.[option] ?? 'default';
+}
+
 const BOOKS_COLLECTION_SCHEMA: CollectionSchema = {
   properties: [
     { id: 'author', name: 'Author', type: 'select' },
@@ -187,6 +224,7 @@ function parseSchema(value: string): CollectionSchema {
               name?: unknown;
               type?: unknown;
               options?: unknown;
+              optionColors?: unknown;
             };
             if (typeof raw.id !== 'string' || typeof raw.name !== 'string') {
               return null;
@@ -201,19 +239,22 @@ function parseSchema(value: string): CollectionSchema {
               raw.type === 'url'
                 ? (raw.type as CollectionPropertyType)
                 : 'text';
+            const options = type === 'select' || type === 'multi-select' ?
+              Array.from(
+                new Set(
+                  Array.isArray(raw.options)
+                    ? raw.options.map((option) => (typeof option === 'string' ? option.trim() : '')).filter(Boolean)
+                    : [],
+                ),
+              )
+              : undefined;
+
             return {
               id: raw.id,
               name: raw.name || 'Property',
               type,
-              options: type === 'select' || type === 'multi-select' ?
-                Array.from(
-                  new Set(
-                    Array.isArray(raw.options)
-                      ? raw.options.map((option) => (typeof option === 'string' ? option.trim() : '')).filter(Boolean)
-                      : [],
-                  ),
-                )
-                : undefined,
+              options,
+              optionColors: options ? normalizeOptionColors(raw.optionColors, options) : undefined,
             } as CollectionProperty;
           })
           .filter(Boolean) as CollectionProperty[],
@@ -396,10 +437,24 @@ function getFirstImageUrl(page: { coverAssetId: string | null; contentJson: stri
       } else {
         const record = node as {
           type?: unknown;
-          props?: { url?: unknown; fileUrl?: unknown; source?: unknown };
+          props?: { url?: unknown; fileUrl?: unknown; source?: unknown; images?: unknown };
           children?: unknown;
           content?: unknown;
         };
+
+        if (record.type === 'gallery' && typeof record.props?.images === 'string') {
+          try {
+            const images = JSON.parse(record.props.images) as unknown;
+            if (Array.isArray(images)) {
+              const firstImage = images.find((item) => item && typeof item === 'object' && typeof (item as { url?: unknown }).url === 'string') as { url?: string } | undefined;
+              if (firstImage?.url) {
+                return firstImage.url;
+              }
+            }
+          } catch {
+            // Ignore malformed gallery props and keep walking.
+          }
+        }
 
         if (record.type === 'image') {
           const candidate =
@@ -634,8 +689,14 @@ function CollectionPropertyControl({
     );
 
     if (property.type === 'select') {
+      const selected = persistedValue.trim();
       return (
         <div className="collection-select-cell">
+          {selected ? (
+            <span className="collection-select-token" data-color={getOptionColor(property, selected)} aria-hidden="true">{selected}</span>
+          ) : (
+            <span className="collection-empty-value" aria-hidden="true">Choose or type</span>
+          )}
           {input}
           <datalist id={optionListId}>{(property.options ?? []).map((option) => <option key={option} value={option} />)}</datalist>
         </div>
@@ -647,7 +708,7 @@ function CollectionPropertyControl({
       return (
         <div className="collection-multi-select-cell">
           <div className="collection-token-list" aria-hidden="true">
-            {tags.length ? tags.map((tag) => <span key={tag}>{tag}</span>) : <span className="collection-empty-value">—</span>}
+            {tags.length ? tags.map((tag) => <span key={tag} data-color={getOptionColor(property, tag)}>{tag}</span>) : <span className="collection-empty-value">—</span>}
           </div>
           {input}
           <datalist id={optionListId}>{(property.options ?? []).map((option) => <option key={option} value={option} />)}</datalist>
@@ -716,8 +777,21 @@ function CollectionPropertySettingsRow({
       .map((entry) => entry.trim())
       .filter(Boolean);
     if (JSON.stringify(nextOptions) !== JSON.stringify(property.options ?? [])) {
-      onUpdate(property.id, { options: nextOptions });
+      onUpdate(property.id, {
+        options: nextOptions,
+        optionColors: normalizeOptionColors(property.optionColors, nextOptions),
+      });
     }
+  };
+
+  const saveOptionColor = (option: string, color: OptionColor) => {
+    const nextColors = { ...(property.optionColors ?? {}) };
+    if (color === 'default') {
+      delete nextColors[option];
+    } else {
+      nextColors[option] = color;
+    }
+    onUpdate(property.id, { optionColors: Object.keys(nextColors).length ? nextColors : undefined });
   };
 
   return (
@@ -733,10 +807,24 @@ function CollectionPropertySettingsRow({
         </select>
       </label>
       {(typeDraft === 'select' || typeDraft === 'multi-select') ? (
-        <label>
-          Options
-          <input value={optionsDraft} onChange={(event) => setOptionsDraft(event.target.value)} onBlur={saveOptions} placeholder="Comma-separated values" />
-        </label>
+        <div className="collection-options-editor">
+          <label>
+            Options
+            <input value={optionsDraft} onChange={(event) => setOptionsDraft(event.target.value)} onBlur={saveOptions} placeholder="Comma-separated values" />
+          </label>
+          {(property.options ?? []).length ? (
+            <div className="collection-option-colors" aria-label={`${property.name} option colors`}>
+              {(property.options ?? []).map((option) => (
+                <label key={option}>
+                  <span className="collection-select-token" data-color={getOptionColor(property, option)}>{option}</span>
+                  <select value={getOptionColor(property, option)} onChange={(event) => saveOptionColor(option, event.target.value as OptionColor)}>
+                    {OPTION_COLORS.map((color) => <option key={color.value} value={color.value}>{color.label}</option>)}
+                  </select>
+                </label>
+              ))}
+            </div>
+          ) : null}
+        </div>
       ) : null}
       <div className="toolbar">
         <button type="button" className="mini-btn" onClick={() => onMove(property.id, 'up')} disabled={index === 0}>Move up</button>
@@ -764,17 +852,24 @@ function renderGalleryProperty(property: CollectionProperty, value: unknown): Re
   );
 }
 
-function renderFocusedPropertyValue(property: CollectionProperty, value: unknown): ReactNode {
+function renderFocusedPropertyValue(property: CollectionProperty, value: unknown, surface: 'focus' | 'table' = 'focus'): ReactNode {
+  const emptyClassName = surface === 'focus' ? 'collection-focus-empty' : 'collection-empty-value';
+
   if (property.type === 'multi-select' && Array.isArray(value)) {
     return value.length ? (
-      <div className="collection-focus-token-list" aria-label={property.name}>
-        {value.map((entry) => <span key={String(entry)}>{String(entry)}</span>)}
+      <div className={surface === 'focus' ? 'collection-focus-token-list' : 'collection-token-list'} aria-label={property.name}>
+        {value.map((entry) => <span key={String(entry)} data-color={getOptionColor(property, String(entry))}>{String(entry)}</span>)}
       </div>
-    ) : <span className="collection-focus-empty">—</span>;
+    ) : <span className={emptyClassName}>—</span>;
+  }
+
+  if (property.type === 'select') {
+    const selected = String(value ?? '').trim();
+    return selected ? <span className="collection-select-token" data-color={getOptionColor(property, selected)}>{selected}</span> : <span className={emptyClassName}>—</span>;
   }
 
   if (property.type === 'checkbox') {
-    return <span>{value ? 'Yes' : 'No'}</span>;
+    return <span className="collection-readonly-checkbox" data-checked={value ? 'true' : 'false'}>{value ? 'Yes' : 'No'}</span>;
   }
 
   if (isScoreProperty(property)) {
@@ -783,10 +878,10 @@ function renderFocusedPropertyValue(property: CollectionProperty, value: unknown
 
   const text = String(value ?? '').trim();
   if (!text) {
-    return <span className="collection-focus-empty">—</span>;
+    return <span className={emptyClassName}>—</span>;
   }
 
-  return property.type === 'url' ? <a href={text} className="text-link" target="_blank" rel="noreferrer">{normalizeUrl(text)}</a> : <span>{text}</span>;
+  return property.type === 'url' ? <a href={text} className="text-link collection-readonly-value" target="_blank" rel="noreferrer">{normalizeUrl(text)}</a> : <span className="collection-readonly-value">{text}</span>;
 }
 
 export function CollectionEditor({ collectionId, embedded = false, focusPageId, readOnly = false, pageRouteBasePath = '/' }: { collectionId: string; embedded?: boolean; focusPageId?: string; readOnly?: boolean; pageRouteBasePath?: string }) {
@@ -909,13 +1004,18 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
             nextType === 'select' || nextType === 'multi-select'
               ? updates.options ?? property.options ?? []
               : undefined;
+          const normalizedOptions = nextOptions?.map((option) => option.trim()).filter(Boolean);
+          const optionColors = normalizedOptions
+            ? normalizeOptionColors(updates.optionColors ?? property.optionColors, normalizedOptions)
+            : undefined;
 
           return {
             ...property,
             ...updates,
             name: nextName.trim() || 'Property',
             type: nextType,
-            ...(nextOptions ? { options: nextOptions.map((option) => option.trim()).filter(Boolean) } : {}),
+            ...(normalizedOptions ? { options: normalizedOptions } : { options: undefined }),
+            optionColors,
           };
         }),
       };
@@ -1378,7 +1478,7 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
           <header className={`collection-host-identity ${hostPage.coverAssetId ? 'has-cover' : ''}`}>
             <span className="collection-host-icon" aria-hidden="true">{hostPage.icon ?? '📄'}</span>
             <div className="collection-host-copy">
-              <Link href={buildPagePathFromPages(hostPage.id, pageUrlPages, pageRouteBasePath)} className="text-link collection-host-title">{hostPage.title || 'Untitled'}</Link>
+              <Link href={buildWorkspacePagePathFromPages(hostPage.id, pageUrlPages, pageRouteBasePath)} className="text-link collection-host-title">{hostPage.title || 'Untitled'}</Link>
               <p className="collection-host-description">{hostPagePreview || 'Read books imported from the Notion export.'}</p>
             </div>
           </header>
@@ -1486,12 +1586,21 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
                   className="collection-gallery-item"
                   style={{ '--motion-stagger-index': `${staggerIndex}` } as CSSProperties}
                 >
-                  <Link href={buildPagePathFromPages(item.pageId, pageUrlPages, pageRouteBasePath)} className="collection-cover-link">
-                    {image ? <Image src={image} alt={`Cover for ${item.page.title}`} className="collection-cover" width={640} height={360} unoptimized /> : <div className="collection-cover-blank" aria-hidden="true">{item.page.icon ?? '◆'}</div>}
-                  </Link>
+                  {image && readOnly ? (
+                    <PublishMediaTrigger
+                      item={{ type: 'image', src: image, alt: `Cover for ${item.page.title}`, label: item.page.title || 'Collection cover' }}
+                      className="collection-cover-link"
+                    >
+                      <Image src={image} alt={`Cover for ${item.page.title}`} className="collection-cover" width={640} height={360} unoptimized />
+                    </PublishMediaTrigger>
+                  ) : (
+                    <Link href={buildWorkspacePagePathFromPages(item.pageId, pageUrlPages, pageRouteBasePath)} className="collection-cover-link">
+                      {image ? <Image src={image} alt={`Cover for ${item.page.title}`} className="collection-cover" width={640} height={360} unoptimized /> : <div className="collection-cover-blank" aria-hidden="true">{item.page.icon ?? '◆'}</div>}
+                    </Link>
+                  )}
                   <div className="collection-card-body">
                     <div className="collection-card-title-row">
-                      <Link href={buildPagePathFromPages(item.pageId, pageUrlPages, pageRouteBasePath)} className="text-link collection-page-title">{item.page.icon ? <span>{item.page.icon} </span> : null}{item.page.title || 'Untitled'}</Link>
+                      <Link href={buildWorkspacePagePathFromPages(item.pageId, pageUrlPages, pageRouteBasePath)} className="text-link collection-page-title">{item.page.icon ? <span>{item.page.icon} </span> : null}{item.page.title || 'Untitled'}</Link>
                       {readOnly ? null : <details className="row-menu"><summary aria-label={`Actions for ${item.page.title}`}>•••</summary><div><button type="button" onClick={() => void reorderEntry(item.pageId, 'up')}>Move up</button><button type="button" onClick={() => void reorderEntry(item.pageId, 'down')}>Move down</button><button type="button" className="danger-action" onClick={() => void removeEntry(item.pageId)}>Remove</button></div></details>}
                     </div>
                     {schema.properties.length ? <div className="collection-properties-grid">{schema.properties.slice(0, 4).map((property) => <div key={property.id}>{renderGalleryProperty(property, values[property.id])}</div>)}</div> : <p className="help">No properties configured.</p>}
@@ -1511,12 +1620,12 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
                   className="collection-row"
                   style={{ '--motion-stagger-index': `${Math.min(itemIndex, MAX_COLLECTION_STAGGER_INDEX)}` } as CSSProperties}
                 >
-                  <td className="collection-title-cell"><Link href={buildPagePathFromPages(item.pageId, pageUrlPages, pageRouteBasePath)} className="text-link collection-page-title">{item.page.icon ? <span>{item.page.icon} </span> : null}{item.page.title || 'Untitled'}</Link></td>
+                  <td className="collection-title-cell"><Link href={buildWorkspacePagePathFromPages(item.pageId, pageUrlPages, pageRouteBasePath)} className="text-link collection-page-title">{item.page.icon ? <span>{item.page.icon} </span> : null}{item.page.title || 'Untitled'}</Link></td>
                   {tableProperties.map((property) => {
                     const cellKey = `${item.pageId}:${property.id}`;
                     const cellState = cellStates[cellKey];
                     return <td key={property.id} className={`collection-cell collection-property-${property.type} collection-property-${slugifyPropertyName(property.name)} ${cellState ? `is-${cellState}` : ''}`} data-tone={getPropertyTone(property)}>
-                      {readOnly ? <span>{renderFocusedPropertyValue(property, properties[property.id])}</span> : <CollectionPropertyControl property={property} value={properties[property.id]} onCommit={(nextValue) => void updateEntryProperty(item.pageId, property.id, nextValue)} onEnsureOptions={(values) => ensurePropertyOptions(property.id, values)} disabled={false} />}
+                      {readOnly ? renderFocusedPropertyValue(property, properties[property.id], 'table') : <CollectionPropertyControl property={property} value={properties[property.id]} onCommit={(nextValue) => void updateEntryProperty(item.pageId, property.id, nextValue)} onEnsureOptions={(values) => ensurePropertyOptions(property.id, values)} disabled={false} />}
                       {!readOnly && cellState ? <span className="cell-state" role={cellState === 'error' ? 'alert' : 'status'}>{cellState === 'saving' ? 'Saving' : 'Not saved'}</span> : null}
                     </td>;
                   })}

@@ -23,10 +23,11 @@ type PageEmojiPickerProps = {
   onImportIconUrl: (url: string) => Promise<void>;
   onRemove: () => void;
   onClose: (reason: 'escape' | 'outside' | 'button') => void;
+  onPromptChange?: (prompt: string) => void;
   style?: CSSProperties;
 };
 
-export function PageEmojiPicker({ pageId, currentIcon, currentIconAssetId, onSelect, onSelectAsset, onUploadIconFile, onImportIconUrl, onRemove, onClose, style }: PageEmojiPickerProps) {
+export function PageEmojiPicker({ pageId, currentIcon, currentIconAssetId, onSelect, onSelectAsset, onUploadIconFile, onImportIconUrl, onRemove, onClose, onPromptChange, style }: PageEmojiPickerProps) {
   const rootRef = useRef<HTMLElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
@@ -71,13 +72,17 @@ export function PageEmojiPicker({ pageId, currentIcon, currentIconAssetId, onSel
       const stored = window.localStorage.getItem(promptStorageKey);
       if (stored) {
         setPrompt(stored);
+        onPromptChange?.(stored.trim());
+      } else {
+        onPromptChange?.('');
       }
     } catch {
       // ignore storage errors
     }
-  }, [promptStorageKey]);
+  }, [onPromptChange, promptStorageKey]);
 
   useEffect(() => {
+    onPromptChange?.(prompt.trim());
     try {
       if (prompt.trim()) {
         window.localStorage.setItem(promptStorageKey, prompt);
@@ -87,7 +92,7 @@ export function PageEmojiPicker({ pageId, currentIcon, currentIconAssetId, onSel
     } catch {
       // ignore storage errors
     }
-  }, [prompt, promptStorageKey]);
+  }, [onPromptChange, prompt, promptStorageKey]);
 
   useEffect(() => {
     let active = true;

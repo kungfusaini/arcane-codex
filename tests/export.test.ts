@@ -41,7 +41,7 @@ describe('workspace export', () => {
             { type: 'link', href: `/page/${missingId}`, content: [{ type: 'text', text: 'lost page', styles: {} }] },
           ],
         },
-        { type: 'image', props: { url: `/api/assets/${asset.id}`, caption: 'Cover image' } },
+        { type: 'gallery', props: { images: JSON.stringify([{ url: `/api/assets/${asset.id}`, caption: 'Cover image', name: 'Cover image.png' }]), columns: 3, mode: 'single', captionMode: 'individual', groupCaption: '', width: 100 } },
         { type: 'futureWidget', content: [{ type: 'text', text: 'Readable fallback', styles: {} }] },
       ]);
       const source = createPage({ title: 'Source / Notes', coverAssetId: asset.id, contentJson }, workspace);

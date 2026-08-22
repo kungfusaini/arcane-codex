@@ -180,6 +180,34 @@ function assetLink(assetId: string, label: string, context: MarkdownContext, ima
     : `[${escapeMarkdownText(label || asset.filename)}](${href})`;
 }
 
+type GalleryExportImage = {
+  url: string;
+  name?: string;
+  caption?: string;
+};
+
+function parseGalleryImages(value: unknown, context: MarkdownContext): GalleryExportImage[] {
+  if (typeof value !== 'string') {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) {
+      context.warnings.add(`Page ${context.page.id} contains a gallery block with invalid image data.`);
+      return [];
+    }
+    return parsed.filter((item): item is GalleryExportImage => Boolean(
+      item &&
+      typeof item === 'object' &&
+      typeof (item as GalleryExportImage).url === 'string' &&
+      (item as GalleryExportImage).url,
+    ));
+  } catch {
+    context.warnings.add(`Page ${context.page.id} contains a gallery block with invalid image data.`);
+    return [];
+  }
+}
+
 function rewriteHref(href: string, label: string, context: MarkdownContext): string {
   const pageMatch = /^\/?page\/(.+?)\/?$/i.exec(href);
   const rootPageMatch = !pageMatch && href.startsWith('/') && !href.startsWith('/api/') && !href.startsWith('/collections')
@@ -282,6 +310,23 @@ function blockMarkdown(block: unknown, context: MarkdownContext): string {
     case 'pageCard':
       rendered = pageLink(String(props.pageId ?? record.pageId ?? ''), String(props.title ?? record.title ?? 'Page'), context);
       break;
+    case 'gallery': {
+      const images = parseGalleryImages(props.images, context);
+      const groupCaption = typeof props.groupCaption === 'string' ? props.groupCaption.trim() : '';
+      if (!images.length) {
+        rendered = groupCaption || '_Empty gallery_';
+        break;
+      }
+      const body = images.map((image) => {
+        const label = image.caption || image.name || 'Gallery image';
+        const assetMatch = /^\/?api\/assets\/([0-9a-f]+)\/?$/i.exec(image.url);
+        return assetMatch
+          ? assetLink(assetMatch[1], label, context, true)
+          : `![${escapeMarkdownText(label)}](${image.url})`;
+      }).join('\n\n');
+      rendered = groupCaption ? `${body}\n\n_${escapeMarkdownText(groupCaption)}_` : body;
+      break;
+    }
     case 'image':
     case 'file':
     case 'audio':

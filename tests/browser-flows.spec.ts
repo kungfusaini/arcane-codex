@@ -68,18 +68,20 @@ function findTopLevelParagraph(blocks: PageBlock[], text: string): number {
   return blocks.findIndex((block) => blockText(block) === text);
 }
 
-function findTopLevelImage(blocks: PageBlock[], caption: string): number {
-  return blocks.findIndex(
-    (block) => block.type === 'image' && typeof block.props?.caption === 'string' && block.props.caption === caption,
-  );
-}
-
 function blockSignature(block: PageBlock): string {
   if (block.type === 'paragraph') {
     return `paragraph:${blockText(block)}`;
   }
-  if (block.type === 'image' && typeof block.props?.caption === 'string') {
-    return `image:${block.props.caption}`;
+  if (block.type === 'gallery' && typeof block.props?.images === 'string') {
+    try {
+      const images = JSON.parse(block.props.images) as unknown;
+      if (Array.isArray(images)) {
+        const captions = images.map((image) => image && typeof image === 'object' ? (image as { caption?: unknown }).caption : '').filter(Boolean).join('|');
+        return `gallery:${captions}`;
+      }
+    } catch {
+      // Fall through to block type.
+    }
   }
   return block.type;
 }
@@ -201,7 +203,7 @@ test('core local workspace flows survive reload and remain recoverable', async (
         { type: 'link', href: buildPagePathFromPages(child.id, [root, child]), content: [{ type: 'text', text: child.title, styles: {} }] },
       ],
     },
-    { type: 'image', props: { url: `/api/assets/${asset.id}`, caption: 'Cover study', name: 'cover.png' } },
+    { type: 'gallery', props: { images: JSON.stringify([{ url: `/api/assets/${asset.id}`, caption: 'Cover study', name: 'cover.png' }]), columns: 3, mode: 'single', captionMode: 'individual', groupCaption: '', width: 100 } },
   ]);
   const enrichRoot = await request.patch(`/api/pages/${root.id}`, {
     data: { revision: root.revision, title: root.title, icon: '🧭', coverAssetId: asset.id, contentJson },
@@ -1038,10 +1040,10 @@ test.describe('body uploads from paste and drop', () => {
     await expect.poll(async () => page.locator('.upload-task-list').count(), { timeout: 10_000 }).toBe(0);
     await expect.poll(async () => {
       const blocks = await loadPageBlocks(request, root.id);
-      const imageIndex = blocks.findIndex((block) => block.type === 'image');
+      const galleryIndex = blocks.findIndex((block) => block.type === 'gallery');
       const beforeIndex = findTopLevelParagraph(blocks, 'Paste start');
       const afterIndex = findTopLevelParagraph(blocks, 'Paste end');
-      return imageIndex > beforeIndex && imageIndex > -1 && beforeIndex > -1 && afterIndex > imageIndex;
+      return galleryIndex > beforeIndex && galleryIndex > -1 && beforeIndex > -1 && afterIndex > galleryIndex;
     }, { timeout: 20_000 }).toBeTruthy();
 
     await page.screenshot({ path: testInfo.outputPath('paste-upload-success.png'), fullPage: true });
@@ -1116,10 +1118,10 @@ test.describe('body uploads from paste and drop', () => {
 
     await expect.poll(async () => {
       const blocks = await loadPageBlocks(request, root.id);
-      const imageIndex = blocks.findIndex((block) => block.type === 'image');
+      const galleryIndex = blocks.findIndex((block) => block.type === 'gallery');
       const beforeIndex = findTopLevelParagraph(blocks, 'Drop middle');
       const afterIndex = findTopLevelParagraph(blocks, 'Drop bottom');
-      return imageIndex > beforeIndex && imageIndex > -1 && beforeIndex > -1 && afterIndex > imageIndex;
+      return galleryIndex > beforeIndex && galleryIndex > -1 && beforeIndex > -1 && afterIndex > galleryIndex;
     }, { timeout: 10_000 }).toBeTruthy();
 
     await page.screenshot({ path: testInfo.outputPath('drop-upload-success.png'), fullPage: true });

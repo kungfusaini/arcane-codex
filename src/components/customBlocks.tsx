@@ -1,18 +1,20 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { BlockNoteEditor, BlockSpec, PartialBlock } from '@blocknote/core';
 import { createReactBlockSpec, type DefaultReactSuggestionItem } from '@blocknote/react';
-import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type TouchEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent, type TouchEvent } from 'react';
 import { PageIcon } from '@/components/PageIcon';
-import { buildPagePathFromPages } from '@/lib/pageUrls';
+import { buildWorkspacePagePathFromPages } from '@/lib/workspaceHome';
 import { editGrabberImageToAsset, normalizeHttpUrl } from '@/lib/imageGrabber';
 import { ImageGrabberPromptForm, ImageGrabberStrip, ImageGrabberUrlForm } from '@/components/ImageGrabberControls';
-import { clearYouTubeDockSession, setYouTubeDockSession } from '@/components/youtubeDock';
+import { PublishMediaModal, type PublishMediaItem } from '@/components/PublishMediaModal';
+import { clearYouTubeDockSession, requestYouTubeDockCommand, setYouTubeDockSession, updateYouTubeDockSession, useYouTubeDockSession } from '@/components/youtubeDock';
 
 export type ReferencedPage = {
   id: string;
   parentId: string | null;
   sortKey: number;
   title: string;
+  slug?: string | null;
   icon: string | null;
   iconAssetId: string | null;
 };
@@ -72,6 +74,21 @@ type GalleryImage = {
   caption?: string;
 };
 
+const galleryImageSizeMin = 120;
+const galleryImageSizeMax = 480;
+const galleryImageSizeDefault = 240;
+const galleryImageSizeStep = 8;
+
+function readGalleryImageSize(value: unknown): number {
+  if (value === 'small') return 160;
+  if (value === 'large') return 320;
+  if (value === 'medium') return galleryImageSizeDefault;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return galleryImageSizeDefault;
+  const stepped = Math.round(numeric / galleryImageSizeStep) * galleryImageSizeStep;
+  return Math.min(galleryImageSizeMax, Math.max(galleryImageSizeMin, stepped));
+}
+
 function readGalleryImages(value: unknown): GalleryImage[] {
   if (typeof value !== 'string') {
     return [];
@@ -96,9 +113,14 @@ function readGalleryState(block: { id: string; props: Record<string, unknown> })
   const images = readGalleryImages(block.props.images);
   const mode = block.props.mode === 'single' ? 'single' : 'grid';
   const groupCaption = typeof block.props.groupCaption === 'string' ? block.props.groupCaption : '';
-  const columns = Math.min(6, Math.max(1, Number(block.props.columns) || 3));
-  const width = Math.min(100, Math.max(5, Number(block.props.width) || 100));
-  return { images, mode, groupCaption, columns, width };
+  const imageSize = readGalleryImageSize(block.props.imageSize);
+  return { images, mode, groupCaption, imageSize };
+}
+
+function getGalleryBlockStyle(imageSize: number): CSSProperties {
+  return {
+    '--gallery-image-size': `${imageSize}px`,
+  } as CSSProperties;
 }
 
 function YouTubeBlock({
@@ -117,7 +139,6 @@ function YouTubeBlock({
   const [copied, setCopied] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [isDocked, setIsDocked] = useState(false);
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const blockRef = useRef<HTMLElement | null>(null);
   const latestStateRef = useRef({ currentTime: 0, duration: 0, isPlaying: false, hasStarted: false, isDocked: false, videoId: '' as string | null, url: '' });
   const videoId = getYouTubeVideoId(String(block.props.url || ''));
@@ -126,9 +147,43 @@ function YouTubeBlock({
     const wholeSeconds = Math.floor(seconds);
     return `${Math.floor(wholeSeconds / 60)}:${String(wholeSeconds % 60).padStart(2, '0')}`;
   };
-  const sendCommand = (command: 'playVideo' | 'pauseVideo' | 'getCurrentTime' | 'getDuration' | 'seekTo', args: unknown[] = []) => {
-    iframeRef.current?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: command, args }), '*');
+  const dockSession = useYouTubeDockSession();
+  const activeDockSession = dockSession?.sourceBlockId === block.id ? dockSession : null;
+  const activeDockSessionIsVisible = activeDockSession?.isVisible;
+  const activeDockSessionSourceBlockId = activeDockSession?.sourceBlockId;
+  const displayedCurrentTime = activeDockSession?.currentTime ?? currentTime;
+  const displayedDuration = activeDockSession?.duration ?? duration;
+  const displayedIsPlaying = activeDockSession?.isPlaying ?? isPlaying;
+  const hasActivePlayback = hasStarted || Boolean(activeDockSession);
+  const publishDockSession = (next: { currentTime: number; duration: number; isPlaying: boolean; isVisible?: boolean }) => {
+    if (!videoId) return;
+    const nextSession = {
+      sourceBlockId: block.id,
+      videoId,
+      url,
+      title: 'Incubus — Drive',
+      currentTime: next.currentTime,
+      duration: next.duration,
+      isPlaying: next.isPlaying,
+      isVisible: next.isVisible ?? isDocked,
+    };
+    if (
+      dockSession?.sourceBlockId === nextSession.sourceBlockId
+      && dockSession.videoId === nextSession.videoId
+      && dockSession.url === nextSession.url
+      && dockSession.title === nextSession.title
+      && dockSession.currentTime === nextSession.currentTime
+      && dockSession.duration === nextSession.duration
+      && dockSession.isPlaying === nextSession.isPlaying
+      && dockSession.isVisible === nextSession.isVisible
+    ) {
+      return;
+    }
+    setYouTubeDockSession(nextSession);
   };
+  const sendCommand = useCallback((command: 'playVideo' | 'pauseVideo' | 'getCurrentTime' | 'getDuration' | 'seekTo', args: unknown[] = []) => {
+    requestYouTubeDockCommand({ sourceBlockId: block.id, command, args });
+  }, [block.id]);
   useEffect(() => {
     setUrl(typeof block.props.url === 'string' ? block.props.url : '');
   }, [block.props.url]);
@@ -144,9 +199,9 @@ function YouTubeBlock({
     if (!target || typeof IntersectionObserver === 'undefined' || !videoId) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        setIsDocked(!(entry.isIntersecting && entry.intersectionRatio >= 0.2));
+        setIsDocked(!entry.isIntersecting);
       },
-      { threshold: [0, 0.2, 0.4, 1] },
+      { threshold: 0 },
     );
     observer.observe(target);
     return () => observer.disconnect();
@@ -156,65 +211,30 @@ function YouTubeBlock({
       const seconds = (event as CustomEvent<{ seconds?: number }>).detail?.seconds;
       if (typeof seconds !== 'number' || seconds < 0) return;
       setCurrentTime(seconds);
+      updateYouTubeDockSession({ currentTime: seconds });
       sendCommand('seekTo', [seconds, true]);
     };
-    const handleMessage = (event: MessageEvent) => {
-      if (event.source !== iframeRef.current?.contentWindow || typeof event.data !== 'string') return;
-      try {
-        const payload = JSON.parse(event.data) as {
-          event?: string;
-          info?: { currentTime?: number; duration?: number } | number;
-        };
-        if (payload.event === 'infoDelivery' && payload.info && typeof payload.info === 'object') {
-          if (typeof payload.info.currentTime === 'number') setCurrentTime(payload.info.currentTime);
-          if (typeof payload.info.duration === 'number' && payload.info.duration > 0) setDuration(payload.info.duration);
-        }
-        if (payload.event === 'onStateChange' && typeof payload.info === 'number') {
-          setIsPlaying(payload.info === 1 || payload.info === 3);
-          if (payload.info === 1 || payload.info === 3) setHasStarted(true);
-        }
-      } catch {
-        // Ignore unrelated messages from embedded media.
-      }
-    };
-    window.addEventListener('message', handleMessage);
     window.addEventListener('arcane-youtube-seek', handleSeek);
-    const poll = window.setInterval(() => {
-      sendCommand('getCurrentTime');
-      sendCommand('getDuration');
-    }, 500);
     return () => {
-      window.removeEventListener('message', handleMessage);
       window.removeEventListener('arcane-youtube-seek', handleSeek);
-      window.clearInterval(poll);
     };
-  }, [videoId]);
-  latestStateRef.current = { currentTime, duration, isPlaying, hasStarted, isDocked, videoId: videoId ?? '', url };
+  }, [block.id, sendCommand]);
+  latestStateRef.current = { currentTime: displayedCurrentTime, duration: displayedDuration, isPlaying: displayedIsPlaying, hasStarted: hasActivePlayback, isDocked, videoId: videoId ?? '', url };
   useEffect(() => {
-    if (!videoId || !hasStarted) return;
-    const activeVideoId = videoId;
-    setYouTubeDockSession({
-      sourceBlockId: block.id,
-      videoId: activeVideoId,
-      url,
-      title: 'Incubus — Drive',
-      currentTime,
-      duration,
-      isPlaying,
-      isVisible: true,
-    });
-  }, [block.id, currentTime, duration, hasStarted, isPlaying, url, videoId]);
+    if (!activeDockSessionSourceBlockId || activeDockSessionIsVisible === isDocked) return;
+    updateYouTubeDockSession({ isVisible: isDocked });
+  }, [activeDockSessionIsVisible, activeDockSessionSourceBlockId, isDocked]);
   useEffect(() => () => {
     const latest = latestStateRef.current;
-    if (latest.hasStarted || latest.isPlaying) {
+    if (latest.isPlaying && latest.videoId) {
       setYouTubeDockSession({
         sourceBlockId: block.id,
-        videoId: latest.videoId || '',
+        videoId: latest.videoId,
         url: latest.url,
         title: 'Incubus — Drive',
         currentTime: latest.currentTime,
         duration: latest.duration,
-        isPlaying: latest.isPlaying,
+        isPlaying: true,
         isVisible: true,
       });
     } else {
@@ -222,10 +242,11 @@ function YouTubeBlock({
     }
   }, [block.id]);
   const togglePlayback = () => {
-    const nextPlaying = !isPlaying;
-    sendCommand(nextPlaying ? 'playVideo' : 'pauseVideo');
+    const nextPlaying = !displayedIsPlaying;
     setIsPlaying(nextPlaying);
-    if (nextPlaying) setHasStarted(true);
+    setHasStarted(true);
+    publishDockSession({ currentTime: displayedCurrentTime, duration: displayedDuration, isPlaying: nextPlaying });
+    sendCommand(nextPlaying ? 'playVideo' : 'pauseVideo');
   };
   const copyUrl = async () => {
     try {
@@ -246,32 +267,17 @@ function YouTubeBlock({
   return (
     <section
       ref={blockRef}
-      className={`youtube-block youtube-compact ${videoId ? 'youtube-has-video' : 'youtube-needs-url'} ${isDocked && hasStarted ? 'youtube-block--docked' : ''}`}
+      className={`youtube-block youtube-compact ${videoId ? 'youtube-has-video' : 'youtube-needs-url'} ${isDocked && hasActivePlayback ? 'youtube-block--docked' : ''}`}
       contentEditable={false}
       aria-label="YouTube video"
     >
       {videoId ? <div className="youtube-custom-player youtube-inline-player">
-        <iframe
-          ref={iframeRef}
-          onLoad={() => {
-            const target = iframeRef.current?.contentWindow;
-            target?.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*');
-            target?.postMessage(JSON.stringify({ event: 'command', func: 'addEventListener', args: ['onStateChange'] }), '*');
-            sendCommand('getDuration');
-          }}
-          className="youtube-transport"
-          src={`https://www.youtube-nocookie.com/embed/${videoId}?rel=0&enablejsapi=1&origin=${encodeURIComponent(typeof window === 'undefined' ? '' : window.location.origin)}`}
-          title="YouTube audio transport"
-          tabIndex={-1}
-          aria-hidden="true"
-          allow="autoplay; encrypted-media"
-        />
-        <button type="button" className="youtube-play-button" onClick={togglePlayback} aria-label={isPlaying ? 'Pause audio' : 'Play audio'}>
-          <span aria-hidden="true">{isPlaying ? 'Ⅱ' : '▶'}</span>
+        <button type="button" className="youtube-play-button" onClick={togglePlayback} aria-label={displayedIsPlaying ? 'Pause audio' : 'Play audio'}>
+          <span aria-hidden="true">{displayedIsPlaying ? 'Ⅱ' : '▶'}</span>
         </button>
         <div className="youtube-track-copy"><strong>Incubus — Drive</strong><span>Audio from YouTube</span></div>
-        <span className="youtube-playing-state visually-hidden" aria-live="polite">{isPlaying ? 'Playing' : 'Ready'}</span>
-        <span className="youtube-time" aria-label={`Current time ${formatTime(currentTime)} of ${duration ? formatTime(duration) : 'unknown'}`}>{formatTime(currentTime)} / {duration ? formatTime(duration) : '--:--'}</span>
+        <span className="youtube-playing-state visually-hidden" aria-live="polite">{displayedIsPlaying ? 'Playing' : 'Ready'}</span>
+        <span className="youtube-time" aria-label={`Current time ${formatTime(displayedCurrentTime)} of ${displayedDuration ? formatTime(displayedDuration) : 'unknown'}`}>{formatTime(displayedCurrentTime)} / {displayedDuration ? formatTime(displayedDuration) : '--:--'}</span>
         <span className="youtube-actions">
           <a className="youtube-action-button" href={url} target="_blank" rel="noopener noreferrer" aria-label="Open on YouTube" title="Open on YouTube">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2 31 31 0 0 0 0 12a31 31 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1A31 31 0 0 0 24 12a31 31 0 0 0-.5-5.8ZM9.6 15.8V8.2l6.4 3.8-6.4 3.8Z" /></svg>
@@ -284,12 +290,13 @@ function YouTubeBlock({
           className="youtube-seeker"
           type="range"
           min="0"
-          max={duration || 240}
+          max={displayedDuration || 240}
           step="1"
-          value={Math.min(currentTime, duration || 1)}
+          value={Math.min(displayedCurrentTime, displayedDuration || 1)}
           onChange={(event) => {
             const nextTime = Number(event.target.value);
             setCurrentTime(nextTime);
+            updateYouTubeDockSession({ currentTime: nextTime });
             sendCommand('seekTo', [nextTime, true]);
           }}
           aria-label="Seek through audio"
@@ -320,48 +327,23 @@ function GalleryBlock({
   readOnly: boolean;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
-  const [draftWidth, setDraftWidth] = useState<number | null>(null);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const touchStartX = useRef<number | null>(null);
-  const resizeRef = useRef<{ startX: number; startWidth: number; parentWidth: number; pointerId: number } | null>(null);
-  const { images, mode, groupCaption, columns, width } = readGalleryState(block);
+  const { images, mode, groupCaption, imageSize } = readGalleryState(block);
   const editorOpen = !readOnly && block.props.editorOpen === true;
-  const gridColumns = mode === 'grid' ? Math.min(images.length || 1, columns) : columns;
-  const renderedWidth = draftWidth ?? width;
+  const galleryStyle = getGalleryBlockStyle(imageSize);
   const safeActiveIndex = images.length ? Math.min(activeIndex, images.length - 1) : 0;
   const activeImage = images[safeActiveIndex];
+  const lightboxItems: PublishMediaItem[] = images.map((image) => ({
+    type: 'image',
+    src: image.url,
+    alt: image.name,
+    caption: image.caption,
+    label: image.name,
+  }));
 
   const updateBlock = (props: Record<string, unknown>) => {
     editor.updateBlock(block.id, { props: { ...block.props, ...props } } as never);
-  };
-
-  const startResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const parent = event.currentTarget.parentElement?.parentElement;
-    if (!parent) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    resizeRef.current = { startX: event.clientX, startWidth: width, parentWidth: parent.parentElement?.getBoundingClientRect().width || parent.getBoundingClientRect().width, pointerId: event.pointerId };
-  };
-
-  const resize = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const current = resizeRef.current;
-    if (!current || current.pointerId !== event.pointerId) return;
-    const nextWidth = Math.min(100, Math.max(5, current.startWidth + ((event.clientX - current.startX) / Math.max(current.parentWidth, 1)) * 100));
-    setDraftWidth(nextWidth);
-  };
-
-  const finishResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const current = resizeRef.current;
-    if (!current || current.pointerId !== event.pointerId) return;
-    resizeRef.current = null;
-    const nextWidth = draftWidth ?? width;
-    updateBlock({ images: JSON.stringify(images), mode, columns, groupCaption, width: Math.round(nextWidth) });
-    setDraftWidth(null);
-    event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
   const move = (direction: -1 | 1) => {
@@ -392,44 +374,45 @@ function GalleryBlock({
   }
 
   return (
-    <section className={`gallery-block gallery-mode-${mode}`} contentEditable={false} tabIndex={0} aria-label="Image gallery" style={{ width: `${renderedWidth}%` }} onClickCapture={readOnly ? undefined : (event) => {
-      if ((event.target as HTMLElement).closest('button, input, select, textarea, a')) return;
-      updateBlock({ editorOpen: true });
-    }}>
-      {mode === 'single' && activeImage ? (
-        <>
-          <div className={`gallery-single ${images.length > 1 ? 'gallery-single-navigable' : 'gallery-single-static'}`} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-            {images.length > 1 ? <button type="button" className="gallery-nav gallery-nav-previous" onClick={() => move(-1)} aria-label="Previous image">‹</button> : null}
-            <figure className="gallery-item">
-              <img src={activeImage.url} alt={activeImage.name} />
-              {activeImage.caption ? <figcaption>{activeImage.caption}</figcaption> : null}
-            </figure>
-            {images.length > 1 ? <button type="button" className="gallery-nav gallery-nav-next" onClick={() => move(1)} aria-label="Next image">›</button> : null}
+    <>
+      <section className={`gallery-block gallery-mode-${mode}`} contentEditable={false} tabIndex={0} aria-label="Image gallery" style={galleryStyle} onClickCapture={readOnly ? undefined : (event) => {
+        if ((event.target as HTMLElement).closest('button, input, select, textarea, a')) return;
+        updateBlock({ editorOpen: true });
+      }}>
+        {mode === 'single' && activeImage ? (
+          <>
+            <div className={`gallery-single ${images.length > 1 ? 'gallery-single-navigable' : 'gallery-single-static'}`} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+              {images.length > 1 ? <button type="button" className="gallery-nav gallery-nav-previous" onClick={() => move(-1)} aria-label="Previous image">‹</button> : null}
+              <figure className="gallery-item">
+                {readOnly ? (
+                  <button type="button" className="publish-media-trigger gallery-image-trigger" onClick={() => setLightboxIndex(safeActiveIndex)} aria-label={`Open ${activeImage.name}`}>
+                    <img src={activeImage.url} alt={activeImage.name} />
+                  </button>
+                ) : <img src={activeImage.url} alt={activeImage.name} />}
+                {activeImage.caption ? <figcaption>{activeImage.caption}</figcaption> : null}
+              </figure>
+              {images.length > 1 ? <button type="button" className="gallery-nav gallery-nav-next" onClick={() => move(1)} aria-label="Next image">›</button> : null}
+            </div>
+            {groupCaption ? <figcaption className="gallery-group-caption">{groupCaption}</figcaption> : null}
+          </>
+        ) : images.length ? (
+          <div className="gallery-grid">
+            {images.map((image, index) => (
+              <figure className="gallery-item" key={`${image.url}-${index}`}>
+                {readOnly ? (
+                  <button type="button" className="publish-media-trigger gallery-image-trigger" onClick={() => setLightboxIndex(index)} aria-label={`Open ${image.name}`}>
+                    <img src={image.url} alt={image.name} />
+                  </button>
+                ) : <img src={image.url} alt={image.name} />}
+                {image.caption ? <figcaption>{image.caption}</figcaption> : null}
+              </figure>
+            ))}
           </div>
-          {groupCaption ? <figcaption className="gallery-group-caption">{groupCaption}</figcaption> : null}
-        </>
-      ) : images.length ? (
-        <div className="gallery-grid" style={{ gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }}>
-          {images.map((image, index) => (
-            <figure className="gallery-item" key={`${image.url}-${index}`}>
-              <img src={image.url} alt={image.name} />
-              {image.caption ? <figcaption>{image.caption}</figcaption> : null}
-            </figure>
-          ))}
-        </div>
-      ) : <p className="gallery-empty">No images yet. Open settings to add one.</p>}
-      {groupCaption ? <figcaption className="gallery-group-caption">{groupCaption}</figcaption> : null}
-      {readOnly ? null : <button
-        type="button"
-        className="gallery-resize-handle"
-        aria-label="Resize gallery"
-        title="Resize gallery"
-        onPointerDown={startResize}
-        onPointerMove={resize}
-        onPointerUp={finishResize}
-        onPointerCancel={finishResize}
-      />}
-    </section>
+        ) : <p className="gallery-empty">No images yet. Open settings to add one.</p>}
+        {groupCaption ? <figcaption className="gallery-group-caption">{groupCaption}</figcaption> : null}
+      </section>
+      <PublishMediaModal items={lightboxItems} activeIndex={lightboxIndex} onActiveIndexChange={setLightboxIndex} />
+    </>
   );
 }
 
@@ -455,10 +438,9 @@ export function GalleryWidgetEditorShell({
   const [activeIndex, setActiveIndex] = useState(0);
   const touchStartX = useRef<number | null>(null);
 
-  const state = block ? readGalleryState(block) : { images: [], mode: 'grid' as const, groupCaption: '', columns: 3, width: 100 };
-  const { images, mode, groupCaption, columns, width } = state;
-  const gridColumns = mode === 'grid' ? Math.min(images.length || 1, columns) : columns;
-  const renderedWidth = width;
+  const state = block ? readGalleryState(block) : { images: [], mode: 'grid' as const, groupCaption: '', imageSize: galleryImageSizeDefault };
+  const { images, mode, groupCaption, imageSize } = state;
+  const galleryStyle = getGalleryBlockStyle(imageSize);
   const safeActiveIndex = images.length ? Math.min(activeIndex, images.length - 1) : 0;
   const activeImage = images[safeActiveIndex];
 
@@ -496,7 +478,7 @@ export function GalleryWidgetEditorShell({
     editor.updateBlock(block.id, { props: { ...block.props, ...props } } as never);
   };
 
-  const updateImages = (nextImages: GalleryImage[]) => updateBlock({ images: JSON.stringify(nextImages), mode, columns, groupCaption, width });
+  const updateImages = (nextImages: GalleryImage[]) => updateBlock({ images: JSON.stringify(nextImages), mode, imageSize, groupCaption });
 
   const duplicateActiveImage = () => {
     if (!activeImage) return;
@@ -589,7 +571,7 @@ export function GalleryWidgetEditorShell({
       </header>
       <div className="gallery-widget-shell-body">
         <section className="gallery-widget-preview" aria-label="Gallery preview">
-          <div className={`gallery-block gallery-mode-${mode}`} contentEditable={false} tabIndex={0} aria-label="Image gallery preview" style={{ width: `${renderedWidth}%` }}>
+          <div className={`gallery-block gallery-mode-${mode}`} contentEditable={false} tabIndex={0} aria-label="Image gallery preview" style={galleryStyle}>
             {mode === 'single' && activeImage ? (
               <>
                 <div className={`gallery-single ${images.length > 1 ? 'gallery-single-navigable' : 'gallery-single-static'}`} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
@@ -604,7 +586,7 @@ export function GalleryWidgetEditorShell({
                 {groupCaption ? <figcaption className="gallery-group-caption">{groupCaption}</figcaption> : null}
               </>
             ) : images.length ? (
-              <div className="gallery-grid" style={{ gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }}>
+              <div className="gallery-grid">
                 {images.map((image, index) => (
                   <figure className="gallery-item" key={`${image.url}-${index}`}>
                     <img src={image.url} alt={image.name} />
@@ -680,20 +662,17 @@ export function GalleryWidgetEditorShell({
           <section className="gallery-widget-section" aria-label="Gallery appearance">
             <div className="gallery-widget-section-heading"><h3>Appearance</h3></div>
             <label className="gallery-widget-field">Display
-              <select value={mode} onChange={(event) => updateBlock({ images: JSON.stringify(images), mode: event.target.value, columns, groupCaption, width })}>
+              <select value={mode} onChange={(event) => updateBlock({ images: JSON.stringify(images), mode: event.target.value, imageSize, groupCaption })}>
                 <option value="grid">Grid</option>
                 <option value="single">Single image</option>
               </select>
             </label>
-            <label className="gallery-widget-field">Width
-              <input type="range" min={5} max={100} step={1} value={renderedWidth} onChange={(event) => updateBlock({ images: JSON.stringify(images), mode, columns, groupCaption, width: Number(event.currentTarget.value) })} />
-            </label>
-            <label className="gallery-widget-field">Columns
-              <input type="range" min={1} max={6} step={1} value={columns} onChange={(event) => updateBlock({ images: JSON.stringify(images), mode, columns: Number(event.currentTarget.value), groupCaption, width })} disabled={mode !== 'grid'} />
-              <span>{gridColumns} per row</span>
+            <label className="gallery-widget-field">Image size
+              <input type="range" min={galleryImageSizeMin} max={galleryImageSizeMax} step={galleryImageSizeStep} value={imageSize} onChange={(event) => updateBlock({ images: JSON.stringify(images), mode, imageSize: Number(event.currentTarget.value), groupCaption })} />
+              <span>{imageSize}px; columns fit automatically</span>
             </label>
             <label className="gallery-widget-field">Group caption
-              <input type="text" value={groupCaption} onChange={(event) => updateBlock({ images: JSON.stringify(images), mode, columns, groupCaption: event.target.value, width })} placeholder="Add a group caption" />
+              <input type="text" value={groupCaption} onChange={(event) => updateBlock({ images: JSON.stringify(images), mode, imageSize, groupCaption: event.target.value })} placeholder="Add a group caption" />
             </label>
           </section>
           {error ? <p className="gallery-error" role="alert">{error}</p> : null}
@@ -728,7 +707,7 @@ const pageLinkBlock: CustomBlockRegistration = {
           ? referencedPages.get(pageId) ?? fallbackReference
           : { id: '', parentId: null, sortKey: 0, title: propsByType.title || (externalUrl ? getUrlTitle(externalUrl) : 'Page'), icon: propsByType.icon || null, iconAssetId: null };
         const label = `${reference.icon ? `${reference.icon} ` : ''}${reference.title || String(propsByType.title || 'Page')}`;
-        const href = externalUrl || (pageId ? buildPagePathFromPages(pageId, referencedPages.size ? Array.from(referencedPages.values()) : [reference], routeBasePath) : '#');
+        const href = externalUrl || (pageId ? buildWorkspacePagePathFromPages(pageId, referencedPages.size ? Array.from(referencedPages.values()) : [reference], routeBasePath) : '#');
 
         const openPage = (event: MouseEvent<HTMLAnchorElement>) => {
           if (!pageId) {
@@ -763,7 +742,7 @@ const pageLinkBlock: CustomBlockRegistration = {
           ? referencedPages.get(pageId) ?? fallbackReference
           : { id: '', parentId: null, sortKey: 0, title: propsByType.title || (externalUrl ? getUrlTitle(externalUrl) : 'Page'), icon: propsByType.icon || null, iconAssetId: null };
         return (
-          <a href={externalUrl || (pageId ? buildPagePathFromPages(pageId, referencedPages.size ? Array.from(referencedPages.values()) : [reference], routeBasePath) : '#')} target={externalUrl ? '_blank' : undefined} rel={externalUrl ? 'noreferrer' : undefined}>
+          <a href={externalUrl || (pageId ? buildWorkspacePagePathFromPages(pageId, referencedPages.size ? Array.from(referencedPages.values()) : [reference], routeBasePath) : '#')} target={externalUrl ? '_blank' : undefined} rel={externalUrl ? 'noreferrer' : undefined}>
             <PageIcon icon={reference.icon} iconAssetId={reference.iconAssetId} />
             <span>{reference.title || String(propsByType.title || 'Page')}</span>
           </a>
@@ -805,11 +784,10 @@ const galleryBlock: CustomBlockRegistration = {
       type: 'gallery',
       propSchema: {
         images: { default: '[]' },
-        columns: { default: 3 },
+        imageSize: { default: galleryImageSizeDefault },
         mode: { default: 'grid' },
         captionMode: { default: 'individual' },
         groupCaption: { default: '' },
-        width: { default: 100 },
         editorOpen: { default: false },
       },
       content: 'none',
@@ -837,7 +815,7 @@ const galleryBlock: CustomBlockRegistration = {
     title: 'Gallery',
     subtext: 'Add one or more images by URL or upload',
     group: 'Media',
-    onItemClick: () => insertBlock({ type: 'gallery', props: { images: '[]', columns: 3, mode: 'grid', captionMode: 'individual', groupCaption: '', width: 100 } } as unknown as PartialBlock),
+    onItemClick: () => insertBlock({ type: 'gallery', props: { images: '[]', imageSize: galleryImageSizeDefault, mode: 'grid', captionMode: 'individual', groupCaption: '' } } as unknown as PartialBlock),
   }),
 };
 
