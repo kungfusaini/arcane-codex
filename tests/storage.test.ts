@@ -20,6 +20,7 @@ import {
   listPages,
   openWorkspace,
   readBacklinks,
+  registerPagePathAlias,
   updateSettings,
   resolvePageRoutePath,
   restorePage,
@@ -361,6 +362,27 @@ describe('pages CRUD and ordering', () => {
       const movedResolution = resolvePageRoutePath(beforeMovePath.replace(/^\//, '').split('/'), workspace);
       assert.equal(movedResolution?.pageId, child.id);
       assert.equal(movedResolution?.canonicalPath, buildPagePathFromPages(child.id, afterMovePages));
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves manually registered legacy page path aliases', () => {
+    const workspace = mkdtempSync(path.join(os.tmpdir(), 'arcane-codex-manual-alias-'));
+    ensureWorkspaceDirs(workspace);
+    openWorkspace({ dataDir: workspace });
+
+    try {
+      const root = createPage({ title: 'Matrix' }, workspace);
+      const page = createPage({ title: 'The Anatomy of AI Agents', parentId: root.id, isArticle: true }, workspace);
+      registerPagePathAlias('/posts/ai/the-anatomy-of-ai-agents/', page.id, workspace);
+      registerPagePathAlias('posts/ai_learning/the-anatomy-of-ai-agents', page.id, workspace);
+
+      const primaryResolution = resolvePageRoutePath(['posts', 'ai', 'the-anatomy-of-ai-agents'], workspace);
+      const aliasResolution = resolvePageRoutePath(['posts', 'ai_learning', 'the-anatomy-of-ai-agents'], workspace);
+      assert.equal(primaryResolution?.pageId, page.id);
+      assert.equal(aliasResolution?.pageId, page.id);
+      assert.equal(primaryResolution?.canonicalPath, buildPagePathFromPages(page.id, listPages(workspace)));
     } finally {
       rmSync(workspace, { recursive: true, force: true });
     }

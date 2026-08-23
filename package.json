@@ -18,7 +18,8 @@
     "test:ux": "npm run test:integration && npm run test:e2e",
     "test:unit": "tsx --test --test-concurrency=1 tests/storage.test.ts tests/assets.test.ts tests/export.test.ts tests/recovery.test.ts",
     "typecheck": "tsc --noEmit",
-    "test:browser": "npm run build && playwright test"
+    "test:browser": "npm run build && playwright test",
+    "import:hugo-blog": "tsx scripts/import-hugo-blog.ts"
   },
   "dependencies": {
     "@blocknote/core": "^0.54.0",

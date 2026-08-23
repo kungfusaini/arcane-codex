@@ -504,6 +504,26 @@ export type PageRouteResolution = {
   requestedPath: string;
 };
 
+export function registerPagePathAlias(aliasPath: string, pageId: string, dataDir?: string): void {
+  const normalizedAlias = aliasPath.trim().replace(/^\/+|\/+$/g, '');
+  if (!normalizedAlias) {
+    throw new Error('Alias path is required');
+  }
+
+  const db = createStorageConnection(dataDir);
+  try {
+    const page = db.prepare('SELECT 1 FROM pages WHERE id = ? AND deleted_at IS NULL').get(pageId);
+    if (!page) {
+      throw new Error(`Alias target page not found: ${pageId}`);
+    }
+    db.prepare(
+      'INSERT OR REPLACE INTO page_path_aliases (alias_path, page_id, created_at) VALUES (?, ?, ?)',
+    ).run(normalizedAlias, pageId, Date.now());
+  } finally {
+    db.close();
+  }
+}
+
 export function resolvePageRoutePath(segments: string[], dataDir?: string): PageRouteResolution | null {
   const cleanSegments = segments.map((segment) => segment.trim()).filter(Boolean);
   const db = createStorageConnection(dataDir);
