@@ -13,6 +13,7 @@ const MIME_EXTENSIONS: Record<string, string[]> = {
   'image/jpeg': ['.jpg', '.jpeg'],
   'image/gif': ['.gif'],
   'image/webp': ['.webp'],
+  'image/svg+xml': ['.svg'],
   'application/pdf': ['.pdf'],
   'text/plain': ['.txt', '.text'],
   'text/markdown': ['.md', '.markdown'],
@@ -57,6 +58,10 @@ function contentMatchesMime(bytes: Buffer, mimeType: string): boolean {
       return startsWith(bytes, 'GIF87a') || startsWith(bytes, 'GIF89a');
     case 'image/webp':
       return startsWith(bytes, 'RIFF') && startsWith(bytes, 'WEBP', 8);
+    case 'image/svg+xml': {
+      const prefix = bytes.subarray(0, 200).toString('utf8').trimStart().toLowerCase();
+      return prefix.startsWith('<svg') || prefix.startsWith('<?xml');
+    }
     case 'application/pdf':
       return startsWith(bytes, '%PDF-');
     case 'text/plain':
@@ -85,7 +90,7 @@ async function validateUpload(file: File): Promise<{ bytes: Buffer; filename: st
   const mimeType = file.type.toLowerCase();
   const extensions = MIME_EXTENSIONS[mimeType];
   if (!extensions) {
-    throw new UploadValidationError('Unsupported file type. Use PNG, JPEG, GIF, WebP, PDF, text, or Markdown.');
+    throw new UploadValidationError('Unsupported file type. Use PNG, JPEG, GIF, WebP, SVG, PDF, text, or Markdown.');
   }
   const extension = path.extname(filename).toLowerCase();
   if (!extensions.includes(extension)) {

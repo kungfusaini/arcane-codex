@@ -280,7 +280,7 @@ export function PageEmojiPicker({ pageId, currentIcon, currentIconAssetId, onSel
                 />
                 {importState === 'importing' ? <p role="status">Downloading icon image…</p> : null}
                 {importState === 'error' ? <p role="alert">{importError}</p> : null}
-                <input ref={uploadInputRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" onChange={(event) => {
+                <input ref={uploadInputRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" onChange={(event) => {
                   const file = event.currentTarget.files?.[0];
                   event.currentTarget.value = '';
                   if (file) void onUploadIconFile(file);
@@ -321,7 +321,7 @@ export function PageEmojiPicker({ pageId, currentIcon, currentIconAssetId, onSel
                   />
                   {importState === 'importing' ? <p role="status">Downloading icon image…</p> : null}
                   {importState === 'error' ? <p role="alert">{importError}</p> : null}
-                  <input ref={uploadInputRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" onChange={(event) => {
+                  <input ref={uploadInputRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" onChange={(event) => {
                     const file = event.currentTarget.files?.[0];
                     event.currentTarget.value = '';
                     if (file) void onUploadIconFile(file);

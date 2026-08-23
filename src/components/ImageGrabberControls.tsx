@@ -163,7 +163,7 @@ export function WikimediaCommonsSearch({ label = 'Search Wikimedia Commons', def
         <button type="submit" className="primary-btn" disabled={disabled || state === 'loading' || !query.trim()}>{state === 'loading' ? 'Searching…' : 'Search'}</button>
       </form>
       {state === 'loading' ? <p className="commons-search-state" role="status">Searching Wikimedia Commons…</p> : null}
-      {state === 'empty' ? <p className="commons-search-state">No supported PNG, JPEG, GIF, or WebP images found.</p> : null}
+      {state === 'empty' ? <p className="commons-search-state">No supported PNG, JPEG, GIF, WebP, or SVG images found.</p> : null}
       {state === 'error' ? <p className="commons-search-state error" role="alert">{error}</p> : null}
       {results.length ? (
         <div className="commons-search-results" aria-label="Wikimedia Commons results">
@@ -172,7 +172,7 @@ export function WikimediaCommonsSearch({ label = 'Search Wikimedia Commons', def
               <img src={result.thumbnailUrl} alt="" loading="lazy" />
               <div>
                 <strong>{result.title}</strong>
-                <span>{result.license}{result.creator ? ` · ${result.creator}` : ''}</span>
+                <span>{result.license}{result.creator ? ` · ${result.creator}` : ''}{result.width && result.height ? ` · ${result.width}×${result.height}` : ''}</span>
                 {result.description ? <p>{result.description}</p> : null}
                 <a href={result.pageUrl} target="_blank" rel="noreferrer">View source</a>
               </div>

@@ -25,9 +25,11 @@ export type WikimediaCommonsImageResult = {
   imageUrl: string;
   thumbnailUrl: string;
   mimeType: string;
+  width: number | null;
+  height: number | null;
 };
 
-export const IMAGE_GRABBER_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+export const IMAGE_GRABBER_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'];
 export const IMAGE_GRABBER_UPLOAD_TYPES = [...IMAGE_GRABBER_IMAGE_TYPES, 'application/pdf', 'text/plain', 'text/markdown'];
 export const IMAGE_GRABBER_MAX_BYTES = 20 * 1024 * 1024;
 
@@ -47,7 +49,7 @@ export function normalizeHttpUrl(value: string): string | null {
 export function isLikelyImageUrl(value: string): boolean {
   try {
     const url = new URL(value);
-    return /\.(?:png|jpe?g|gif|webp)(?:$|[?#])/i.test(url.pathname + url.search);
+    return /\.(?:png|jpe?g|gif|webp|svg)(?:$|[?#])/i.test(url.pathname + url.search);
   } catch {
     return false;
   }

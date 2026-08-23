@@ -8,12 +8,13 @@ import { createAsset, type AssetCreateResult } from '@/lib/data/storage';
 import { rejectPublishedMutation } from '@/lib/surface';
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
-const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml']);
 const MIME_EXTENSIONS: Record<string, string> = {
   'image/png': '.png',
   'image/jpeg': '.jpg',
   'image/gif': '.gif',
   'image/webp': '.webp',
+  'image/svg+xml': '.svg',
 };
 
 function getDataDir(): string | undefined {
@@ -43,13 +44,23 @@ function startsWith(bytes: Buffer, signature: number[] | string, offset = 0): bo
 }
 
 function contentMatchesMime(bytes: Buffer, mimeType: string): boolean {
-  return mimeType === 'image/png'
-    ? startsWith(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
-    : mimeType === 'image/jpeg'
-      ? startsWith(bytes, [0xff, 0xd8, 0xff])
-      : mimeType === 'image/gif'
-        ? startsWith(bytes, 'GIF87a') || startsWith(bytes, 'GIF89a')
-        : startsWith(bytes, 'RIFF') && startsWith(bytes, 'WEBP', 8);
+  if (mimeType === 'image/png') {
+    return startsWith(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  }
+  if (mimeType === 'image/jpeg') {
+    return startsWith(bytes, [0xff, 0xd8, 0xff]);
+  }
+  if (mimeType === 'image/gif') {
+    return startsWith(bytes, 'GIF87a') || startsWith(bytes, 'GIF89a');
+  }
+  if (mimeType === 'image/webp') {
+    return startsWith(bytes, 'RIFF') && startsWith(bytes, 'WEBP', 8);
+  }
+  if (mimeType === 'image/svg+xml') {
+    const prefix = bytes.subarray(0, 200).toString('utf8').trimStart().toLowerCase();
+    return prefix.startsWith('<svg') || prefix.startsWith('<?xml');
+  }
+  return false;
 }
 
 function decodeHtmlEntities(value: string): string {
@@ -106,9 +117,9 @@ async function fetchImage(url: URL): Promise<{ bytes: Buffer; mimeType: string; 
           continue;
         }
       }
-      throw new Error('Use a direct PNG, JPEG, GIF, WebP image URL, or a Wikimedia File page.');
+      throw new Error('Use a direct PNG, JPEG, GIF, WebP, or SVG image URL, or a Wikimedia File page.');
     }
-    if (contentLength > MAX_IMAGE_BYTES) throw new Error('Use a PNG, JPEG, GIF, or WebP image under 20 MB.');
+    if (contentLength > MAX_IMAGE_BYTES) throw new Error('Use a PNG, JPEG, GIF, WebP, or SVG image under 20 MB.');
     const bytes = Buffer.from(await response.arrayBuffer());
     if (bytes.byteLength > MAX_IMAGE_BYTES || !contentMatchesMime(bytes, mimeType)) throw new Error('The downloaded file is not a supported image.');
     return { bytes, mimeType, sourceUrl: current };

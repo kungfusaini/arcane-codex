@@ -1972,9 +1972,10 @@ export function PageEditor({
       <ul>
         {childPages.map((child) => (
           <li key={child.id}>
-            <Link className="page-child-link" href={buildWorkspacePagePathFromPages(child.id, allPages, pageRouteBasePath)}>
-              <PageIcon icon={child.icon} iconAssetId={child.iconAssetId} />
+            <Link className="page-link-block" href={buildWorkspacePagePathFromPages(child.id, allPages, pageRouteBasePath)}>
+              <PageIcon className="page-link-icon" icon={child.icon} iconAssetId={child.iconAssetId} />
               <span>{child.title || 'Untitled'}</span>
+              <span className="page-link-arrow" aria-hidden="true">↗</span>
             </Link>
           </li>
         ))}
@@ -2293,15 +2294,15 @@ export function PageEditor({
           ) : null}
         </div>
 
-        <input ref={coverUploadRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" onChange={(event) => chooseUpload(event, 'cover')} disabled={isDeleted} />
-        <input ref={iconUploadRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" onChange={(event) => chooseUpload(event, 'icon')} disabled={isDeleted} />
-        <input ref={bodyUploadRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown" multiple onChange={(event) => chooseUpload(event, 'body')} disabled={isDeleted} />
+        <input ref={coverUploadRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" onChange={(event) => chooseUpload(event, 'cover')} disabled={isDeleted} />
+        <input ref={iconUploadRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" onChange={(event) => chooseUpload(event, 'icon')} disabled={isDeleted} />
+        <input ref={bodyUploadRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml,application/pdf,text/plain,text/markdown" multiple onChange={(event) => chooseUpload(event, 'body')} disabled={isDeleted} />
 
         {coverUrlOpen ? (
           <ImageGrabberPopup
             title="Search or add cover"
             description="Use Wikimedia Commons first, then paste a URL or upload from disk."
-            className="image-grabber-popup cover-grabber-panel"
+            className="image-grabber-popup cover-grabber-popup"
             defaultPage="settings"
             showSettings
             onClose={() => { setCoverUrl(''); setCoverUrlOpen(false); }}

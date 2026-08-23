@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 const COMMONS_API = 'https://commons.wikimedia.org/w/api.php';
-const SUPPORTED_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+const SUPPORTED_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml']);
 
 type CommonsPage = {
   title?: string;
@@ -9,6 +9,8 @@ type CommonsPage = {
     url?: string;
     thumburl?: string;
     mime?: string;
+    width?: number;
+    height?: number;
     descriptionurl?: string;
     extmetadata?: Record<string, { value?: string }>;
   }>;
@@ -83,6 +85,8 @@ export async function GET(request: Request) {
       imageUrl: info.url,
       thumbnailUrl: info.thumburl || info.url,
       mimeType: info.mime,
+      width: info.width ?? null,
+      height: info.height ?? null,
     }];
   });
 
