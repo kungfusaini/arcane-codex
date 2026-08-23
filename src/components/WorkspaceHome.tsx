@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { WorkspaceSidebar } from '@/components/WorkspaceSidebar';
 import { usePublishedPreview } from '@/components/usePublishedPreview';
 import { PageIcon } from '@/components/PageIcon';
-import { buildWorkspacePagePathFromPages, getWorkspaceHomePath } from '@/lib/workspaceHome';
+import { buildWorkspacePagePathFromPages, getWorkspaceHomePath, getWorkspaceTopLevelPages } from '@/lib/workspaceHome';
 
 type PageSummary = {
   id: string;
@@ -83,6 +83,7 @@ export function WorkspaceHome({
   };
 
   const homePath = getWorkspaceHomePath(pages, pageRouteBasePath);
+  const topLevelPages = getWorkspaceTopLevelPages(pages);
 
   return (
     <div className="layout-shell">
@@ -118,11 +119,15 @@ export function WorkspaceHome({
                 </div>
                 {effectiveReadOnly ? null : <button type="button" className="primary-btn" onClick={createFirstPage}>New page</button>}
               </header>
-              <Link href={buildWorkspacePagePathFromPages(pages[0].id, pages, pageRouteBasePath)} className="recent-page">
-                <PageIcon className="recent-page-icon" icon={pages[0].icon} iconAssetId={pages[0].iconAssetId} />
-                <span><strong>{pages[0].title || 'Untitled'}</strong><small>{effectiveReadOnly ? 'Open the first published page' : 'Open most recent page'}</small></span>
-                <span aria-hidden="true">→</span>
-              </Link>
+              <div className="home-page-links" aria-label="Top-level pages">
+                {topLevelPages.length ? topLevelPages.map((page) => (
+                  <Link key={page.id} href={buildWorkspacePagePathFromPages(page.id, pages, pageRouteBasePath)} className="page-link-block">
+                    <PageIcon className="page-link-icon" icon={page.icon} iconAssetId={page.iconAssetId} />
+                    <span className="page-link-title">{page.title || 'Untitled'}</span>
+                    <span className="page-link-arrow" aria-hidden="true">↗</span>
+                  </Link>
+                )) : <p className="help">No top-level pages yet.</p>}
+              </div>
             </>
           ) : effectiveReadOnly ? (
             <div className="home-empty">

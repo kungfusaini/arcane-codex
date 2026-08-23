@@ -18,6 +18,10 @@ export function getWorkspaceHomePath(pages: PageUrlPage[], basePath = '/'): stri
   return findWorkspaceHomePage(pages) ? getWorkspaceHomePathFromBase(basePath) : basePath;
 }
 
+export function getWorkspaceTopLevelPages<T extends PageUrlPage>(pages: T[], homeSlug = WORKSPACE_HOME_SLUG): T[] {
+  return promoteWorkspaceHomeChildren(pages, homeSlug).filter((page) => page.parentId === null);
+}
+
 export function buildWorkspacePagePathFromPages(pageId: string, pages: PageUrlPage[], basePath = '/', homeSlug = WORKSPACE_HOME_SLUG): string {
   const homePage = findWorkspaceHomePage(pages);
   if (!homePage) {

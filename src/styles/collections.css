@@ -3,6 +3,8 @@
 .home-workspace, .collections-index { width: min(100% - var(--space-8), var(--measure-home)); margin-inline: auto; padding-block: var(--space-20); }
 .home-header, .index-header { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-4); padding-block-end: var(--space-8); }
 .home-header h1, .index-header h1 { margin-block-start: var(--space-2); font-size: var(--font-size-800); }
+.home-page-links { display: grid; gap: var(--space-2); margin-block: var(--space-4) var(--space-6); }
+
 .recent-page,
 .collection-index-row {
   min-height: var(--space-20);

@@ -43,7 +43,7 @@ import { extractGrabberPaste, ImageGrabberPanel, ImageGrabberPromptForm, ImageGr
 import { ImageGrabberPopup, ImagePopupSection } from '@/components/ImageGrabberPopup';
 import { PublishMediaModal, PublishMediaTrigger, type PublishMediaItem } from '@/components/PublishMediaModal';
 import { useDismissibleDetails } from '@/components/useDismissibleDetails';
-import { buildWorkspacePagePathFromPages, findWorkspaceHomePage, isWorkspacePagePathForId } from '@/lib/workspaceHome';
+import { buildWorkspacePagePathFromPages, findWorkspaceHomePage, getWorkspaceTopLevelPages, isWorkspacePagePathForId } from '@/lib/workspaceHome';
 import {
   editGrabberImageToAsset,
   IMAGE_GRABBER_UPLOAD_TYPES,
@@ -294,6 +294,83 @@ function removeRedundantYouTubeLinkBlocks(blocks: PartialBlock[]): PartialBlock[
   });
 }
 
+function ensureChildPageLinkBlocks(blocks: PartialBlock[], childPages: SidebarPage[]): PartialBlock[] {
+  if (!childPages.length) {
+    return blocks;
+  }
+
+  const childPagesById = new Map(childPages.map((page) => [page.id, page]));
+  const present = new Set<string>();
+
+  const visit = (node: unknown): void => {
+    if (!node || typeof node !== 'object') {
+      return;
+    }
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        visit(child);
+      }
+      return;
+    }
+
+    const record = node as Record<string, unknown>;
+    if (record.type === 'pageLink' && record.props && typeof record.props === 'object') {
+      const props = record.props as Record<string, unknown>;
+      const pageId = typeof props.pageId === 'string' ? props.pageId.trim() : '';
+      if (pageId && childPagesById.has(pageId)) {
+        present.add(pageId);
+      }
+      return;
+    }
+
+    for (const value of Object.values(record)) {
+      if (Array.isArray(value)) {
+        visit(value);
+      } else if (value && typeof value === 'object') {
+        visit(value);
+      }
+    }
+  };
+
+  visit(blocks);
+
+  const additions = childPages
+    .slice()
+    .sort((a, b) => a.sortKey - b.sortKey || a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }))
+    .filter((page) => !present.has(page.id))
+    .map((page) => ({
+      type: 'pageLink',
+      props: {
+        pageId: page.id,
+        title: page.title || 'Untitled',
+        icon: page.icon ?? '',
+        url: '',
+      },
+    } as unknown as PartialBlock));
+
+  return [...blocks, ...additions];
+}
+
+function normalizeChildPageLinkContent(rawContent: string, childPages: SidebarPage[]): string {
+  try {
+    const parsed = JSON.parse(rawContent) as unknown;
+    if (Array.isArray(parsed)) {
+      return JSON.stringify(ensureChildPageLinkBlocks(parsed as PartialBlock[], childPages));
+    }
+  } catch {
+    // keep the original content; other recovery logic will handle invalid JSON.
+  }
+  return rawContent;
+}
+
+function getAutoPageLinkTargets(pageId: string, pages: SidebarPage[]): SidebarPage[] {
+  const workspaceHome = findWorkspaceHomePage(pages);
+  if (workspaceHome?.id === pageId) {
+    return getWorkspaceTopLevelPages(pages);
+  }
+  return pages.filter((item) => item.parentId === pageId);
+}
+
 function ArcaneSideMenu() {
   const editor = useBlockNoteEditor();
   const sideMenu = useExtension(SideMenuExtension);
@@ -441,7 +518,6 @@ export function PageEditor({
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error' | 'conflict'>('idle');
   const [statusMessage, setStatusMessage] = useState('');
   const [allPages, setAllPages] = useState<SidebarPage[]>(initialPages);
-  const [navigablePages, setNavigablePages] = useState<SidebarPage[]>(initialNavigablePages ?? initialPages);
   const [editorReady, setEditorReady] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [assets, setAssets] = useState<AssetRecord[]>([]);
@@ -649,15 +725,15 @@ export function PageEditor({
 
     const withoutRedundantLinks = removeRedundantYouTubeLinkBlocks(parsed.length ? parsed : DOCUMENT_FALLBACK);
     const migrated = migrateLegacyImageBlocks(withoutRedundantLinks);
-    const payload = migrated.blocks;
+    const payload = ensureChildPageLinkBlocks(migrated.blocks, getAutoPageLinkTargets(pageId, allPages));
     isApplyingRemoteContent.current = true;
     editor.replaceBlocks(editor.document, payload as Parameters<typeof editor.replaceBlocks>[1]);
     savedDocRef.current = JSON.stringify(payload);
     queueMicrotask(() => {
       isApplyingRemoteContent.current = false;
     });
-    return migrated.changed;
-  }, [editor]);
+    return migrated.changed || payload.length !== migrated.blocks.length;
+  }, [allPages, editor, pageId]);
 
   const readRecoveryDraft = useCallback((remote: PageRecord): RecoveryDraft | null => {
     try {
@@ -754,14 +830,9 @@ export function PageEditor({
   }, [applyInitialContent, pageId, readRecoveryDraft, readOnly]);
 
   const loadPageList = useCallback(async () => {
-    const [allResponse, navigableResponse] = await Promise.all([
-      fetch('/api/pages'),
-      fetch('/api/pages?includeCollectionPages=false'),
-    ]);
-    const allPayload = (await allResponse.json()) as { pages: SidebarPage[] };
-    const navigablePayload = (await navigableResponse.json()) as { pages: SidebarPage[] };
-    setAllPages(allPayload.pages);
-    setNavigablePages(navigablePayload.pages);
+    const response = await fetch('/api/pages');
+    const payload = (await response.json()) as { pages: SidebarPage[] };
+    setAllPages(payload.pages);
   }, []);
 
   const savePage = useCallback(async () => {
@@ -772,7 +843,7 @@ export function PageEditor({
     }
 
     saveQueuedRef.current = false;
-    const documentJson = savedDocRef.current;
+    const documentJson = normalizeChildPageLinkContent(savedDocRef.current, getAutoPageLinkTargets(pageId, allPages));
     const titleToSave = titleRef.current.trim() || 'Untitled';
     const editorRevision = pendingRevision.current;
     const saveVersion = editVersionRef.current;
@@ -841,7 +912,7 @@ export function PageEditor({
         }, 0);
       }
     }
-  }, [draftKey, pageId]);
+  }, [allPages, draftKey, pageId]);
 
   savePageRef.current = savePage;
 
@@ -1609,12 +1680,33 @@ export function PageEditor({
     refreshLiveReferenceLabels();
   }, [editorReady, allPages, refreshLiveReferenceLabels]);
 
+  useEffect(() => {
+    if (!editorReady || !page || readOnly || isApplyingRemoteContent.current) {
+      return;
+    }
+
+    const linkedPages = getAutoPageLinkTargets(pageId, allPages);
+    const normalized = ensureChildPageLinkBlocks(editor.document as PartialBlock[], linkedPages);
+    const normalizedJson = JSON.stringify(normalized);
+    if (normalizedJson === savedDocRef.current) {
+      return;
+    }
+
+    isApplyingRemoteContent.current = true;
+    editor.replaceBlocks(editor.document, normalized as Parameters<typeof editor.replaceBlocks>[1]);
+    savedDocRef.current = normalizedJson;
+    queueMicrotask(() => {
+      isApplyingRemoteContent.current = false;
+    });
+    requestSave();
+  }, [allPages, editor, editorReady, page, pageId, readOnly, requestSave]);
+
   useEditorChange(() => {
     if (readOnly || !editorReady || isApplyingRemoteContent.current || !isEditing) {
       return;
     }
 
-    const documentJson = JSON.stringify(editor.document);
+    const documentJson = JSON.stringify(ensureChildPageLinkBlocks(editor.document as PartialBlock[], getAutoPageLinkTargets(pageId, allPages)));
     savedDocRef.current = documentJson;
     requestSave();
   }, editor);
@@ -1881,12 +1973,7 @@ export function PageEditor({
     if (initialPages.length > 0) {
       setAllPages(initialPages);
     }
-    if (initialNavigablePages && initialNavigablePages.length > 0) {
-      setNavigablePages(initialNavigablePages);
-    } else if (!initialNavigablePages && initialPages.length > 0) {
-      setNavigablePages(initialPages);
-    }
-  }, [initialNavigablePages, initialPages]);
+  }, [initialPages]);
 
   useEffect(() => {
     if (initialPage) {
@@ -1962,26 +2049,6 @@ export function PageEditor({
     return <PageEditorSkeleton />;
   }
 
-  const childPages = navigablePages
-    .filter((item) => item.parentId === page.id)
-    .slice()
-    .sort((a, b) => a.sortKey - b.sortKey || a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
-  const childPageLinks = childPages.length ? (
-    <section className="page-child-links" aria-labelledby="page-child-links-title">
-      <p className="eyebrow" id="page-child-links-title">Pages nested here</p>
-      <ul>
-        {childPages.map((child) => (
-          <li key={child.id}>
-            <Link className="page-link-block" href={buildWorkspacePagePathFromPages(child.id, allPages, pageRouteBasePath)}>
-              <PageIcon className="page-link-icon" icon={child.icon} iconAssetId={child.iconAssetId} />
-              <span>{child.title || 'Untitled'}</span>
-              <span className="page-link-arrow" aria-hidden="true">↗</span>
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </section>
-  ) : null;
   const showTrashNotice = page.deletedAt ? (
     <p className="help status-note" role="status">
       This page is in trash. Restore it before editing.
@@ -2103,7 +2170,6 @@ export function PageEditor({
           </div>
 
           {renderPageTags(false)}
-          {childPageLinks}
 
           {hostCollection || pageCollections.length ? (
             <section className="page-collections-embed" aria-label="Collections on this page">
@@ -2261,6 +2327,7 @@ export function PageEditor({
             <textarea className="page-title" rows={1} value={title} onChange={onTitleInput} placeholder="Untitled" disabled={isDeleted} />
           </div>
           {renderPageTags(true)}
+
           {iconPickerOpen ? (
             <PageEmojiPicker
               pageId={pageId}
@@ -2433,8 +2500,6 @@ export function PageEditor({
             ))}
           </ul>
         ) : null}
-
-        {childPageLinks}
 
         {hostCollection || pageCollections.length ? (
           <section className="page-collections-embed" aria-label="Collections on this page">

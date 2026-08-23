@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildWorkspacePagePathFromPages, getWorkspaceHomePath, promoteWorkspaceHomeChildren, resolveWorkspacePagePathSegments } from '../src/lib/workspaceHome';
+import { buildWorkspacePagePathFromPages, getWorkspaceHomePath, getWorkspaceTopLevelPages, promoteWorkspaceHomeChildren, resolveWorkspacePagePathSegments } from '../src/lib/workspaceHome';
 
 const pages = [
   { id: 'home', parentId: null, sortKey: 1, title: 'Arcane Codex', slug: 'arcane-codex' },
@@ -31,6 +31,24 @@ test('workspace sidebar hides the home root and promotes its children', () => {
       { id: 'child', parentId: null },
       { id: 'grandchild', parentId: 'child' },
       { id: 'other', parentId: null },
+    ],
+  );
+  assert.deepEqual(
+    getWorkspaceTopLevelPages(pages).map((page) => ({ id: page.id, parentId: page.parentId })),
+    [
+      { id: 'child', parentId: null },
+      { id: 'other', parentId: null },
+    ],
+  );
+  assert.deepEqual(
+    getWorkspaceTopLevelPages([
+      ...pages,
+      { id: 'fresh', parentId: null, sortKey: 3, title: 'Fresh', slug: 'fresh' },
+    ]).map((page) => ({ id: page.id, parentId: page.parentId })),
+    [
+      { id: 'child', parentId: null },
+      { id: 'other', parentId: null },
+      { id: 'fresh', parentId: null },
     ],
   );
 });
