@@ -2142,7 +2142,7 @@ export function PageEditor({
                 <button ref={setIconTrigger} key="add-icon" type="button" aria-haspopup="dialog" aria-expanded={iconPickerOpen} disabled={isDeleted} onClick={() => { if (iconPickerOpen) { closeIconPicker('button'); return; } openIconPicker(); }}>Add icon</button>
               ) : null}
               {!coverAsset ? <>
-                <button type="button" disabled={isDeleted} onClick={() => setCoverUrlOpen(true)}>Search Commons</button>
+                <button type="button" aria-haspopup="dialog" aria-expanded={coverUrlOpen} disabled={isDeleted} onClick={() => setCoverUrlOpen(true)}>Search Commons</button>
                 <button type="button" disabled={isDeleted} onClick={() => setCoverUrlOpen(true)}>Paste URL</button>
                 <button type="button" disabled={isDeleted} onClick={() => coverUploadRef.current?.click()}>Upload cover</button>
               </> : null}
@@ -2198,30 +2198,39 @@ export function PageEditor({
             title="Search or add cover"
             description="Use Wikimedia Commons first, then paste a URL or upload from disk."
             className="image-grabber-popup cover-grabber-panel"
+            defaultPage="settings"
+            showSettings
             onClose={() => { setCoverUrl(''); setCoverUrlOpen(false); }}
             info={(
-              <ImagePopupSection title="Wikimedia Commons" description="Search open images for a cover." editorOnly>
-                <ImageGrabberPanel
-                  title="Search Wikimedia Commons"
-                  className="image-grabber-panel"
-                  onPaste={(event) => {
-                    const { text, imageFile } = extractGrabberPaste(event);
-                    if (imageFile) {
-                      event.preventDefault();
-                      void uploadAndHandleTask(imageFile, 'cover');
-                      return;
-                    }
-                    if (text) {
-                      const pasted = normalizeHttpUrl(text);
-                      if (pasted) {
+              <ImagePopupSection title="Why this opens" description="The cover chooser starts on the search tab." editorOnly>
+                <p>Search Wikimedia Commons, then fall back to paste or upload if needed.</p>
+              </ImagePopupSection>
+            )}
+            settings={(
+              <>
+                <ImagePopupSection title="Wikimedia Commons" description="Search open images for a cover." editorOnly>
+                  <ImageGrabberPanel
+                    title="Search Wikimedia Commons"
+                    className="image-grabber-panel"
+                    onPaste={(event) => {
+                      const { text, imageFile } = extractGrabberPaste(event);
+                      if (imageFile) {
                         event.preventDefault();
-                        setCoverUrl(pasted);
+                        void uploadAndHandleTask(imageFile, 'cover');
+                        return;
                       }
-                    }
-                  }}
-                >
-                  <WikimediaCommonsSearch label="Search Wikimedia Commons" useLabel="Use cover" onUse={(result) => void useCommonsImage(result, 'cover')} />
-                </ImageGrabberPanel>
+                      if (text) {
+                        const pasted = normalizeHttpUrl(text);
+                        if (pasted) {
+                          event.preventDefault();
+                          setCoverUrl(pasted);
+                        }
+                      }
+                    }}
+                  >
+                    <WikimediaCommonsSearch label="Search Wikimedia Commons" useLabel="Use cover" onUse={(result) => void useCommonsImage(result, 'cover')} />
+                  </ImageGrabberPanel>
+                </ImagePopupSection>
                 <ImagePopupSection title="Paste or upload" description="Paste a link, paste an image, or upload from disk." editorOnly>
                   <ImageGrabberPanel
                     title="Paste or upload"
@@ -2256,7 +2265,7 @@ export function PageEditor({
                     </ImageGrabberUrlForm>
                   </ImageGrabberPanel>
                 </ImagePopupSection>
-              </ImagePopupSection>
+              </>
             )}
           />
         ) : null}

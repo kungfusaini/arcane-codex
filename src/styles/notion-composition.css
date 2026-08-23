@@ -419,6 +419,16 @@
 .page-media-affordances button:hover {
   color: var(--text-primary);
 }
+.page-media-affordances button:focus-visible {
+  outline: var(--state-focus-outline-width) solid var(--focus-ring);
+  outline-offset: var(--state-focus-outline-offset);
+}
+.page-media-affordances button:active {
+  transform: scale(var(--state-active-scale));
+}
+.page-media-affordances button:disabled {
+  opacity: var(--state-disabled-opacity-strong);
+}
 .page-title-row {
   min-width: var(--space-0);
   display: flex;

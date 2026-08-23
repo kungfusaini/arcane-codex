@@ -9,28 +9,41 @@
 }
 
 .page-link-block {
-  width: min(100%, calc(var(--space-12) * 10));
-  min-height: var(--space-12);
-  padding: var(--space-3);
-  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-3);
-  border-radius: var(--card-radius);
-  background: var(--surface-page-muted);
-  color: var(--text-primary);
-  text-decoration: none;
-  font-weight: 650;
-  transition: transform var(--motion-fast) var(--ease-out), background-color var(--motion-fast) var(--ease-out), opacity var(--motion-fast) var(--ease-out);
+  gap: var(--space-1);
+  color: var(--text-accent);
+  text-decoration: underline;
+  text-decoration-thickness: from-font;
+  text-underline-offset: 0.15em;
+  font-weight: inherit;
+  transition: color var(--motion-fast) var(--ease-out), opacity var(--motion-fast) var(--ease-out);
+}
+
+.page-link-block:hover {
+  color: var(--text-strong);
+}
+
+.page-link-block:active {
+  opacity: var(--state-disabled-opacity-strong);
+}
+
+.page-link-block:focus-visible {
+  outline: var(--state-focus-outline-width) solid var(--focus-ring);
+  outline-offset: var(--state-focus-outline-offset);
 }
 
 .page-link-icon {
-  width: var(--space-8);
-  min-width: var(--space-8);
-  height: var(--space-8);
-  display: grid;
+  width: var(--space-4);
+  min-width: var(--space-4);
+  height: var(--space-4);
+  display: inline-grid;
   place-items: center;
   overflow: hidden;
-  font-size: var(--font-size-400);
+  font-size: var(--font-size-200);
+  line-height: 1;
 }
 
 .page-link-title {
