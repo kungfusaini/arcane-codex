@@ -395,8 +395,8 @@
   padding-block-end: var(--space-2);
 }
 .has-cover .page-identity {
-  margin-block-start: var(--space-0);
-  padding-block-start: var(--space-6);
+  margin-block-start: calc(var(--space-10) * -1);
+  padding-block-start: var(--space-0);
 }
 .page-media-affordances {
   min-height: var(--space-8);
