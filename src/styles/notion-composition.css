@@ -395,8 +395,8 @@
   padding-block-end: var(--space-2);
 }
 .has-cover .page-identity {
-  margin-block-start: calc(var(--space-10) * -1);
-  padding-block-start: var(--space-0);
+  margin-block-start: var(--space-0);
+  padding-block-start: var(--space-6);
 }
 .page-media-affordances {
   min-height: var(--space-8);
@@ -449,6 +449,116 @@
   min-width: var(--space-0);
   width: 100%;
   flex: 1 1 auto;
+}
+.page-tags {
+  min-width: var(--space-0);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+.page-tags-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.page-tag-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-0);
+}
+.page-tag-chip,
+.page-tags-add,
+.page-tags-form input,
+.page-tags-form button {
+  min-height: 20.4px;
+}
+.page-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-strong);
+  font-size: var(--font-size-100);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: inset 2.55px 0 0 var(--color-accent);
+}
+.page-tag-remove,
+.page-tags-add,
+.page-tags-form button {
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-100);
+}
+.page-tag-remove {
+  min-width: var(--space-8);
+  padding-inline: var(--space-1);
+  color: var(--text-muted);
+  background: transparent;
+}
+.page-tags-add {
+  min-width: calc(var(--space-8) + var(--space-1));
+  padding-inline: var(--space-1);
+  color: var(--text-muted);
+  background: transparent;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), background-color var(--motion-fast) var(--ease-out);
+}
+.page-tags.is-empty .page-tags-add {
+  opacity: .55;
+  pointer-events: auto;
+}
+.page-tags:hover .page-tags-add,
+.page-tags:focus-within .page-tags-add,
+.page-tags.is-composing .page-tags-add {
+  opacity: 1;
+  pointer-events: auto;
+}
+.page-tag-remove:hover,
+.page-tags-add:hover,
+.page-tags-form button:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+.page-tag-remove:focus-visible,
+.page-tags-add:focus-visible,
+.page-tags-form input:focus-visible,
+.page-tags-form button:focus-visible {
+  outline: var(--state-focus-outline-width) solid var(--focus-ring);
+  outline-offset: var(--state-focus-outline-offset);
+}
+.page-tag-remove:active,
+.page-tags-add:active,
+.page-tags-form button:active {
+  transform: scale(var(--state-active-scale));
+}
+.page-tag-remove:disabled,
+.page-tags-add:disabled,
+.page-tags-form button:disabled {
+  opacity: var(--state-disabled-opacity-strong);
+}
+.page-tags-editor {
+  display: grid;
+  gap: var(--space-1);
+}
+.page-tags-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: var(--space-1);
+  align-items: center;
+}
+.page-tags-form input {
+  min-width: 0;
+}
+.page-tags-form button {
+  min-width: var(--space-12);
 }
 .image-grabber-popup {
   position: absolute;
@@ -621,6 +731,17 @@
 }
 .cover-grabber-panel {
   margin-block: var(--space-2);
+}
+
+.cover-grabber-popup {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: var(--z-player);
+  width: min(var(--measure-popover-lg), calc(100vw - var(--space-8)));
+  max-height: calc(100vh - var(--space-8));
+  overflow: auto;
+  transform: translate(-50%, -50%);
 }
 
 .publish-media-trigger {
@@ -1610,8 +1731,8 @@
     padding-block: var(--space-8) var(--space-12);
   }
   .has-cover .page-identity {
-    margin-block-start: var(--space-0);
-    padding-block-start: var(--space-4);
+    margin-block-start: calc(var(--space-6) * -1);
+    padding-block-start: var(--space-0);
   }
   .page-media-affordances {
     opacity: 1;
@@ -1639,6 +1760,12 @@
   .page-title-row .page-icon {
     width: 100%;
     height: 100%;
+  }
+  .page-tags-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .page-tags-form button {
+    width: 100%;
   }
   .page-icon {
     width: var(--space-12);

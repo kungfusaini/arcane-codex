@@ -76,6 +76,7 @@ type PageRecord = {
   coverFocalY: number;
   coverScale: number;
   isArticle: boolean;
+  tags: string[];
   contentJson: string;
   revision: number;
   createdAt: number;
@@ -118,6 +119,10 @@ const COVER_SCALE_STEP = 5;
 const defaultBlockSpecsWithoutImage = Object.fromEntries(
   Object.entries(defaultBlockSpecs).filter(([type]) => type !== 'image'),
 ) as typeof defaultBlockSpecs;
+
+function normalizePageTags(tags: string[]): string[] {
+  return [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))].slice(0, 20);
+}
 
 type AssetRecord = {
   id: string;
@@ -448,6 +453,9 @@ export function PageEditor({
   const [uploadTasks, setUploadTasks] = useState<UploadTask[]>([]);
   const [coverUrlOpen, setCoverUrlOpen] = useState(false);
   const [coverUrl, setCoverUrl] = useState('');
+  const [tagComposerOpen, setTagComposerOpen] = useState(false);
+  const [tagDraft, setTagDraft] = useState('');
+  const tagDraftRef = useRef<HTMLInputElement>(null);
   const [imageUrlOpen, setImageUrlOpen] = useState(false);
   const [imageUrlPosition, setImageUrlPosition] = useState<{ top: number; left: number } | null>(null);
   const [imageUrl, setImageUrl] = useState('');
@@ -482,6 +490,14 @@ export function PageEditor({
   }, [pageId]);
 
   const pageIconPromptCaption = pageIconPrompt ? `Prompt: ${pageIconPrompt}` : undefined;
+
+  useEffect(() => {
+    if (!tagComposerOpen) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => tagDraftRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [tagComposerOpen]);
 
   const setUploadTask = useCallback((taskId: string, patch: Partial<UploadTask>) => {
     setUploadTasks((current) =>
@@ -898,7 +914,7 @@ export function PageEditor({
     setStatusMessage('Discarded browser recovery draft');
   }, [draftKey]);
 
-  const updateMetadata = useCallback(async (updates: { icon?: string | null; iconAssetId?: string | null; coverAssetId?: string | null; coverFocalX?: number; coverFocalY?: number; coverScale?: number; isArticle?: boolean }) => {
+  const updateMetadata = useCallback(async (updates: { icon?: string | null; iconAssetId?: string | null; coverAssetId?: string | null; coverFocalX?: number; coverFocalY?: number; coverScale?: number; isArticle?: boolean; tags?: string[] }) => {
     if (!page || page.deletedAt) {
       return false;
     }
@@ -994,6 +1010,46 @@ export function PageEditor({
     setIconPickerOpen(false);
     void updateMetadata({ icon: null, iconAssetId: null });
   }, [updateMetadata]);
+
+  const applyPageTags = useCallback((nextTags: string[]) => {
+    void updateMetadata({ tags: normalizePageTags(nextTags) });
+  }, [updateMetadata]);
+
+  const addPageTag = useCallback(() => {
+    const candidate = tagDraft.trim();
+    if (!candidate) {
+      return;
+    }
+    const nextTags = normalizePageTags([...page?.tags ?? [], candidate]);
+    setTagDraft('');
+    setTagComposerOpen(true);
+    applyPageTags(nextTags);
+  }, [applyPageTags, page?.tags, tagDraft]);
+
+  const removePageTag = useCallback((tagToRemove: string) => {
+    applyPageTags((page?.tags ?? []).filter((tag) => tag !== tagToRemove));
+  }, [applyPageTags, page?.tags]);
+
+  const openTagComposer = useCallback(() => {
+    setTagComposerOpen(true);
+  }, []);
+
+  const closeTagComposer = useCallback(() => {
+    setTagComposerOpen(false);
+    setTagDraft('');
+  }, []);
+
+  const onTagDraftKeyDown = useCallback((event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter' || event.key === ',') {
+      event.preventDefault();
+      addPageTag();
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeTagComposer();
+    }
+  }, [addPageTag, closeTagComposer]);
 
   const updateCoverScale = useCallback((value: number) => {
     setCoverDraft((current) => {
@@ -1933,6 +1989,52 @@ export function PageEditor({
   const coverAsset = page.coverAssetId
     ? assets.find((asset) => asset.id === page.coverAssetId) ?? { id: page.coverAssetId, filename: 'Cover image' }
     : null;
+  const pageTags = page.tags;
+  const renderPageTags = (editable: boolean) => (
+    <section className={`page-tags ${pageTags.length ? 'has-tags' : 'is-empty'} ${editable ? 'is-editable' : 'is-readonly'} ${tagComposerOpen ? 'is-composing' : ''}`} aria-label="Page metadata">
+      {pageTags.length ? (
+        <ul className="page-tags-list">
+          {pageTags.map((tag) => (
+            <li key={tag} className="page-tag-item">
+              <span className="page-tag-chip">{tag}</span>
+              {editable ? (
+                <button type="button" className="page-tag-remove" disabled={isDeleted} aria-label={`Remove tag ${tag}`} onClick={() => removePageTag(tag)}>
+                  ×
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {editable ? (
+        <div className="page-tags-editor">
+          {tagComposerOpen ? (
+            <form
+              className="page-tags-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                addPageTag();
+              }}
+            >
+              <input
+                ref={tagDraftRef}
+                value={tagDraft}
+                onChange={(event) => setTagDraft(event.target.value)}
+                onKeyDown={onTagDraftKeyDown}
+                placeholder="Add tag"
+                aria-label="Add tag"
+                disabled={isDeleted}
+              />
+              <button type="submit" className="primary-btn" disabled={isDeleted || !tagDraft.trim()}>Add</button>
+              <button type="button" onClick={closeTagComposer}>Done</button>
+            </form>
+          ) : (
+            <button type="button" className="page-tags-add" disabled={isDeleted} aria-label="Add tag" title="Add tag" onClick={openTagComposer}>＋</button>
+          )}
+        </div>
+      ) : null}
+    </section>
+  );
   if (readOnly) {
     return (
       <section className="document-shell" aria-live="polite">
@@ -1999,6 +2101,7 @@ export function PageEditor({
             </div>
           </div>
 
+          {renderPageTags(false)}
           {childPageLinks}
 
           {hostCollection || pageCollections.length ? (
@@ -2156,6 +2259,7 @@ export function PageEditor({
             ) : null}
             <textarea className="page-title" rows={1} value={title} onChange={onTitleInput} placeholder="Untitled" disabled={isDeleted} />
           </div>
+          {renderPageTags(true)}
           {iconPickerOpen ? (
             <PageEmojiPicker
               pageId={pageId}

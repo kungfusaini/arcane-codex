@@ -13,6 +13,7 @@ type PageUpdatePayload = {
   coverFocalY?: number;
   coverScale?: number;
   isArticle?: boolean;
+  tags?: string[];
   parentId?: string | null;
   sortKey?: number;
   contentJson?: string;
@@ -42,6 +43,16 @@ function clampCoverScale(value: unknown): number | undefined {
     return 200;
   }
   return value;
+}
+
+function parseTags(value: unknown): string[] | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value) || !value.every((tag) => typeof tag === 'string')) {
+    return null;
+  }
+  return [...new Set(value.map((tag) => tag.trim()).filter(Boolean))].slice(0, 20);
 }
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
@@ -92,6 +103,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       return NextResponse.json({ error: 'Page content contains invalid JSON.' }, { status: 400 });
     }
   }
+  const tags = Object.hasOwn(payload, 'tags') ? parseTags(payload.tags) : undefined;
+  if (tags === null) {
+    return NextResponse.json({ error: 'Page tags must be an array of strings.' }, { status: 400 });
+  }
   if (payload.iconAssetId != null) {
     if (typeof payload.iconAssetId !== 'string') {
       return NextResponse.json({ error: 'Icon asset id must be a string or null.' }, { status: 400 });
@@ -141,6 +156,9 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     }
     if (Object.hasOwn(payload, 'isArticle')) {
       updates.isArticle = payload.isArticle === true;
+    }
+    if (tags !== undefined) {
+      updates.tags = tags;
     }
     if (Object.hasOwn(payload, 'parentId')) {
       updates.parentId = payload.parentId ?? null;

@@ -376,7 +376,7 @@ function findOrCreatePage(title: string, parentId: string | null, contentJson: s
     return existing;
   }
   if (!apply) {
-    return { id: `dry-${parentId ?? 'root'}-${title}`, parentId, sortKey: 0, title, slug: title, icon: null, iconAssetId: null, coverAssetId: null, coverFocalX: 50, coverFocalY: 50, coverScale: 100, isArticle, revision: 0, createdAt: Date.now(), updatedAt: Date.now(), deletedAt: null };
+    return { id: `dry-${parentId ?? 'root'}-${title}`, parentId, sortKey: 0, title, slug: title, icon: null, iconAssetId: null, coverAssetId: null, coverFocalX: 50, coverFocalY: 50, coverScale: 100, isArticle, tags: [], revision: 0, createdAt: Date.now(), updatedAt: Date.now(), deletedAt: null };
   }
   return createPage({ title, parentId, contentJson, isArticle }, dataDir);
 }

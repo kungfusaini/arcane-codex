@@ -71,13 +71,15 @@ describe('workspace bootstrap', () => {
       const columnScale = pageColumns.find((row) => row.name === 'cover_scale');
       const iconAssetColumn = pageColumns.find((row) => row.name === 'icon_asset_id');
       const isArticleColumn = pageColumns.find((row) => row.name === 'is_article');
-      assert.equal(version.user_version, 8);
+      const tagsColumn = pageColumns.find((row) => row.name === 'tags_json');
+      assert.equal(version.user_version, 9);
       assert.ok(assetIndex);
       assert.ok(columnX);
       assert.ok(columnY);
       assert.ok(columnScale);
       assert.ok(iconAssetColumn);
       assert.ok(isArticleColumn);
+      assert.ok(tagsColumn);
       const settingsColumns = migrated.prepare("PRAGMA table_info(settings)").all() as Array<{ name: string }>;
       assert.ok(settingsColumns.some((row) => row.name === 'published_mode'));
       migrated.exec('PRAGMA user_version = 99;');
@@ -228,8 +230,8 @@ describe('pages CRUD and ordering', () => {
     ensureWorkspaceDirs(workspace);
     openWorkspace({ dataDir: workspace });
 
-    const root = createPage({ title: 'Root page' }, workspace);
-    const childA = createPage({ title: 'Child A', parentId: root.id }, workspace);
+    const root = createPage({ title: 'Root page', tags: ['anchor', 'draft'] }, workspace);
+    const childA = createPage({ title: 'Child A', parentId: root.id, tags: ['review'] }, workspace);
     const childB = createPage({ title: 'Child B', parentId: root.id }, workspace);
 
     assert.equal(listPages(workspace).length, 3);
@@ -237,6 +239,7 @@ describe('pages CRUD and ordering', () => {
     const loaded = getPage(root.id, workspace);
     assert.equal(loaded?.revision, 0);
     assert.equal(loaded?.isArticle, false);
+    assert.deepEqual(loaded?.tags, ['anchor', 'draft']);
 
     const updated = updatePage(
       childA.id,
@@ -247,6 +250,7 @@ describe('pages CRUD and ordering', () => {
         coverFocalX: 12,
         coverFocalY: 88,
         isArticle: true,
+        tags: ['edited', 'review', 'review'],
       },
       workspace,
     );
@@ -254,11 +258,17 @@ describe('pages CRUD and ordering', () => {
     assert.equal(updated.coverFocalX, 12);
     assert.equal(updated.coverFocalY, 88);
     assert.equal(updated.isArticle, true);
+    assert.deepEqual(updated.tags, ['edited', 'review']);
 
     const reloaded = getPage(childA.id, workspace);
     assert.equal(reloaded?.coverFocalX, 12);
     assert.equal(reloaded?.coverFocalY, 88);
     assert.equal(reloaded?.isArticle, true);
+    assert.deepEqual(reloaded?.tags, ['edited', 'review']);
+
+    const duplicated = duplicatePage(childA.id, workspace);
+    assert.equal(duplicated?.title, 'Renamed Child A Copy');
+    assert.deepEqual(duplicated?.tags, ['edited', 'review']);
     assert.throws(
       () =>
         updatePage(
@@ -295,8 +305,9 @@ describe('pages CRUD and ordering', () => {
 
     const current = listPages(workspace);
     const rootChilds = current.filter((page) => page.parentId === root.id);
-    assert.equal(rootChilds.length, 1);
-    assert.equal(rootChilds[0].id, childA.id);
+    assert.equal(rootChilds.length, 2);
+    assert.equal(rootChilds.some((page) => page.id === childA.id), true);
+    assert.equal(rootChilds.some((page) => page.id === duplicated?.id), true);
 
     const rootLevel = current.filter((page) => page.parentId === null);
     assert.equal(rootLevel.some((page) => page.id === childB.id), true);

@@ -395,6 +395,7 @@ function pageToMarkdown(page: PageRecord, context: MarkdownContext, dataDir?: st
     `icon: ${page.icon ? escapeYaml(page.icon) : 'null'}`,
     `cover: ${coverPath ? escapeYaml(relativeLink(pagePath, coverPath)) : 'null'}`,
     `is_article: ${page.isArticle ? 'true' : 'false'}`,
+    `tags: ${JSON.stringify(page.tags)}`,
     `revision: ${page.revision}`,
     `created_at: ${escapeYaml(new Date(page.createdAt).toISOString())}`,
     `updated_at: ${escapeYaml(new Date(page.updatedAt).toISOString())}`,

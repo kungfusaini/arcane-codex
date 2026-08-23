@@ -51,6 +51,7 @@ describe('page API endpoints', () => {
             title: 'Restart-safe page',
             coverFocalX: 25,
             coverFocalY: 75,
+            tags: ['launch', 'draft'],
           }),
           headers: { 'content-type': 'application/json' },
         }),
@@ -63,11 +64,13 @@ describe('page API endpoints', () => {
           title: string;
           coverFocalX: number;
           coverFocalY: number;
+          tags: string[];
         };
       };
       assert.equal(created.page.title, 'Restart-safe page');
       assert.equal(created.page.coverFocalX, 25);
       assert.equal(created.page.coverFocalY, 75);
+      assert.deepEqual(created.page.tags, ['launch', 'draft']);
 
       const getRes1 = await pageRoute.GET(new NextRequest(`http://localhost/api/pages/${created.page.id}`), {
         params: { id: created.page.id },
@@ -87,26 +90,29 @@ describe('page API endpoints', () => {
             title: 'Restart-safe page',
             coverFocalX: 125,
             coverFocalY: -10,
+            tags: ['draft', 'published', 'draft'],
           }),
         }),
         { params: { id: created.page.id } },
       );
       const patched = (await callJson(patchRes)) as {
-        page: { id: string; revision: number; contentJson: string; title: string; coverFocalX: number; coverFocalY: number };
+        page: { id: string; revision: number; contentJson: string; title: string; coverFocalX: number; coverFocalY: number; tags: string[] };
       };
       assert.equal(patched.page.contentJson, contentJson);
       assert.equal(patched.page.title, 'Restart-safe page');
       assert.equal(patched.page.coverFocalX, 100);
       assert.equal(patched.page.coverFocalY, 0);
+      assert.deepEqual(patched.page.tags, ['draft', 'published']);
 
       // Simulate restart by refetching page from storage.
       const getRes2 = await pageRoute.GET(new NextRequest(`http://localhost/api/pages/${created.page.id}`), {
         params: { id: created.page.id },
       });
-      const reloaded = (await callJson(getRes2)) as { page: { contentJson: string; coverFocalX: number; coverFocalY: number } };
+      const reloaded = (await callJson(getRes2)) as { page: { contentJson: string; coverFocalX: number; coverFocalY: number; tags: string[] } };
       assert.equal(reloaded.page.contentJson, contentJson);
       assert.equal(reloaded.page.coverFocalX, 100);
       assert.equal(reloaded.page.coverFocalY, 0);
+      assert.deepEqual(reloaded.page.tags, ['draft', 'published']);
     });
   });
 
@@ -134,6 +140,38 @@ describe('page API endpoints', () => {
         { params: { id: created.page.id } },
       );
       assert.equal(badUpdate.status, 400);
+    });
+  });
+
+  it('rejects invalid page tags payloads', async () => {
+    await withWorkspace(async () => {
+      const createRes = await pagesRoute.POST(
+        new NextRequest('http://localhost/api/pages', {
+          method: 'POST',
+          body: JSON.stringify({ title: 'Tag validation test' }),
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+      const created = (await callJson(createRes)) as { page: { id: string; revision: number } };
+
+      const badCreate = await pagesRoute.POST(
+        new NextRequest('http://localhost/api/pages', {
+          method: 'POST',
+          body: JSON.stringify({ title: 'Invalid tags', tags: 'oops' }),
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+      assert.equal(badCreate.status, 400);
+
+      const badPatch = await pageRoute.PATCH(
+        new NextRequest(`http://localhost/api/pages/${created.page.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ revision: created.page.revision, tags: ['ok', 1] }),
+          headers: { 'content-type': 'application/json' },
+        }),
+        { params: { id: created.page.id } },
+      );
+      assert.equal(badPatch.status, 400);
     });
   });
 

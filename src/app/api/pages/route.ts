@@ -39,6 +39,17 @@ function clampFocal(value: unknown): number | undefined {
   return value;
 }
 
+function parseTags(input: unknown): string[] | null {
+  if (input === undefined) {
+    return [];
+  }
+  if (!Array.isArray(input)) {
+    return null;
+  }
+  const tags = input.every((tag) => typeof tag === 'string') ? input.map((tag) => tag.trim()).filter(Boolean) : null;
+  return tags === null ? null : [...new Set(tags)].slice(0, 20);
+}
+
 export async function POST(request: NextRequest) {
   const blocked = rejectPublishedMutation('Creating pages');
   if (blocked) return blocked;
@@ -50,6 +61,11 @@ export async function POST(request: NextRequest) {
     typeof payload.sortKey === 'number' && Number.isFinite(payload.sortKey)
       ? payload.sortKey
       : undefined;
+
+  const tags = parseTags(payload.tags);
+  if (tags === null) {
+    return NextResponse.json({ error: 'Page tags must be an array of strings.' }, { status: 400 });
+  }
 
   if (payload.iconAssetId != null) {
     if (typeof payload.iconAssetId !== 'string') {
@@ -71,6 +87,7 @@ export async function POST(request: NextRequest) {
     coverFocalX: clampFocal(payload.coverFocalX),
     coverFocalY: clampFocal(payload.coverFocalY),
     isArticle: payload.isArticle === true,
+    tags,
     contentJson: payload.contentJson ?? '[]',
   });
 
