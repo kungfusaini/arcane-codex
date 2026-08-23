@@ -212,6 +212,7 @@ test('core local workspace flows survive reload and remain recoverable', async (
 
   await page.goto(buildPagePathFromPages(root.id, [root, child]));
   await expect(page.locator('.page-title')).toHaveValue('Field Notes');
+  await expect(page.locator('.page-child-links').getByRole('link', { name: /Index of Symbols/ })).toHaveAttribute('href', buildPagePathFromPages(child.id, [root, child]));
   await expect(page.locator('.cover-preview-image')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Change page icon' })).toHaveText('🧭');
   await page.keyboard.press('Control+k');
@@ -498,6 +499,10 @@ test('renders a read-only published site that reflects live workspace content', 
   expect(childResponse.ok()).toBeTruthy();
   const child = (await childResponse.json()).page as PageRecord;
 
+  const normalChildResponse = await request.post('/api/pages', { data: { title: 'Published normal child', parentId: root.id } });
+  expect(normalChildResponse.ok()).toBeTruthy();
+  const normalChild = (await normalChildResponse.json()).page as PageRecord;
+
   const collectionResponse = await request.post('/api/collections', {
     data: {
       name: 'Published collection',
@@ -542,6 +547,9 @@ test('renders a read-only published site that reflects live workspace content', 
   await expect(page.getByRole('button', { name: 'Add cover', exact: true })).toHaveCount(0);
   await expect(page.locator('.editor-view .bn-editor[contenteditable="true"]')).toHaveCount(0);
   await expect(page.locator('.sidebar').getByRole('link', { name: 'Published child' })).toHaveCount(0);
+  await expect(page.locator('.sidebar').getByRole('link', { name: 'Published normal child' })).toBeVisible();
+  await expect(page.locator('.page-child-links').getByRole('link', { name: /Published normal child/ })).toHaveAttribute('href', buildPagePathFromPages(normalChild.id, [root, child, normalChild], '/published'));
+  await expect(page.locator('.page-child-links').getByRole('link', { name: /Published child/ })).toHaveCount(0);
   await expect(page.getByText('Live')).toBeVisible();
   await expect(page.locator('.collection-table input')).toHaveCount(0);
 });

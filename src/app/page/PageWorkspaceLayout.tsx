@@ -116,7 +116,7 @@ export function PageWorkspaceLayout({
       />
       <main className="main-column page-main">
         {isManagedPageRoute ? (
-          !loaded ? <DelayedPageEditorSkeleton /> : pageId ? <PageEditor key={`${pageId}:${workspaceModeKey}`} pageId={pageId} initialPages={pages} readOnly={effectiveReadOnly} pageRouteBasePath={pageRouteBasePath} /> : renderedChildren
+          !loaded ? <DelayedPageEditorSkeleton /> : pageId ? <PageEditor key={`${pageId}:${workspaceModeKey}`} pageId={pageId} initialPages={pages} initialNavigablePages={sidebarPages} readOnly={effectiveReadOnly} pageRouteBasePath={pageRouteBasePath} /> : renderedChildren
         ) : renderedChildren}
       </main>
     </div>

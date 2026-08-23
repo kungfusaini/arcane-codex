@@ -39,7 +39,7 @@ import {
 } from '@blocknote/core/extensions';
 import { getBreadcrumbs } from '@/lib/pageTree';
 import { PageIcon } from '@/components/PageIcon';
-import { extractGrabberPaste, ImageGrabberPanel, ImageGrabberPromptForm, ImageGrabberUrlForm } from '@/components/ImageGrabberControls';
+import { extractGrabberPaste, ImageGrabberPanel, ImageGrabberPromptForm, ImageGrabberUrlForm, WikimediaCommonsSearch } from '@/components/ImageGrabberControls';
 import { ImageGrabberPopup, ImagePopupSection } from '@/components/ImageGrabberPopup';
 import { PublishMediaModal, PublishMediaTrigger, type PublishMediaItem } from '@/components/PublishMediaModal';
 import { useDismissibleDetails } from '@/components/useDismissibleDetails';
@@ -48,6 +48,7 @@ import {
   editGrabberImageToAsset,
   IMAGE_GRABBER_UPLOAD_TYPES,
   importGrabberAssetFromUrl,
+  type WikimediaCommonsImageResult,
   isLikelyImageUrl,
   isSupportedGrabberUpload,
   normalizeHttpUrl,
@@ -409,9 +410,23 @@ function ArcaneSuggestionMenu<T extends DefaultReactSuggestionItem>({
   );
 }
 
-type PageEditorProps = { pageId: string; initialPage?: PageRecord; initialPages?: SidebarPage[]; readOnly?: boolean; pageRouteBasePath?: string };
+type PageEditorProps = {
+  pageId: string;
+  initialPage?: PageRecord;
+  initialPages?: SidebarPage[];
+  initialNavigablePages?: SidebarPage[];
+  readOnly?: boolean;
+  pageRouteBasePath?: string;
+};
 
-export function PageEditor({ pageId, initialPage, initialPages = [], readOnly = false, pageRouteBasePath = '/' }: PageEditorProps) {
+export function PageEditor({
+  pageId,
+  initialPage,
+  initialPages = [],
+  initialNavigablePages,
+  readOnly = false,
+  pageRouteBasePath = '/',
+}: PageEditorProps) {
   useDismissibleDetails('.action-menu');
 
   const [page, setPage] = useState<PageRecord | null>(initialPage ?? null);
@@ -421,6 +436,7 @@ export function PageEditor({ pageId, initialPage, initialPages = [], readOnly = 
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error' | 'conflict'>('idle');
   const [statusMessage, setStatusMessage] = useState('');
   const [allPages, setAllPages] = useState<SidebarPage[]>(initialPages);
+  const [navigablePages, setNavigablePages] = useState<SidebarPage[]>(initialNavigablePages ?? initialPages);
   const [editorReady, setEditorReady] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [assets, setAssets] = useState<AssetRecord[]>([]);
@@ -722,9 +738,14 @@ export function PageEditor({ pageId, initialPage, initialPages = [], readOnly = 
   }, [applyInitialContent, pageId, readRecoveryDraft, readOnly]);
 
   const loadPageList = useCallback(async () => {
-    const response = await fetch('/api/pages');
-    const payload = (await response.json()) as { pages: SidebarPage[] };
-    setAllPages(payload.pages);
+    const [allResponse, navigableResponse] = await Promise.all([
+      fetch('/api/pages'),
+      fetch('/api/pages?includeCollectionPages=false'),
+    ]);
+    const allPayload = (await allResponse.json()) as { pages: SidebarPage[] };
+    const navigablePayload = (await navigableResponse.json()) as { pages: SidebarPage[] };
+    setAllPages(allPayload.pages);
+    setNavigablePages(navigablePayload.pages);
   }, []);
 
   const savePage = useCallback(async () => {
@@ -1115,6 +1136,20 @@ export function PageEditor({ pageId, initialPage, initialPages = [], readOnly = 
     setUploadTasks((current) => current.filter((item) => item.id !== task.id));
     void uploadAndHandleTask(task.file, task.target, task.blockId);
   }, [uploadAndHandleTask]);
+
+  const useCommonsImage = useCallback(async (result: WikimediaCommonsImageResult, target: 'body' | 'cover') => {
+    const asset = await importAssetFromUrl(result.imageUrl);
+    if (target === 'cover') {
+      await updateMetadata({ coverAssetId: asset.id });
+      setCoverUrlOpen(false);
+      setCoverUrl('');
+      return;
+    }
+    insertAsset(asset);
+    setImageUrlOpen(false);
+    setImageUrlPosition(null);
+    setImageUrl('');
+  }, [importAssetFromUrl, insertAsset, updateMetadata]);
 
   const addCoverFromUrl = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1787,6 +1822,17 @@ export function PageEditor({ pageId, initialPage, initialPages = [], readOnly = 
   }, [allPages, pageId]);
 
   useEffect(() => {
+    if (initialPages.length > 0) {
+      setAllPages(initialPages);
+    }
+    if (initialNavigablePages && initialNavigablePages.length > 0) {
+      setNavigablePages(initialNavigablePages);
+    } else if (!initialNavigablePages && initialPages.length > 0) {
+      setNavigablePages(initialPages);
+    }
+  }, [initialNavigablePages, initialPages]);
+
+  useEffect(() => {
     if (initialPage) {
       setPage(initialPage);
       setTitle(initialPage.title);
@@ -1860,6 +1906,25 @@ export function PageEditor({ pageId, initialPage, initialPages = [], readOnly = 
     return <PageEditorSkeleton />;
   }
 
+  const childPages = navigablePages
+    .filter((item) => item.parentId === page.id)
+    .slice()
+    .sort((a, b) => a.sortKey - b.sortKey || a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+  const childPageLinks = childPages.length ? (
+    <section className="page-child-links" aria-labelledby="page-child-links-title">
+      <p className="eyebrow" id="page-child-links-title">Pages nested here</p>
+      <ul>
+        {childPages.map((child) => (
+          <li key={child.id}>
+            <Link className="page-child-link" href={buildWorkspacePagePathFromPages(child.id, allPages, pageRouteBasePath)}>
+              <PageIcon icon={child.icon} iconAssetId={child.iconAssetId} />
+              <span>{child.title || 'Untitled'}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  ) : null;
   const showTrashNotice = page.deletedAt ? (
     <p className="help status-note" role="status">
       This page is in trash. Restore it before editing.
@@ -1933,6 +1998,8 @@ export function PageEditor({ pageId, initialPage, initialPages = [], readOnly = 
               <h1 className="page-title page-title-readonly">{title || 'Untitled'}</h1>
             </div>
           </div>
+
+          {childPageLinks}
 
           {hostCollection || pageCollections.length ? (
             <section className="page-collections-embed" aria-label="Collections on this page">
@@ -2075,8 +2142,9 @@ export function PageEditor({ pageId, initialPage, initialPages = [], readOnly = 
                 <button ref={setIconTrigger} key="add-icon" type="button" aria-haspopup="dialog" aria-expanded={iconPickerOpen} disabled={isDeleted} onClick={() => { if (iconPickerOpen) { closeIconPicker('button'); return; } openIconPicker(); }}>Add icon</button>
               ) : null}
               {!coverAsset ? <>
-                <button type="button" disabled={isDeleted} onClick={() => coverUploadRef.current?.click()}>Add cover</button>
-                <button type="button" disabled={isDeleted} onClick={() => setCoverUrlOpen(true)}>Add cover from URL</button>
+                <button type="button" disabled={isDeleted} onClick={() => setCoverUrlOpen(true)}>Search Commons</button>
+                <button type="button" disabled={isDeleted} onClick={() => setCoverUrlOpen(true)}>Paste URL</button>
+                <button type="button" disabled={isDeleted} onClick={() => coverUploadRef.current?.click()}>Upload cover</button>
               </> : null}
             </div>
           ) : null}
@@ -2103,6 +2171,10 @@ export function PageEditor({ pageId, initialPage, initialPages = [], readOnly = 
                 selectPageIconAsset(asset.id);
                 return;
               }}
+              onImportIconCommons={async (result) => {
+                const asset = await importAssetFromUrl(result.imageUrl);
+                selectPageIconAsset(asset.id);
+              }}
               onRemove={removePageIcon}
               onClose={closeIconPicker}
               onPromptChange={setPageIconPrompt}
@@ -2123,13 +2195,14 @@ export function PageEditor({ pageId, initialPage, initialPages = [], readOnly = 
 
         {coverUrlOpen ? (
           <ImageGrabberPopup
-            title="Add cover"
+            title="Search or add cover"
+            description="Use Wikimedia Commons first, then paste a URL or upload from disk."
             className="image-grabber-popup cover-grabber-panel"
             onClose={() => { setCoverUrl(''); setCoverUrlOpen(false); }}
             info={(
-              <ImagePopupSection title="Paste or upload" description="Paste a link, paste an image, or upload from disk." editorOnly>
+              <ImagePopupSection title="Wikimedia Commons" description="Search open images for a cover." editorOnly>
                 <ImageGrabberPanel
-                  title="Cover image"
+                  title="Search Wikimedia Commons"
                   className="image-grabber-panel"
                   onPaste={(event) => {
                     const { text, imageFile } = extractGrabberPaste(event);
@@ -2147,19 +2220,42 @@ export function PageEditor({ pageId, initialPage, initialPages = [], readOnly = 
                     }
                   }}
                 >
-                  <ImageGrabberUrlForm
-                    label="Image URL"
-                    inputId="cover-image-url"
-                    value={coverUrl}
-                    submitLabel="Use image"
-                    disabled={isDeleted}
-                    className="image-grabber-url-form"
-                    onChange={setCoverUrl}
-                    onSubmit={(event) => void addCoverFromUrl(event)}
-                  >
-                    <button type="button" disabled={isDeleted} onClick={() => coverUploadRef.current?.click()}>Upload image</button>
-                  </ImageGrabberUrlForm>
+                  <WikimediaCommonsSearch label="Search Wikimedia Commons" useLabel="Use cover" onUse={(result) => void useCommonsImage(result, 'cover')} />
                 </ImageGrabberPanel>
+                <ImagePopupSection title="Paste or upload" description="Paste a link, paste an image, or upload from disk." editorOnly>
+                  <ImageGrabberPanel
+                    title="Paste or upload"
+                    className="image-grabber-panel"
+                    onPaste={(event) => {
+                      const { text, imageFile } = extractGrabberPaste(event);
+                      if (imageFile) {
+                        event.preventDefault();
+                        void uploadAndHandleTask(imageFile, 'cover');
+                        return;
+                      }
+                      if (text) {
+                        const pasted = normalizeHttpUrl(text);
+                        if (pasted) {
+                          event.preventDefault();
+                          setCoverUrl(pasted);
+                        }
+                      }
+                    }}
+                  >
+                    <ImageGrabberUrlForm
+                      label="Image URL"
+                      inputId="cover-image-url"
+                      value={coverUrl}
+                      submitLabel="Use image"
+                      disabled={isDeleted}
+                      className="image-grabber-url-form"
+                      onChange={setCoverUrl}
+                      onSubmit={(event) => void addCoverFromUrl(event)}
+                    >
+                      <button type="button" disabled={isDeleted} onClick={() => coverUploadRef.current?.click()}>Upload image</button>
+                    </ImageGrabberUrlForm>
+                  </ImageGrabberPanel>
+                </ImagePopupSection>
               </ImagePopupSection>
             )}
           />
@@ -2192,6 +2288,7 @@ export function PageEditor({ pageId, initialPage, initialPages = [], readOnly = 
                     }
                   }}
                 >
+                  <WikimediaCommonsSearch label="Search Wikimedia Commons" useLabel="Insert image" onUse={(result) => void useCommonsImage(result, 'body')} />
                   <ImageGrabberUrlForm
                     label="Image URL"
                     inputId="editor-image-url"
@@ -2222,6 +2319,8 @@ export function PageEditor({ pageId, initialPage, initialPages = [], readOnly = 
             ))}
           </ul>
         ) : null}
+
+        {childPageLinks}
 
         {hostCollection || pageCollections.length ? (
           <section className="page-collections-embed" aria-label="Collections on this page">

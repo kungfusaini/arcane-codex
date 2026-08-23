@@ -50,14 +50,16 @@ export function PageEditorRoute({
   pageId,
   initialPage,
   initialPages = [],
+  initialNavigablePages,
   readOnly = false,
   pageRouteBasePath = '/',
 }: {
   pageId: string;
   initialPage?: InitialPage;
   initialPages?: LayoutPage[];
+  initialNavigablePages?: LayoutPage[];
   readOnly?: boolean;
   pageRouteBasePath?: string;
 }) {
-  return <PageEditor pageId={pageId} initialPage={initialPage} initialPages={initialPages} readOnly={readOnly} pageRouteBasePath={pageRouteBasePath} />;
+  return <PageEditor pageId={pageId} initialPage={initialPage} initialPages={initialPages} initialNavigablePages={initialNavigablePages} readOnly={readOnly} pageRouteBasePath={pageRouteBasePath} />;
 }

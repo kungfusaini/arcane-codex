@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties, type Form
 import { PageIcon } from '@/components/PageIcon';
 import { buildWorkspacePagePathFromPages } from '@/lib/workspaceHome';
 import { editGrabberImageToAsset, normalizeHttpUrl } from '@/lib/imageGrabber';
-import { ImageGrabberPromptForm, ImageGrabberStrip, ImageGrabberUrlForm } from '@/components/ImageGrabberControls';
+import { ImageGrabberPromptForm, ImageGrabberStrip, ImageGrabberUrlForm, WikimediaCommonsSearch } from '@/components/ImageGrabberControls';
 import { PublishMediaModal, type PublishMediaItem } from '@/components/PublishMediaModal';
 import { clearYouTubeDockSession, requestYouTubeDockCommand, setYouTubeDockSession, updateYouTubeDockSession, useYouTubeDockSession } from '@/components/youtubeDock';
 
@@ -513,6 +513,13 @@ export function GalleryWidgetEditorShell({
     }
   };
 
+  const addCommonsImage = async (result: { imageUrl: string; title?: string }) => {
+    const asset = await importAssetFromUrl(result.imageUrl);
+    updateImages([...images, { url: `/api/assets/${asset.id}`, name: asset.filename, caption: '' }]);
+    setActiveIndex(images.length);
+    setError('');
+  };
+
   const addUrl = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmedUrl = url.trim();
@@ -612,6 +619,7 @@ export function GalleryWidgetEditorShell({
               onSelect={setActiveIndex}
               onAdd={() => setShowAddUrl((current) => !current)}
             />
+            <WikimediaCommonsSearch label="Search Wikimedia Commons" useLabel="Add image" onUse={(result) => void addCommonsImage(result)} />
             {showAddUrl ? (
               <ImageGrabberUrlForm
                 label="Paste image URL"

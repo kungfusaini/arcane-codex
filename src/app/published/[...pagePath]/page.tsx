@@ -65,7 +65,7 @@ export default function PublishedPageRoute({ params }: { params: { pagePath?: st
 
   return (
     <PageWorkspaceLayout initialPageId={resolution.pageId} initialPages={initialPages} initialSidebarPages={initialSidebarPages} readOnly pageRouteBasePath="/published">
-      <PageEditorRoute pageId={resolution.pageId} initialPage={initialPage} initialPages={initialPages} readOnly pageRouteBasePath="/published" />
+      <PageEditorRoute pageId={resolution.pageId} initialPage={initialPage} initialPages={initialPages} initialNavigablePages={initialSidebarPages} readOnly pageRouteBasePath="/published" />
     </PageWorkspaceLayout>
   );
 }

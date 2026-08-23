@@ -1,4 +1,5 @@
-import { type CSSProperties, type ClipboardEvent, type FormEvent, type ReactNode, type Ref } from 'react';
+import { useState, type CSSProperties, type ClipboardEvent, type FormEvent, type ReactNode, type Ref } from 'react';
+import { searchWikimediaCommonsImages, type WikimediaCommonsImageResult } from '@/lib/imageGrabber';
 
 export type ImageGrabberItem = {
   url: string;
@@ -106,6 +107,81 @@ export function ImageGrabberUrlForm({
       {children}
       {onCancel ? <button type="button" onClick={onCancel}>{cancelLabel}</button> : null}
     </form>
+  );
+}
+
+type WikimediaCommonsSearchProps = {
+  label?: string;
+  defaultQuery?: string;
+  disabled?: boolean;
+  useLabel?: string;
+  onUse: (result: WikimediaCommonsImageResult) => Promise<void> | void;
+};
+
+export function WikimediaCommonsSearch({ label = 'Search Wikimedia Commons', defaultQuery = '', disabled = false, useLabel = 'Use image', onUse }: WikimediaCommonsSearchProps) {
+  const [query, setQuery] = useState(defaultQuery);
+  const [results, setResults] = useState<WikimediaCommonsImageResult[]>([]);
+  const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'empty' | 'error'>('idle');
+  const [error, setError] = useState('');
+  const [usingId, setUsingId] = useState<string | null>(null);
+
+  const submitSearch = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmed = query.trim();
+    if (!trimmed || state === 'loading') return;
+    setState('loading');
+    setError('');
+    try {
+      const nextResults = await searchWikimediaCommonsImages(trimmed);
+      setResults(nextResults);
+      setState(nextResults.length ? 'ready' : 'empty');
+    } catch (cause) {
+      setResults([]);
+      setState('error');
+      setError(cause instanceof Error ? cause.message : 'Wikimedia Commons search failed.');
+    }
+  };
+
+  const useResult = async (result: WikimediaCommonsImageResult) => {
+    if (disabled || usingId) return;
+    setUsingId(result.id);
+    setError('');
+    try {
+      await onUse(result);
+    } catch (cause) {
+      setState('error');
+      setError(cause instanceof Error ? cause.message : 'Image import failed.');
+    } finally {
+      setUsingId(null);
+    }
+  };
+
+  return (
+    <div className="commons-search" aria-label={label}>
+      <form className="commons-search-form" onSubmit={submitSearch}>
+        <label>{label}<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search public domain and Creative Commons images" disabled={disabled || state === 'loading'} /></label>
+        <button type="submit" className="primary-btn" disabled={disabled || state === 'loading' || !query.trim()}>{state === 'loading' ? 'Searching…' : 'Search'}</button>
+      </form>
+      {state === 'loading' ? <p className="commons-search-state" role="status">Searching Wikimedia Commons…</p> : null}
+      {state === 'empty' ? <p className="commons-search-state">No supported PNG, JPEG, GIF, or WebP images found.</p> : null}
+      {state === 'error' ? <p className="commons-search-state error" role="alert">{error}</p> : null}
+      {results.length ? (
+        <div className="commons-search-results" aria-label="Wikimedia Commons results">
+          {results.map((result) => (
+            <article className="commons-search-result" key={result.id}>
+              <img src={result.thumbnailUrl} alt="" loading="lazy" />
+              <div>
+                <strong>{result.title}</strong>
+                <span>{result.license}{result.creator ? ` · ${result.creator}` : ''}</span>
+                {result.description ? <p>{result.description}</p> : null}
+                <a href={result.pageUrl} target="_blank" rel="noreferrer">View source</a>
+              </div>
+              <button type="button" onClick={() => void useResult(result)} disabled={disabled || Boolean(usingId)}>{usingId === result.id ? 'Importing…' : useLabel}</button>
+            </article>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

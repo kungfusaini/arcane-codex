@@ -39,7 +39,7 @@ export default function HomePage() {
 
   return (
     <PageWorkspaceLayout initialPageId={homePage.id} initialPages={initialPages} initialSidebarPages={initialSidebarPages} readOnly={readOnly} pageRouteBasePath="/">
-      <PageEditorRoute pageId={homePage.id} initialPage={initialPage} initialPages={initialPages} readOnly={readOnly} pageRouteBasePath="/" />
+      <PageEditorRoute pageId={homePage.id} initialPage={initialPage} initialPages={initialPages} initialNavigablePages={initialSidebarPages} readOnly={readOnly} pageRouteBasePath="/" />
     </PageWorkspaceLayout>
   );
 }

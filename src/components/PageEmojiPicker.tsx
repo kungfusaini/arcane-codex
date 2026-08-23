@@ -1,7 +1,7 @@
 'use client';
 
 import { type ClipboardEvent, type CSSProperties, FormEvent, useEffect, useRef, useState } from 'react';
-import { extractGrabberPaste, ImageGrabberPanel, ImageGrabberPromptForm, ImageGrabberUploadButton, ImageGrabberUrlForm } from '@/components/ImageGrabberControls';
+import { extractGrabberPaste, ImageGrabberPanel, ImageGrabberPromptForm, ImageGrabberUploadButton, ImageGrabberUrlForm, WikimediaCommonsSearch } from '@/components/ImageGrabberControls';
 import { ImageGrabberPopup, ImagePopupSection } from '@/components/ImageGrabberPopup';
 
 type EmojiSelection = {
@@ -21,13 +21,14 @@ type PageEmojiPickerProps = {
   onSelectAsset: (assetId: string) => void;
   onUploadIconFile: (file: File) => Promise<void>;
   onImportIconUrl: (url: string) => Promise<void>;
+  onImportIconCommons: (result: { imageUrl: string }) => Promise<void>;
   onRemove: () => void;
   onClose: (reason: 'escape' | 'outside' | 'button') => void;
   onPromptChange?: (prompt: string) => void;
   style?: CSSProperties;
 };
 
-export function PageEmojiPicker({ pageId, currentIcon, currentIconAssetId, onSelect, onSelectAsset, onUploadIconFile, onImportIconUrl, onRemove, onClose, onPromptChange, style }: PageEmojiPickerProps) {
+export function PageEmojiPicker({ pageId, currentIcon, currentIconAssetId, onSelect, onSelectAsset, onUploadIconFile, onImportIconUrl, onImportIconCommons, onRemove, onClose, onPromptChange, style }: PageEmojiPickerProps) {
   const rootRef = useRef<HTMLElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
@@ -248,7 +249,8 @@ export function PageEmojiPicker({ pageId, currentIcon, currentIconAssetId, onSel
           {hasImageIcon ? (
             <ImagePopupSection editorOnly>
               {iconPrompt ? <p className="help">Prompt: {iconPrompt}</p> : null}
-              <ImageGrabberPanel title="Icon image" description="Generate, upload, paste a link, or paste an image." className="image-grabber-panel icon-grabber-panel">
+              <ImageGrabberPanel title="Icon image" description="Generate, upload, paste a link, paste an image, or search Wikimedia Commons." className="image-grabber-panel icon-grabber-panel">
+                <WikimediaCommonsSearch label="Search Wikimedia Commons" useLabel="Use as icon" onUse={(result) => onImportIconCommons(result)} />
                 <ImageGrabberPromptForm
                   label="Generate icon"
                   inputId="generated-page-icon-prompt"
@@ -289,7 +291,8 @@ export function PageEmojiPicker({ pageId, currentIcon, currentIconAssetId, onSel
           {!hasEmojiIcon && !hasImageIcon ? (
             <>
               <ImagePopupSection editorOnly>
-                <ImageGrabberPanel title="Icon image" description="Generate, upload, paste a link, or paste an image." className="image-grabber-panel icon-grabber-panel">
+                <ImageGrabberPanel title="Icon image" description="Generate, upload, paste a link, paste an image, or search Wikimedia Commons." className="image-grabber-panel icon-grabber-panel">
+                  <WikimediaCommonsSearch label="Search Wikimedia Commons" useLabel="Use as icon" onUse={(result) => onImportIconCommons(result)} />
                   <ImageGrabberPromptForm
                     label="Generate icon"
                     inputId="generated-page-icon-prompt"

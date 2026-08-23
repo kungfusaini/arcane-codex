@@ -15,6 +15,18 @@ export type GrabbedImage = {
   asset: ImageGrabberAsset;
 };
 
+export type WikimediaCommonsImageResult = {
+  id: string;
+  title: string;
+  description: string;
+  creator: string;
+  license: string;
+  pageUrl: string;
+  imageUrl: string;
+  thumbnailUrl: string;
+  mimeType: string;
+};
+
 export const IMAGE_GRABBER_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
 export const IMAGE_GRABBER_UPLOAD_TYPES = [...IMAGE_GRABBER_IMAGE_TYPES, 'application/pdf', 'text/plain', 'text/markdown'];
 export const IMAGE_GRABBER_MAX_BYTES = 20 * 1024 * 1024;
@@ -58,6 +70,17 @@ export async function uploadGrabberAsset(file: File): Promise<ImageGrabberAsset>
     throw new Error(payload.error || 'Upload failed');
   }
   return payload.asset;
+}
+
+export async function searchWikimediaCommonsImages(query: string): Promise<WikimediaCommonsImageResult[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  const response = await fetch(`/api/image-search/commons?q=${encodeURIComponent(trimmed)}`);
+  const payload = await readJson<{ results?: WikimediaCommonsImageResult[]; error?: string }>(response);
+  if (!response.ok) {
+    throw new Error(payload.error || 'Wikimedia Commons search failed.');
+  }
+  return payload.results ?? [];
 }
 
 export async function importGrabberAssetFromUrl(url: string): Promise<ImageGrabberAsset> {
