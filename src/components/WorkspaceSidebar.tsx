@@ -596,9 +596,11 @@ export function WorkspaceSidebar({
     setStatus('Rename failed');
   };
 
-  const renderRows = (items: SidebarTreeNode[]) => {
+  const renderRows = (items: SidebarTreeNode[], depth = 0) => {
     const rows = items
-      .map((item) => {
+      .map((item, index) => {
+        const isLast = index === items.length - 1;
+        const hasBranch = depth > 0;
         const fullPage = pageById.get(item.id);
         if (!fullPage) {
           return null;
@@ -620,7 +622,7 @@ export function WorkspaceSidebar({
         const moveModeClass = dragTargetMode === 'before' ? 'tree-item-drop-before' : dragTargetMode === 'after' ? 'tree-item-drop-after' : dragTargetMode === 'into' ? 'tree-item-drop-into' : '';
 
         return (
-          <li key={item.id} className="tree-item-row">
+          <li key={item.id} className={`tree-item-row ${hasBranch ? 'tree-child-row' : ''} ${isLast ? 'is-last' : 'has-next'}`}>
             <div
               className={`tree-item ${isCurrent ? 'active' : ''} ${draggingId === item.id ? 'dragging' : ''} ${isDropTarget ? `tree-item-drop ${moveModeClass}` : ''} ${recentPageId === item.id ? 'tree-item-new' : ''}`}
               draggable={!readOnly}
@@ -673,8 +675,10 @@ export function WorkspaceSidebar({
                 setDragTargetMode(null);
               }}
             >
-              <div className="tree-title-wrap">
-                {hasChildren ? (
+              <div className="tree-row-shell">
+                {hasBranch ? <span className="tree-gutter" aria-hidden="true" /> : null}
+                <div className="tree-title-wrap">
+                  {hasChildren ? (
                   <button
                     type="button"
                     className="tree-toggle"
@@ -720,6 +724,7 @@ export function WorkspaceSidebar({
                     {fullPage.title || 'Untitled'}
                   </Link>
                 )}
+                </div>
               </div>
 
               {readOnly ? null : (
@@ -774,7 +779,9 @@ export function WorkspaceSidebar({
             </div>
 
             {!isCollapsed && item.children.length > 0 ? (
-              <ul className="tree-level">{renderRows(item.children)}</ul>
+              <div className="tree-children-shell">
+                <ul className="tree-level">{renderRows(item.children, depth + 1)}</ul>
+              </div>
             ) : null}
           </li>
         );

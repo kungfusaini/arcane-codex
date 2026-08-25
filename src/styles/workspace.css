@@ -124,12 +124,66 @@
 .workspace-settings-toggle {
   width: 100%;
 }
-.tree-level { list-style: none; padding: var(--space-0); display: grid; gap: var(--space-1); }
-.tree-level .tree-level {
-  padding-inline-start: var(--space-4);
-  margin-block-start: var(--space-1);
+.tree-children-shell {
+  position: relative;
+  padding-inline-start: var(--space-1-5);
 }
-.tree-item-row,
+.tree-child-row > .tree-children-shell {
+  padding-inline-start: calc(var(--space-1-5) + var(--space-6));
+}
+.tree-level { list-style: none; margin: var(--space-0); padding: var(--space-0); display: grid; gap: var(--space-0); }
+.tree-level .tree-level {
+  padding-inline-start: var(--space-0);
+  margin-block-start: var(--space-0);
+}
+.tree-level .tree-level .tree-item {
+  min-height: 0;
+  padding-block: 0;
+}
+.tree-level .tree-level .tree-toggle,
+.tree-level .tree-level .tree-spacer {
+  min-height: 0;
+  width: var(--space-5);
+  min-width: var(--space-5);
+}
+.tree-level .tree-level .tree-title-wrap .text-link {
+  padding-block: 0;
+}
+.tree-item-row {
+  position: relative;
+  min-width: 0;
+  display: grid;
+}
+.tree-item-row.tree-child-row.has-next::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--space-1);
+  width: 1px;
+  background: var(--color-surface-muted);
+  pointer-events: none;
+}
+.tree-item-row.tree-child-row > .tree-item::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: var(--space-1);
+  width: var(--space-6);
+  height: 1px;
+  background: var(--color-surface-muted);
+  pointer-events: none;
+}
+.tree-item-row.tree-child-row.is-last > .tree-item::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 50%;
+  left: var(--space-1);
+  width: 1px;
+  background: var(--color-surface-muted);
+  pointer-events: none;
+}
 .tree-item {
   min-width: 0;
 }
@@ -138,8 +192,9 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  min-height: var(--space-8);
-  padding: var(--space-1);
+  min-height: 0;
+  padding: var(--space-0) var(--space-1);
+  line-height: 1.5;
   border-radius: var(--control-radius);
   transition: background-color var(--motion-base) var(--ease-out), transform var(--motion-base) var(--ease-out), opacity var(--motion-base) var(--ease-out);
 }
@@ -162,32 +217,57 @@
 .tree-item-drop.tree-item-drop-into {
   background: color-mix(in oklab, var(--surface-page-muted) 55%, transparent);
 }
-.tree-title-wrap {
+.tree-row-shell {
   min-width: 0;
-  display: grid;
-  grid-template-columns: var(--space-6) var(--space-6) minmax(0, 1fr);
+  display: inline-flex;
   align-items: center;
   gap: var(--space-0);
+  line-height: 1.5;
+}
+.tree-gutter {
+  width: var(--space-6);
+  min-width: var(--space-6);
+  flex: 0 0 var(--space-6);
+}
+.tree-title-wrap {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+  line-height: 1.5;
+}
+.tree-item .page-icon-glyph {
+  width: var(--space-5);
+  min-width: var(--space-5);
+  height: var(--space-5);
+  display: inline-grid;
+  place-items: center;
+  overflow: hidden;
+  flex: 0 0 auto;
+  font-size: var(--font-size-200);
+  line-height: 1;
 }
 .tree-title-wrap .text-link {
-  padding: var(--space-1);
+  padding: var(--space-0);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--font-size-200);
+  line-height: 1.5;
 }
 .tree-toggle,
 .tree-spacer {
-  width: var(--space-6);
-  min-width: var(--space-6);
-  min-height: var(--space-6);
+  width: var(--space-5);
+  min-width: var(--space-5);
+  min-height: var(--space-5);
   padding: var(--space-0);
   display: grid;
   place-items: center;
   color: var(--text-muted);
+  flex: 0 0 auto;
 }
 .tree-spacer {
-  opacity: 0;
+  display: none;
 }
 .tree-menu {
   position: relative;
