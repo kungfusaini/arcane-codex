@@ -18,8 +18,16 @@ export function getWorkspaceHomePath(pages: PageUrlPage[], basePath = '/'): stri
   return findWorkspaceHomePage(pages) ? getWorkspaceHomePathFromBase(basePath) : basePath;
 }
 
+function compareWorkspacePages(left: PageUrlPage, right: PageUrlPage): number {
+  return (left.sortKey - right.sortKey)
+    || left.title.localeCompare(right.title, undefined, { sensitivity: 'base' })
+    || left.id.localeCompare(right.id);
+}
+
 export function getWorkspaceTopLevelPages<T extends PageUrlPage>(pages: T[], homeSlug = WORKSPACE_HOME_SLUG): T[] {
-  return promoteWorkspaceHomeChildren(pages, homeSlug).filter((page) => page.parentId === null);
+  return promoteWorkspaceHomeChildren(pages, homeSlug)
+    .filter((page) => page.parentId === null)
+    .sort(compareWorkspacePages);
 }
 
 export function buildWorkspacePagePathFromPages(pageId: string, pages: PageUrlPage[], basePath = '/', homeSlug = WORKSPACE_HOME_SLUG): string {

@@ -9,6 +9,13 @@ const pages = [
   { id: 'other', parentId: null, sortKey: 2, title: 'Other', slug: 'other' },
 ];
 
+const unsortedPages = [
+  { id: 'other', parentId: null, sortKey: 3, title: 'Other', slug: 'other' },
+  { id: 'home', parentId: null, sortKey: 1, title: 'Arcane Codex', slug: 'arcane-codex' },
+  { id: 'late-child', parentId: 'home', sortKey: 2, title: 'Late child', slug: 'late-child' },
+  { id: 'early-child', parentId: 'home', sortKey: 1, title: 'Early child', slug: 'early-child' },
+];
+
 test('workspace home path points at the website root', () => {
   assert.equal(getWorkspaceHomePath(pages), '/');
   assert.equal(getWorkspaceHomePath(pages, '/published'), '/published');
@@ -50,5 +57,12 @@ test('workspace sidebar hides the home root and promotes its children', () => {
       { id: 'other', parentId: null },
       { id: 'fresh', parentId: null },
     ],
+  );
+});
+
+test('workspace top-level pages are sorted after hidden home promotion', () => {
+  assert.deepEqual(
+    getWorkspaceTopLevelPages(unsortedPages).map((page) => page.id),
+    ['early-child', 'late-child', 'other'],
   );
 });
