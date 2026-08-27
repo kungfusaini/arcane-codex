@@ -9,7 +9,7 @@ export function PageIcon({ icon, iconAssetId, fallback = '📄', className = 'pa
   if (iconAssetId) {
     return (
       <span className={`${className} has-image`} aria-hidden="true">
-        <img src={`/api/assets/${iconAssetId}`} alt="" loading="lazy" />
+        <img src={`/api/assets/${iconAssetId}?variant=icon`} alt="" loading="lazy" decoding="async" width="64" height="64" />
       </span>
     );
   }

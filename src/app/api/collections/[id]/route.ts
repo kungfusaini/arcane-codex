@@ -1,34 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { deleteCollection, getCollection, listCollectionItems, listPages, updateCollection } from '@/lib/data/storage';
-import { CollectionOptionColor, CollectionPropertyType, CollectionSchema, CollectionViews } from '@/lib/data/types';
-
-type CollectionProperty = {
-  id: string;
-  name: string;
-  type: CollectionPropertyType;
-  options?: string[];
-  optionColors?: Record<string, CollectionOptionColor>;
-};
-
-function isCollectionOptionColor(value: unknown): value is CollectionOptionColor {
-  return value === 'default' || value === 'accent' || value === 'success' || value === 'warning' || value === 'danger';
-}
-
-function normalizeOptionColors(raw: unknown, options: string[]): Record<string, CollectionOptionColor> | undefined {
-  if (!raw || typeof raw !== 'object') {
-    return undefined;
-  }
-
-  const optionSet = new Set(options);
-  const colors = Object.entries(raw as Record<string, unknown>).reduce<Record<string, CollectionOptionColor>>((next, [option, color]) => {
-    if (optionSet.has(option) && isCollectionOptionColor(color) && color !== 'default') {
-      next[option] = color;
-    }
-    return next;
-  }, {});
-
-  return Object.keys(colors).length ? colors : undefined;
-}
+import { deleteCollection, updateCollection } from '@/lib/data/storage';
+import { getCollectionDetailPayload } from '@/lib/data/collectionPayload';
+import { CollectionProperty, CollectionPropertyType, CollectionSchema, CollectionViews } from '@/lib/data/types';
 
 type CollectionPayload = {
   name?: unknown;
@@ -37,26 +10,7 @@ type CollectionPayload = {
   views?: unknown;
 };
 
-type EnrichedCollectionItem = {
-  collectionId: string;
-  pageId: string;
-  propertiesJson: string;
-  sortKey: number;
-  page: {
-    id: string;
-    parentId: string | null;
-    sortKey: number;
-    title: string;
-    icon: string | null;
-    coverAssetId: string | null;
-    contentJson: string;
-    revision: number;
-    createdAt: number;
-    updatedAt: number;
-  };
-};
-
-function parseCollectionType(candidate: unknown): CollectionPropertyType {
+function parseCollectionType(candidate: unknown): CollectionProperty['type'] {
   return candidate === 'text' ||
     candidate === 'number' ||
     candidate === 'select' ||
@@ -89,31 +43,30 @@ function parseCollectionSchema(payload: unknown): CollectionSchema {
         name?: unknown;
         type?: unknown;
         options?: unknown;
-        optionColors?: unknown;
       };
-
       if (typeof raw.id !== 'string' || typeof raw.name !== 'string') {
         return null;
       }
+      const rawType = parseCollectionType(raw.type);
 
-      const type = parseCollectionType(raw.type);
-      const options =
-        type === 'select' || type === 'multi-select'
-          ? Array.from(new Set(
-              Array.isArray(raw.options)
-                ? raw.options.map((option) => (typeof option === 'string' ? option.trim() : '')).filter(Boolean)
-                : [],
-            ))
-          : undefined;
-      return {
+      const property: CollectionProperty = {
         id: raw.id.trim(),
         name: raw.name.trim() || 'Property',
-        type,
-        options,
-        optionColors: options ? normalizeOptionColors(raw.optionColors, options) : undefined,
-      } as CollectionProperty;
+        type: rawType as CollectionPropertyType,
+      };
+
+      if (rawType === 'select' || rawType === 'multi-select') {
+        const options = Array.isArray(raw.options)
+          ? raw.options
+              .map((option) => (typeof option === 'string' ? option.trim() : ''))
+              .filter(Boolean)
+          : [];
+        property.options = [...new Set(options)];
+      }
+
+      return property;
     })
-    .filter((property): property is CollectionProperty => Boolean(property));
+    .filter(Boolean) as CollectionProperty[];
 
   return { properties };
 }
@@ -159,194 +112,20 @@ function parseCollectionViews(payload: unknown): CollectionViews {
   };
 }
 
-function parseProperties(raw: string): Record<string, unknown> {
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (parsed && typeof parsed === 'object') {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    // ignore parsing errors
-  }
-  return {};
-}
-
-function normalizeText(value: unknown): string {
-  if (value == null) {
-    return '';
-  }
-  if (typeof value === 'string') {
-    return value;
-  }
-  return String(value);
-}
-
-function normalizeNumber(value: unknown): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : Number.NaN;
-}
-
-function compareItems(
-  a: EnrichedCollectionItem,
-  b: EnrichedCollectionItem,
-  property?: string,
-  direction: 'asc' | 'desc' = 'asc',
-  properties: CollectionProperty[] = [],
-): number {
-  const aProps = parseProperties(a.propertiesJson);
-  const bProps = parseProperties(b.propertiesJson);
-  const reverse = direction === 'desc' ? -1 : 1;
-
-  if (property === 'title') {
-    return a.page.title.localeCompare(b.page.title) * reverse;
-  }
-
-  const definition = properties.find((entry) => entry.id === property);
-  if (!definition) {
-    return a.sortKey > b.sortKey ? reverse : a.sortKey < b.sortKey ? -reverse : 0;
-  }
-
-  if (definition.type === 'number') {
-    const aNumber = normalizeNumber(aProps[definition.id]);
-    const bNumber = normalizeNumber(bProps[definition.id]);
-    if (Number.isNaN(aNumber) && Number.isNaN(bNumber)) {
-      return 0;
-    }
-    if (Number.isNaN(aNumber)) {
-      return 1;
-    }
-    if (Number.isNaN(bNumber)) {
-      return -1;
-    }
-    return (aNumber - bNumber) * reverse;
-  }
-
-  if (definition.type === 'checkbox') {
-    const aFlag = Boolean(aProps[definition.id]);
-    const bFlag = Boolean(bProps[definition.id]);
-    if (aFlag === bFlag) {
-      return 0;
-    }
-    return (aFlag ? 1 : -1) * reverse;
-  }
-
-  if (definition.type === 'date') {
-    const aDate = Date.parse(normalizeText(aProps[definition.id]));
-    const bDate = Date.parse(normalizeText(bProps[definition.id]));
-    if (Number.isNaN(aDate) && Number.isNaN(bDate)) {
-      return 0;
-    }
-    if (Number.isNaN(aDate)) {
-      return 1;
-    }
-    if (Number.isNaN(bDate)) {
-      return -1;
-    }
-    return (aDate - bDate) * reverse;
-  }
-
-  return normalizeText(aProps[definition.id]).localeCompare(normalizeText(bProps[definition.id])) * reverse;
-}
-
-function applyFilter(items: EnrichedCollectionItem[], propertyId: string | null, query: string): EnrichedCollectionItem[] {
-  const trimmed = query.trim().toLowerCase();
-  if (!propertyId || !trimmed) {
-    return items;
-  }
-
-  return items.filter((item) => {
-    const properties = parseProperties(item.propertiesJson);
-    const raw = properties[propertyId];
-
-    if (Array.isArray(raw)) {
-      return raw.join(',').toLowerCase().includes(trimmed);
-    }
-
-    const text = normalizeText(raw).toLowerCase();
-    return text.includes(trimmed);
-  });
-}
-
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  const collection = getCollection(params.id);
-  if (!collection) {
+  const { searchParams } = new URL(request.url);
+  const payload = getCollectionDetailPayload(params.id, {
+    sortBy: searchParams.get('sortBy') || 'sortKey',
+    direction: searchParams.get('direction') === 'desc' ? 'desc' : 'asc',
+    filterBy: searchParams.get('filterBy'),
+    filterQuery: searchParams.get('filterQuery') || '',
+  });
+
+  if (!payload) {
     return NextResponse.json({ error: 'Collection not found' }, { status: 404 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const sortBy = searchParams.get('sortBy') || 'sortKey';
-  const direction = searchParams.get('direction') === 'desc' ? 'desc' : 'asc';
-  const filterBy = searchParams.get('filterBy');
-  const filterQuery = searchParams.get('filterQuery') || '';
-
-  const allPages = listPages();
-  const pageById = new Map(allPages.map((page) => [page.id, page]));
-
-  const items = listCollectionItems(params.id)
-    .map((item) => {
-      const page = pageById.get(item.pageId);
-      if (!page || page.deletedAt !== null) {
-        return null;
-      }
-
-      return {
-        ...item,
-        page: {
-          id: page.id,
-          parentId: page.parentId,
-          sortKey: page.sortKey,
-          title: page.title,
-          icon: page.icon,
-          coverAssetId: page.coverAssetId,
-          contentJson: page.contentJson,
-          revision: page.revision,
-          createdAt: page.createdAt,
-          updatedAt: page.updatedAt,
-        },
-      } satisfies EnrichedCollectionItem;
-    })
-    .filter((item): item is EnrichedCollectionItem => Boolean(item));
-
-  let ordered = [...items];  let parsedSchema: CollectionSchema;
-  try {
-    parsedSchema = JSON.parse(collection.schemaJson) as CollectionSchema;
-  } catch {
-    parsedSchema = { properties: [] };
-  }
-
-  if (filterBy) {
-    ordered = applyFilter(ordered, filterBy, filterQuery);
-  }
-
-  if (sortBy) {
-    ordered.sort((a, b) => compareItems(a, b, sortBy, direction, parsedSchema.properties));
-  } else {
-    ordered.sort((a, b) => a.sortKey - b.sortKey);
-  }
-
-  const joinedPageIds = new Set(items.map((item) => item.pageId));
-  const availablePages = allPages.filter((page) => !joinedPageIds.has(page.id));
-  const hostPage = collection.hostPageId
-    ? (() => {
-        const page = pageById.get(collection.hostPageId);
-        return page
-          ? {
-              id: page.id,
-              parentId: page.parentId,
-              sortKey: page.sortKey,
-              title: page.title,
-              icon: page.icon,
-              coverAssetId: page.coverAssetId,
-              coverFocalX: page.coverFocalX,
-              coverFocalY: page.coverFocalY,
-              coverScale: page.coverScale,
-              contentJson: page.contentJson,
-            }
-          : null;
-      })()
-    : null;
-
-  return NextResponse.json({ collection, hostPage, items: ordered, availablePages, schema: parsedSchema, views: collection.viewsJson });
+  return NextResponse.json(payload);
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {

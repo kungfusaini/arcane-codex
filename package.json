@@ -19,6 +19,7 @@
     "test:unit": "tsx --test --test-concurrency=1 tests/storage.test.ts tests/assets.test.ts tests/export.test.ts tests/recovery.test.ts",
     "typecheck": "tsc --noEmit",
     "test:browser": "npm run build && playwright test",
+    "assets:prewarm-icons": "tsx scripts/prewarm-icon-derivatives.ts",
     "import:hugo-blog": "tsx scripts/import-hugo-blog.ts"
   },
   "dependencies": {
@@ -29,7 +30,8 @@
     "emoji-mart": "5.6.0",
     "next": "^14.2.24",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "sharp": "^0.35.4"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

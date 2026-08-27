@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import { PageIcon } from '@/components/PageIcon';
 import { PublishMediaTrigger } from '@/components/PublishMediaModal';
 import { useDismissibleDetails } from '@/components/useDismissibleDetails';
 import type { PageUrlPage } from '@/lib/pageUrls';
@@ -48,6 +49,7 @@ type PageForSelector = {
   sortKey: number;
   title: string;
   icon: string | null;
+  iconAssetId: string | null;
   coverAssetId: string | null;
 };
 
@@ -55,7 +57,7 @@ type HostPage = PageForSelector & {
   coverFocalX: number;
   coverFocalY: number;
   coverScale: number;
-  contentJson: string;
+  previewText: string;
 };
 
 type CollectionItem = {
@@ -69,8 +71,9 @@ type CollectionItem = {
     sortKey: number;
     title: string;
     icon: string | null;
+    iconAssetId: string | null;
     coverAssetId: string | null;
-    contentJson: string;
+    firstImageUrl: string | null;
   };
 };
 
@@ -101,12 +104,13 @@ type ResponsePayload = {
       parentId: string | null;
       sortKey: number;
       revision: number;
-      contentJson: string;
       createdAt: number;
       updatedAt: number;
       deletedAt: number | null;
     }
   >;
+  schema?: CollectionSchema;
+  views?: string;
 };
 
 const PROPERTY_TYPES: Array<{ value: CollectionPropertyType; label: string }> = [
@@ -411,154 +415,8 @@ function compareValues(type: CollectionPropertyType | 'title', aRaw: unknown, bR
   return aText.localeCompare(bText) * order;
 }
 
-function getFirstImageUrl(page: { coverAssetId: string | null; contentJson: string }): string | null {
-  if (page.coverAssetId) {
-    return `/api/assets/${page.coverAssetId}`;
-  }
-
-  if (!page.contentJson) {
-    return null;
-  }
-
-  try {
-    const content = JSON.parse(page.contentJson) as unknown;
-    const walk = (node: unknown): string | null => {
-      if (!node || typeof node !== 'object') {
-        return null;
-      }
-
-      if (Array.isArray(node)) {
-        for (const child of node) {
-          const found = walk(child);
-          if (found) {
-            return found;
-          }
-        }
-      } else {
-        const record = node as {
-          type?: unknown;
-          props?: { url?: unknown; fileUrl?: unknown; source?: unknown; images?: unknown };
-          children?: unknown;
-          content?: unknown;
-        };
-
-        if (record.type === 'gallery' && typeof record.props?.images === 'string') {
-          try {
-            const images = JSON.parse(record.props.images) as unknown;
-            if (Array.isArray(images)) {
-              const firstImage = images.find((item) => item && typeof item === 'object' && typeof (item as { url?: unknown }).url === 'string') as { url?: string } | undefined;
-              if (firstImage?.url) {
-                return firstImage.url;
-              }
-            }
-          } catch {
-            // Ignore malformed gallery props and keep walking.
-          }
-        }
-
-        if (record.type === 'image') {
-          const candidate =
-            (typeof record.props?.url === 'string' ? record.props.url : undefined) ||
-            (typeof record.props?.fileUrl === 'string' ? record.props.fileUrl : undefined) ||
-            (typeof record.props?.source === 'string' ? record.props.source : undefined);
-          if (candidate) {
-            return candidate;
-          }
-        }
-
-        if (record.children !== undefined) {
-          const fromChildren = walk(record.children);
-          if (fromChildren) {
-            return fromChildren;
-          }
-        }
-
-        if (record.content !== undefined) {
-          const fromContent = walk(record.content);
-          if (fromContent) {
-            return fromContent;
-          }
-        }
-      }
-
-      return null;
-    };
-
-    return walk(content) || null;
-  } catch {
-    return null;
-  }
-}
-
-function getContentPreview(contentJson: string): string {
-  if (!contentJson) {
-    return '';
-  }
-
-  try {
-    const content = JSON.parse(contentJson) as unknown;
-    const pieces: string[] = [];
-    const walk = (node: unknown): void => {
-      if (pieces.length >= 2 || !node || typeof node !== 'object') {
-        return;
-      }
-
-      if (Array.isArray(node)) {
-        for (const child of node) {
-          walk(child);
-          if (pieces.length >= 2) {
-            break;
-          }
-        }
-        return;
-      }
-
-      const record = node as {
-        type?: unknown;
-        content?: unknown;
-        children?: unknown;
-      };
-
-      if (record.type === 'paragraph' || record.type === 'quote' || record.type === 'heading') {
-        const text = collectInlineText(record.content);
-        if (text) {
-          pieces.push(text);
-        }
-      }
-
-      if (record.children !== undefined) {
-        walk(record.children);
-      }
-      if (record.content !== undefined) {
-        walk(record.content);
-      }
-    };
-
-    const collectInlineText = (value: unknown): string => {
-      if (typeof value === 'string') {
-        return value;
-      }
-      if (!Array.isArray(value)) {
-        return '';
-      }
-      return value
-        .map((item) => {
-          if (!item || typeof item !== 'object') {
-            return '';
-          }
-          const text = (item as { text?: unknown }).text;
-          return typeof text === 'string' ? text : '';
-        })
-        .join('')
-        .replace(/\s+/g, ' ')
-        .trim();
-    };
-
-    walk(content);
-    return pieces.join(' ');
-  } catch {
-    return '';
-  }
+function getFirstImageUrl(page: { coverAssetId: string | null; firstImageUrl: string | null }): string | null {
+  return page.firstImageUrl ?? (page.coverAssetId ? `/api/assets/${page.coverAssetId}` : null);
 }
 
 function filterItems(items: CollectionItem[], propertyId: string, query: string): CollectionItem[] {
@@ -884,16 +742,34 @@ function renderFocusedPropertyValue(property: CollectionProperty, value: unknown
   return property.type === 'url' ? <a href={text} className="text-link collection-readonly-value" target="_blank" rel="noreferrer">{normalizeUrl(text)}</a> : <span className="collection-readonly-value">{text}</span>;
 }
 
-export function CollectionEditor({ collectionId, embedded = false, focusPageId, readOnly = false, pageRouteBasePath = '/' }: { collectionId: string; embedded?: boolean; focusPageId?: string; readOnly?: boolean; pageRouteBasePath?: string }) {
+function getPayloadState(payload?: ResponsePayload | null) {
+  const parsedSchema = payload?.schema ?? (payload ? parseSchema(payload.collection.schemaJson) : { properties: [] });
+  const parsedViews = payload ? parseViews(payload.views ?? payload.collection.viewsJson) : { mode: 'table' as const };
+  return {
+    collection: payload?.collection ?? null,
+    schema: parsedSchema,
+    views: parsedViews,
+    items: payload?.items ?? [],
+    availablePages: payload?.availablePages ?? [],
+    hostPage: payload?.hostPage ?? null,
+    sortBy: parsedViews.sort?.propertyId ?? 'sortKey',
+    sortDirection: parsedViews.sort?.direction ?? 'asc',
+    filterBy: parsedViews.filter?.propertyId ?? '',
+    filterQuery: parsedViews.filter?.query ?? '',
+  };
+}
+
+export function CollectionEditor({ collectionId, embedded = false, focusPageId, readOnly = false, pageRouteBasePath = '/', initialPayload = null }: { collectionId: string; embedded?: boolean; focusPageId?: string; readOnly?: boolean; pageRouteBasePath?: string; initialPayload?: ResponsePayload | null }) {
   useDismissibleDetails('.add-entry-menu, .row-menu');
 
-  const [collection, setCollection] = useState<CollectionRecord | null>(null);
-  const [schema, setSchema] = useState<CollectionSchema>({ properties: [] });
-  const [views, setViews] = useState<CollectionViews>({ mode: 'table' });
-  const [items, setItems] = useState<CollectionItem[]>([]);
-  const [availablePages, setAvailablePages] = useState<PageForSelector[]>([]);
-  const [hostPage, setHostPage] = useState<HostPage | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const initialState = useMemo(() => getPayloadState(initialPayload), [initialPayload]);
+  const [collection, setCollection] = useState<CollectionRecord | null>(initialState.collection);
+  const [schema, setSchema] = useState<CollectionSchema>(initialState.schema);
+  const [views, setViews] = useState<CollectionViews>(initialState.views);
+  const [items, setItems] = useState<CollectionItem[]>(initialState.items);
+  const [availablePages, setAvailablePages] = useState<PageForSelector[]>(initialState.availablePages);
+  const [hostPage, setHostPage] = useState<HostPage | null>(initialState.hostPage);
+  const [isLoading, setIsLoading] = useState(!initialPayload);
   const [status, setStatus] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [cellStates, setCellStates] = useState<Record<string, 'saving' | 'error'>>({});
@@ -908,10 +784,10 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
   const [newPageTitle, setNewPageTitle] = useState('');
   const [existingPageId, setExistingPageId] = useState('');
 
-  const [filterBy, setFilterBy] = useState('');
-  const [filterQuery, setFilterQuery] = useState('');
-  const [sortBy, setSortBy] = useState('sortKey');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [filterBy, setFilterBy] = useState(initialState.filterBy);
+  const [filterQuery, setFilterQuery] = useState(initialState.filterQuery);
+  const [sortBy, setSortBy] = useState(initialState.sortBy);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(initialState.sortDirection);
 
   const loadCollection = useCallback(async () => {
     setIsLoading(true);
@@ -922,9 +798,9 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
         return;
       }
 
-      const payload = (await response.json()) as ResponsePayload & { schema: CollectionSchema };
-      const parsedSchema = parseSchema(payload.collection.schemaJson);
-      const parsedViews = parseViews(payload.collection.viewsJson);
+      const payload = (await response.json()) as ResponsePayload;
+      const parsedSchema = payload.schema ?? parseSchema(payload.collection.schemaJson);
+      const parsedViews = parseViews(payload.views ?? payload.collection.viewsJson);
       const shouldSeedBooksSchema = isBooksCollectionName(payload.collection.name) && parsedSchema.properties.length === 0;
 
       if (shouldSeedBooksSchema && !readOnly) {
@@ -954,8 +830,25 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
   }, [collectionId, readOnly]);
 
   useEffect(() => {
+    if (initialPayload) {
+      const nextState = getPayloadState(initialPayload);
+      setCollection(nextState.collection);
+      setSchema(nextState.schema);
+      setViews(nextState.views);
+      setItems(nextState.items);
+      setAvailablePages(nextState.availablePages);
+      setHostPage(nextState.hostPage);
+      setSortBy(nextState.sortBy);
+      setSortDirection(nextState.sortDirection);
+      setFilterBy(nextState.filterBy);
+      setFilterQuery(nextState.filterQuery);
+      setIsLoading(false);
+      setStatus('');
+      return;
+    }
+
     void loadCollection();
-  }, [loadCollection]);
+  }, [initialPayload, loadCollection]);
 
   const setStatusTemporarily = useCallback((message: string) => {
     setStatus(message);
@@ -1418,7 +1311,7 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
     });
   }, [filtered, searchQuery]);
   const ordered = useMemo(() => sortItems(searched, schema, sortBy, sortDirection), [searched, schema, sortBy, sortDirection]);
-  const hostPagePreview = hostPage ? getContentPreview(hostPage.contentJson) : '';
+  const hostPagePreview = hostPage?.previewText ?? '';
   const focusedItem = useMemo(
     () => (embedded && focusPageId ? items.find((item) => item.pageId === focusPageId) ?? null : null),
     [embedded, focusPageId, items],
@@ -1453,6 +1346,7 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
     ? schema.properties.filter((property) => slugifyPropertyName(property.name) !== 'summary')
     : schema.properties;
   const showFocusedItem = embedded && focusPageId !== undefined;
+  const showRowActions = !readOnly && !embedded;
 
   return (
     <div className={`collection-workspace ${hostPage ? 'has-host-page' : ''} ${isBooksCollection ? 'is-books-collection' : ''} ${embedded ? 'is-embedded' : ''}`}>
@@ -1478,7 +1372,7 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
           <header className={`collection-host-identity ${hostPage.coverAssetId ? 'has-cover' : ''}`}>
             <span className="collection-host-icon" aria-hidden="true">{hostPage.icon ?? '📄'}</span>
             <div className="collection-host-copy">
-              <Link href={buildWorkspacePagePathFromPages(hostPage.id, pageUrlPages, pageRouteBasePath)} className="text-link collection-host-title">{hostPage.title || 'Untitled'}</Link>
+              <Link href={buildWorkspacePagePathFromPages(hostPage.id, pageUrlPages, pageRouteBasePath)} className="page-link-block collection-host-title">{hostPage.title || 'Untitled'}<span className="page-link-arrow" aria-hidden="true">↗</span></Link>
               <p className="collection-host-description">{hostPagePreview || 'Read books imported from the Notion export.'}</p>
             </div>
           </header>
@@ -1600,8 +1494,8 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
                   )}
                   <div className="collection-card-body">
                     <div className="collection-card-title-row">
-                      <Link href={buildWorkspacePagePathFromPages(item.pageId, pageUrlPages, pageRouteBasePath)} className="text-link collection-page-title">{item.page.icon ? <span>{item.page.icon} </span> : null}{item.page.title || 'Untitled'}</Link>
-                      {readOnly ? null : <details className="row-menu"><summary aria-label={`Actions for ${item.page.title}`}>•••</summary><div><button type="button" onClick={() => void reorderEntry(item.pageId, 'up')}>Move up</button><button type="button" onClick={() => void reorderEntry(item.pageId, 'down')}>Move down</button><button type="button" className="danger-action" onClick={() => void removeEntry(item.pageId)}>Remove</button></div></details>}
+                      <Link href={buildWorkspacePagePathFromPages(item.pageId, pageUrlPages, pageRouteBasePath)} className="page-link-block collection-page-title"><PageIcon className="page-link-icon" icon={item.page.icon} iconAssetId={item.page.iconAssetId} /><span className="page-link-title">{item.page.title || 'Untitled'}<span className="page-link-arrow" aria-hidden="true">↗</span></span></Link>
+                      {showRowActions ? <details className="row-menu"><summary aria-label={`Actions for ${item.page.title}`}>•••</summary><div><button type="button" onClick={() => void reorderEntry(item.pageId, 'up')}>Move up</button><button type="button" onClick={() => void reorderEntry(item.pageId, 'down')}>Move down</button><button type="button" className="danger-action" onClick={() => void removeEntry(item.pageId)}>Remove</button></div></details> : null}
                     </div>
                     {schema.properties.length ? <div className="collection-properties-grid">{schema.properties.slice(0, 4).map((property) => <div key={property.id}>{renderGalleryProperty(property, values[property.id])}</div>)}</div> : <p className="help">No properties configured.</p>}
                   </div>
@@ -1612,7 +1506,7 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
         ) : (
           <section className="collection-table-wrap">
             <table className="collection-table">
-              <thead><tr><th className="collection-title-column"><span className="property-icon" aria-hidden="true">Aa</span> Name</th>{tableProperties.map((property) => <th key={property.id} className={`collection-property-column collection-property-${property.type} collection-property-${slugifyPropertyName(property.name)}`} data-tone={getPropertyTone(property)}><span className="property-icon" aria-hidden="true">{PROPERTY_ICONS[property.type]}</span> {getDisplayPropertyName(property, isBooksCollection)}</th>)}{readOnly ? null : <th className="collection-actions-column"><span className="visually-hidden">Actions</span></th>}</tr></thead>
+              <thead><tr><th className="collection-title-column"><span className="property-icon" aria-hidden="true">Aa</span> Name</th>{tableProperties.map((property) => <th key={property.id} className={`collection-property-column collection-property-${property.type} collection-property-${slugifyPropertyName(property.name)}`} data-tone={getPropertyTone(property)}><span className="property-icon" aria-hidden="true">{PROPERTY_ICONS[property.type]}</span> {getDisplayPropertyName(property, isBooksCollection)}</th>)}{showRowActions ? <th className="collection-actions-column"><span className="visually-hidden">Actions</span></th> : null}</tr></thead>
               <tbody>{ordered.map((item, itemIndex) => {
                 const properties = parseProperties(item.propertiesJson);
                 return <tr
@@ -1620,7 +1514,7 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
                   className="collection-row"
                   style={{ '--motion-stagger-index': `${Math.min(itemIndex, MAX_COLLECTION_STAGGER_INDEX)}` } as CSSProperties}
                 >
-                  <td className="collection-title-cell"><Link href={buildWorkspacePagePathFromPages(item.pageId, pageUrlPages, pageRouteBasePath)} className="text-link collection-page-title">{item.page.icon ? <span>{item.page.icon} </span> : null}{item.page.title || 'Untitled'}</Link></td>
+                  <td className="collection-title-cell"><Link href={buildWorkspacePagePathFromPages(item.pageId, pageUrlPages, pageRouteBasePath)} className="page-link-block collection-page-title"><PageIcon className="page-link-icon" icon={item.page.icon} iconAssetId={item.page.iconAssetId} /><span className="page-link-title">{item.page.title || 'Untitled'}<span className="page-link-arrow" aria-hidden="true">↗</span></span></Link></td>
                   {tableProperties.map((property) => {
                     const cellKey = `${item.pageId}:${property.id}`;
                     const cellState = cellStates[cellKey];
@@ -1629,7 +1523,7 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
                       {!readOnly && cellState ? <span className="cell-state" role={cellState === 'error' ? 'alert' : 'status'}>{cellState === 'saving' ? 'Saving' : 'Not saved'}</span> : null}
                     </td>;
                   })}
-                  {readOnly ? null : <td><details className="row-menu"><summary aria-label={`Actions for ${item.page.title}`}>•••</summary><div><button type="button" onClick={() => void reorderEntry(item.pageId, 'up')}>Move up</button><button type="button" onClick={() => void reorderEntry(item.pageId, 'down')}>Move down</button><button type="button" className="danger-action" onClick={() => void removeEntry(item.pageId)}>Remove</button></div></details></td>}
+                  {showRowActions ? <td><details className="row-menu"><summary aria-label={`Actions for ${item.page.title}`}>•••</summary><div><button type="button" onClick={() => void reorderEntry(item.pageId, 'up')}>Move up</button><button type="button" onClick={() => void reorderEntry(item.pageId, 'down')}>Move down</button><button type="button" className="danger-action" onClick={() => void removeEntry(item.pageId)}>Remove</button></div></details></td> : null}
                 </tr>;
               })}</tbody>
             </table>

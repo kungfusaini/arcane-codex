@@ -1,4 +1,5 @@
 import { CollectionWorkspace } from '@/components/CollectionWorkspace';
+import { getCollectionDetailPayload } from '@/lib/data/collectionPayload';
 import { listPageSummaries } from '@/lib/data/storage';
 import { isPublishedAppSurface } from '@/lib/surface';
 
@@ -19,9 +20,11 @@ export default function CollectionRoute({ params }: { params: RouteParams }) {
     iconAssetId: page.iconAssetId,
     revision: page.revision,
   }));
+  const initialCollectionPayload = getCollectionDetailPayload(params.collectionId);
+
   if (isPublishedAppSurface()) {
-    return <CollectionWorkspace collectionId={params.collectionId} initialPages={initialPages} readOnly pageRouteBasePath="/" collectionHomePath="/collections" homePath="/" />;
+    return <CollectionWorkspace collectionId={params.collectionId} initialPages={initialPages} initialCollectionPayload={initialCollectionPayload} readOnly pageRouteBasePath="/" collectionHomePath="/collections" homePath="/" />;
   }
 
-  return <CollectionWorkspace collectionId={params.collectionId} initialPages={initialPages} />;
+  return <CollectionWorkspace collectionId={params.collectionId} initialPages={initialPages} initialCollectionPayload={initialCollectionPayload} />;
 }
