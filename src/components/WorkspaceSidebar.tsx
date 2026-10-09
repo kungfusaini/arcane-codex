@@ -51,6 +51,35 @@ type ReorderMove = {
 type DropMode = 'before' | 'after' | 'into';
 
 const SEARCH_PLACEHOLDER = 'Search pages';
+const SIDEBAR_EXPANDED_PAGES_STORAGE_PREFIX = 'arcane-sidebar-expanded-pages';
+
+function getSidebarExpandedPagesStorageKey(pageRouteBasePath: string): string {
+  return `${SIDEBAR_EXPANDED_PAGES_STORAGE_PREFIX}:${pageRouteBasePath || '/'}`;
+}
+
+function readExpandedPageIds(storageKey: string): Set<string> {
+  try {
+    const stored = window.localStorage.getItem(storageKey);
+    if (!stored) {
+      return new Set();
+    }
+    const parsed = JSON.parse(stored) as unknown;
+    if (!Array.isArray(parsed)) {
+      return new Set();
+    }
+    return new Set(parsed.filter((item): item is string => typeof item === 'string'));
+  } catch {
+    return new Set();
+  }
+}
+
+function writeExpandedPageIds(storageKey: string, expandedPageIds: Set<string>) {
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(Array.from(expandedPageIds)));
+  } catch {
+    // Sidebar disclosure state is a per-browser enhancement; keep navigation usable if storage is unavailable.
+  }
+}
 
 function getAllPagesForParent(options: SidebarPage[], parentId: string | null): SidebarPage[] {
   return options
@@ -142,7 +171,7 @@ export function WorkspaceSidebar({
   const [query, setQuery] = useState('');
   const [isLoading, setLoading] = useState(initialPages.length === 0);
   const [status, setStatus] = useState('');
-  const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(new Set());
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -157,6 +186,12 @@ export function WorkspaceSidebar({
   const searchRef = useRef<HTMLInputElement | null>(null);
   const navToggleRef = useRef<HTMLButtonElement | null>(null);
   const focusSearchOnOpenRef = useRef(false);
+  const sidebarExpansionStorageKey = useMemo(() => getSidebarExpandedPagesStorageKey(pageRouteBasePath), [pageRouteBasePath]);
+
+  const persistExpandedNodes = useCallback((nextExpandedNodes: Set<string>) => {
+    setExpandedNodes(nextExpandedNodes);
+    writeExpandedPageIds(sidebarExpansionStorageKey, nextExpandedNodes);
+  }, [sidebarExpansionStorageKey]);
 
   const fetchPages = useCallback(async () => {
     setLoading(true);
@@ -202,6 +237,10 @@ export function WorkspaceSidebar({
       });
     }
   }, []);
+
+  useEffect(() => {
+    setExpandedNodes(readExpandedPageIds(sidebarExpansionStorageKey));
+  }, [sidebarExpansionStorageKey]);
 
   useEffect(() => {
     const storedRailState = window.localStorage.getItem('arcane-sidebar-collapsed');
@@ -523,6 +562,11 @@ export function WorkspaceSidebar({
         throw new Error(payload.error || 'Page could not be created.');
       }
       await fetchPages();
+      if (parentId) {
+        const nextExpandedNodes = new Set(expandedNodes);
+        nextExpandedNodes.add(parentId);
+        persistExpandedNodes(nextExpandedNodes);
+      }
       onCreated(payload.page);
       setRecentPageId(payload.page.id);
       window.setTimeout(() => {
@@ -606,8 +650,8 @@ export function WorkspaceSidebar({
           return null;
         }
 
-        const isCollapsed = collapsedNodes.has(item.id);
         const hasChildren = item.children.length > 0;
+        const isCollapsed = !query.trim() && hasChildren && !expandedNodes.has(item.id);
         const isCurrent = currentPageId === item.id;
         const childrenIds = getDescendantIds(item.id, childrenByParent);
         const potentialParents = pages.filter((page) => {
@@ -683,14 +727,15 @@ export function WorkspaceSidebar({
                     type="button"
                     className="tree-toggle"
                     onClick={() => {
-                      const next = new Set(collapsedNodes);
+                      const next = new Set(expandedNodes);
                       if (next.has(item.id)) {
                         next.delete(item.id);
                       } else {
                         next.add(item.id);
                       }
-                      setCollapsedNodes(next);
+                      persistExpandedNodes(next);
                     }}
+                    aria-expanded={!isCollapsed}
                     aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${item.title}`}
                   >
                     {isCollapsed ? '+' : '−'}

@@ -3,28 +3,38 @@ import path from 'node:path';
 import sharp from 'sharp';
 import { getWorkspaceAssetsDir } from './workspace';
 
-export const ICON_VARIANT_SIZE = 64;
-export const ICON_VARIANT_QUALITY = 82;
+export type AssetImageVariant = 'icon' | 'page-icon';
+
+const IMAGE_VARIANTS: Record<AssetImageVariant, { size: number; quality: number; suffix: string }> = {
+  icon: { size: 64, quality: 82, suffix: 'icon' },
+  'page-icon': { size: 192, quality: 86, suffix: 'page-icon' },
+};
+
 export const ICON_VARIANT_DIR = '.derivatives';
 
 export function getAssetFilePath(asset: { id: string; filename: string }, dataDir?: string): string {
   return path.join(getWorkspaceAssetsDir(dataDir), `${asset.id}${path.extname(asset.filename)}`);
 }
 
-export function getIconVariantPath(assetId: string, dataDir?: string): string {
-  return path.join(getWorkspaceAssetsDir(dataDir), ICON_VARIANT_DIR, `${assetId}-icon.webp`);
+export function getImageVariantConfig(variant: AssetImageVariant) {
+  return IMAGE_VARIANTS[variant];
 }
 
-export async function ensureIconVariant(originalPath: string, variantPath: string): Promise<boolean> {
+export function getIconVariantPath(assetId: string, dataDir?: string, variant: AssetImageVariant = 'icon'): string {
+  return path.join(getWorkspaceAssetsDir(dataDir), ICON_VARIANT_DIR, `${assetId}-${IMAGE_VARIANTS[variant].suffix}.webp`);
+}
+
+export async function ensureIconVariant(originalPath: string, variantPath: string, variant: AssetImageVariant = 'icon'): Promise<boolean> {
   if (existsSync(variantPath)) {
     return false;
   }
 
+  const config = IMAGE_VARIANTS[variant];
   mkdirSync(path.dirname(variantPath), { recursive: true });
   const tempPath = `${variantPath}.${process.pid}.${Date.now()}.tmp`;
   await sharp(originalPath, { animated: false })
-    .resize(ICON_VARIANT_SIZE, ICON_VARIANT_SIZE, { fit: 'cover', position: 'centre' })
-    .webp({ quality: ICON_VARIANT_QUALITY })
+    .resize(config.size, config.size, { fit: 'cover', position: 'centre' })
+    .webp({ quality: config.quality })
     .toFile(tempPath);
 
   try {

@@ -35,7 +35,7 @@ typography:
     lineHeight: 1.2
   title:
     fontFamily: "Arcane ProFont, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
-    fontSize: 27.2px
+    fontSize: 40.8px
     fontWeight: 700
     lineHeight: 1.08
     letterSpacing: -0.03em
@@ -166,7 +166,7 @@ The theme contract covers the app shell, sidebar/tree navigation, document/page/
 
 ## Typography
 
-Use Arcane ProFont throughout navigation, titles, editing, and collections. Hierarchy comes from weight, density, and placement rather than a contrasting display face. Page titles use the scale; controls never invent smaller or larger one-off sizes.
+Use Arcane ProFont throughout navigation, titles, editing, and collections. Hierarchy comes from weight, density, and placement rather than a contrasting display face. Page titles use the `--font-size-page-title` token, which aliases the h1 scale, so page titles never render smaller than h1; controls never invent smaller or larger one-off sizes.
 
 ## Layout
 

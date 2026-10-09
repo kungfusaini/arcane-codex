@@ -229,9 +229,18 @@ export function CollectionsIndex({
           });
         }}
       />
-      <main className="main-column collections-index-main">
-        <section className="collections-index">
-          <header className="index-header">
+      <main className="main-column page-main">
+        <section className="document-shell" aria-live="polite">
+          <header className="document-topbar">
+            <nav className="breadcrumbs" aria-label="Breadcrumbs">
+              <Link className="text-link" href={getWorkspaceHomePathFromBase(pageRouteBasePath)}>Workspace</Link>
+              <span className="breadcrumb-separator" aria-hidden="true">/</span>
+              <span>Collections</span>
+            </nav>
+          </header>
+          <div className="document-content">
+            <section className="collections-index">
+              <header className="index-header">
             <div>
               <p className="eyebrow">Structured knowledge</p>
               <h1>Collections</h1>
@@ -326,6 +335,8 @@ export function CollectionsIndex({
           ) : (
             <div className="collection-state"><h2>No collections yet</h2><p className="help">Create one when a set of pages needs shared properties.</p></div>
           )}
+            </section>
+          </div>
         </section>
       </main>
     </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { type ClipboardEvent, type CSSProperties, FormEvent, useEffect, useRef, useState } from 'react';
+import { type ClipboardEvent, type CSSProperties, FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { extractGrabberPaste, ImageGrabberPanel, ImageGrabberPromptForm, ImageGrabberUploadButton, ImageGrabberUrlForm, WikimediaCommonsSearch } from '@/components/ImageGrabberControls';
 import { ImageGrabberPopup, ImagePopupSection } from '@/components/ImageGrabberPopup';
 
@@ -9,7 +9,7 @@ type EmojiSelection = {
 };
 
 type GeneratedIconPayload = {
-  asset?: { id: string };
+  asset?: { id: string; filename?: string; mimeType?: string; sha256?: string; size?: number; width?: number | null; height?: number | null; prompt?: string | null; createdAt?: number };
   error?: string;
 };
 
@@ -18,7 +18,7 @@ type PageEmojiPickerProps = {
   currentIcon: string | null;
   currentIconAssetId: string | null;
   onSelect: (emoji: string) => void;
-  onSelectAsset: (assetId: string) => void;
+  onSelectAsset: (assetId: string, asset?: NonNullable<GeneratedIconPayload['asset']>) => void;
   onUploadIconFile: (file: File) => Promise<void>;
   onImportIconUrl: (url: string) => Promise<void>;
   onImportIconCommons: (result: { imageUrl: string }) => Promise<void>;
@@ -30,12 +30,12 @@ type PageEmojiPickerProps = {
 
 export function PageEmojiPicker({ pageId, currentIcon, currentIconAssetId, onSelect, onSelectAsset, onUploadIconFile, onImportIconUrl, onImportIconCommons, onRemove, onClose, onPromptChange, style }: PageEmojiPickerProps) {
   const rootRef = useRef<HTMLElement>(null);
-  const hostRef = useRef<HTMLDivElement>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const selectRef = useRef(onSelect);
   const assetSelectRef = useRef(onSelectAsset);
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const [hostNode, setHostNode] = useState<HTMLDivElement | null>(null);
   const [prompt, setPrompt] = useState('');
   const promptStorageKey = `arcane-page-icon-prompt:${pageId}`;
   const [iconUrl, setIconUrl] = useState('');
@@ -95,17 +95,30 @@ export function PageEmojiPicker({ pageId, currentIcon, currentIconAssetId, onSel
     }
   }, [onPromptChange, prompt, promptStorageKey]);
 
+  const setEmojiPickerHost = useCallback((node: HTMLDivElement | null) => {
+    setHostNode(node);
+  }, []);
+
   useEffect(() => {
+    if (!hostNode) {
+      return;
+    }
+
     let active = true;
-    const host = hostRef.current;
+    setLoadState('loading');
 
     void (async () => {
       try {
-        const [{ Picker }, dataModule] = await Promise.all([
+        const [emojiMartModule, dataModule] = await Promise.all([
           import('emoji-mart'),
           import('@emoji-mart/data'),
         ]);
-        if (!active || !host) {
+        const emojiMart = (emojiMartModule.default ?? emojiMartModule) as { Picker?: new (options: Record<string, unknown>) => unknown };
+        const Picker = emojiMart.Picker;
+        if (!Picker) {
+          throw new Error('Emoji picker module did not export Picker.');
+        }
+        if (!active) {
           return;
         }
         const picker = new Picker({
@@ -124,7 +137,7 @@ export function PageEmojiPicker({ pageId, currentIcon, currentIconAssetId, onSel
             }
           },
         });
-        host.replaceChildren(picker as unknown as Node);
+        hostNode.replaceChildren(picker as unknown as Node);
         setLoadState('ready');
       } catch {
         if (active) {
@@ -135,9 +148,9 @@ export function PageEmojiPicker({ pageId, currentIcon, currentIconAssetId, onSel
 
     return () => {
       active = false;
-      host?.replaceChildren();
+      hostNode.replaceChildren();
     };
-  }, [loadAttempt]);
+  }, [hostNode, loadAttempt]);
 
   const submitGeneratedIcon = async (requestedPrompt: string) => {
     const trimmed = requestedPrompt.trim();
@@ -155,7 +168,7 @@ export function PageEmojiPicker({ pageId, currentIcon, currentIconAssetId, onSel
       if (!response.ok || !payload.asset?.id) {
         throw new Error(payload.error || 'Icon generation failed.');
       }
-      assetSelectRef.current(payload.asset.id);
+      assetSelectRef.current(payload.asset.id, payload.asset);
       setPrompt(trimmed);
       setGenerateState('idle');
     } catch (error) {
@@ -220,6 +233,7 @@ export function PageEmojiPicker({ pageId, currentIcon, currentIconAssetId, onSel
       title={currentIcon || currentIconAssetId ? 'Icon' : 'Add icon'}
       className="image-grabber-popup emoji-popover"
       showSettings
+      defaultPage={currentIcon || currentIconAssetId ? 'info' : 'settings'}
       rootRef={rootRef}
       style={style}
       onClose={() => onClose('button')}
@@ -331,7 +345,7 @@ export function PageEmojiPicker({ pageId, currentIcon, currentIconAssetId, onSel
               <div className="emoji-picker-divider"><span>or pick a standard emoji</span></div>
               {loadState === 'loading' ? <div className="emoji-picker-state" role="status">Loading emojis…</div> : null}
               {loadState === 'error' ? <div className="emoji-picker-state error" role="alert"><span>Emoji picker could not load.</span><button type="button" onClick={() => { setLoadState('loading'); setLoadAttempt((attempt) => attempt + 1); }}>Retry</button></div> : null}
-              <div ref={hostRef} className="emoji-picker-host" hidden={loadState === 'error'} />
+              <div ref={setEmojiPickerHost} className="emoji-picker-host" hidden={loadState === 'error'} />
             </>
           ) : null}
           {currentIcon || currentIconAssetId ? <div className="toolbar"><button type="button" onClick={onRemove}>Remove icon</button></div> : null}

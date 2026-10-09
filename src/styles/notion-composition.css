@@ -202,12 +202,12 @@
   pointer-events: none;
 }
 .tree-item {
-  min-height: 0;
+  min-height: var(--space-8);
   padding: var(--space-0) var(--space-1);
   line-height: 1.5;
 }
 .tree-level .tree-level .tree-item {
-  min-height: 0;
+  min-height: var(--space-8);
   padding-block: 0;
 }
 .tree-level .tree-level .tree-toggle,
@@ -483,8 +483,8 @@
   padding-block-end: var(--space-2);
 }
 .has-cover .page-identity {
-  margin-block-start: var(--space-0);
-  padding-block-start: var(--space-6);
+  margin-block-start: calc(var(--space-16) * -1);
+  padding-block-start: var(--space-0);
 }
 .page-media-affordances {
   min-height: var(--space-8);
@@ -1048,7 +1048,7 @@
 .page-title {
   min-height: var(--space-12);
   font-family: var(--font-base);
-  font-size: var(--font-size-800);
+  font-size: var(--font-size-page-title);
   font-weight: 750;
   line-height: 1.08;
   letter-spacing: -0.035em;
@@ -1097,6 +1097,10 @@
   width: min(100% - var(--space-12), var(--measure-home));
   padding-block: var(--space-16);
 }
+.document-content > .collections-index {
+  width: 100%;
+  padding-block: var(--space-0);
+}
 .home-header,
 .index-header {
   padding-block-end: var(--space-6);
@@ -1105,7 +1109,7 @@
 .index-header h1,
 .home-empty h1 {
   font-family: var(--font-base);
-  font-size: var(--font-size-700);
+  font-size: var(--font-size-h1-compact);
 }
 .eyebrow {
   display: none;
@@ -1150,12 +1154,18 @@
   margin-inline: auto;
   padding-block: var(--space-12) var(--space-16);
 }
+.collection-document-content .collection-content {
+  width: min(100%, var(--measure-collection-wide));
+  padding-block: var(--space-0);
+}
 .collection-host-identity {
   position: relative;
   z-index: 2;
   display: grid;
+  justify-items: center;
   gap: var(--space-2);
   margin-block-end: var(--space-0);
+  text-align: center;
 }
 .collection-host-identity.has-cover {
   margin-block-start: calc(var(--space-8) * -1);
@@ -1169,6 +1179,7 @@
 }
 .collection-host-copy {
   display: grid;
+  justify-items: center;
   gap: var(--space-2);
 }
 .collection-host-title {
@@ -1178,6 +1189,7 @@
   font-weight: 750;
   line-height: 1.08;
   letter-spacing: -0.035em;
+  text-align: center;
 }
 .collection-host-description {
   max-width: 72ch;
@@ -1187,22 +1199,30 @@
 }
 .collection-header {
   margin-block-end: var(--space-2);
+  display: grid;
+  justify-items: center;
+  gap: var(--space-1);
+  text-align: center;
 }
 .collection-name-form input {
   min-height: var(--space-10);
   font-family: var(--font-base);
-  font-size: var(--font-size-700);
+  font-size: var(--font-size-page-title-compact);
   font-weight: 700;
   letter-spacing: -0.025em;
+  text-align: center;
 }
 .has-host-page .collection-name-form input {
-  font-size: var(--font-size-600);
+  font-size: var(--font-size-page-title-compact);
 }
 .collection-count {
   font-size: var(--font-size-200);
 }
 .is-books-collection .collection-content {
   width: min(calc(100% - var(--space-12)), var(--measure-gallery-wide));
+}
+.collection-document-content .is-books-collection .collection-content {
+  width: min(100%, var(--measure-collection-wide));
 }
 .is-books-collection.is-embedded {
   background: transparent;
@@ -1213,6 +1233,9 @@
 }
 .is-books-collection .collection-header {
   margin-block-end: var(--space-1);
+}
+.is-books-collection .collection-header .collection-count {
+  width: 100%;
 }
 .is-books-collection .collection-host-description {
   max-width: 64ch;
@@ -1293,7 +1316,8 @@
   animation: none;
 }
 .collection-focus-panel {
-  width: min(100%, var(--collection-focus-width));
+  width: min(100%, var(--reading-width));
+  margin-inline: auto;
   display: grid;
   gap: var(--space-3);
   padding-block: var(--space-2) var(--space-8);
@@ -1356,7 +1380,10 @@
   }
 }
 .collection-table-wrap {
+  max-width: 100%;
+  min-width: var(--space-0);
   overflow-x: auto;
+  contain: paint;
   border-top: var(--space-px) solid var(--divider-subtle);
   border-left: var(--space-px) solid var(--divider-subtle);
 }
@@ -1369,7 +1396,28 @@
 }
 .is-books-collection.is-embedded .collection-table {
   width: 100%;
-  min-width: 100%;
+  min-width: var(--collection-table-books-min-width);
+  table-layout: fixed;
+}
+.is-books-collection.is-embedded .collection-table th,
+.is-books-collection.is-embedded .collection-table td {
+  height: auto;
+  vertical-align: top;
+  white-space: normal;
+}
+.is-books-collection.is-embedded .collection-page-title,
+.is-books-collection.is-embedded .collection-readonly-value,
+.is-books-collection.is-embedded .collection-select-token {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+.is-books-collection.is-embedded .collection-page-title {
+  align-items: flex-start;
+}
+.is-books-collection.is-embedded .collection-select-token {
+  height: auto;
+  min-height: var(--space-6);
 }
 .collection-table th,
 .collection-table td {
@@ -1447,6 +1495,10 @@
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.collection-page-title .page-link-icon {
+  flex: none;
 }
 .collection-table tr:focus-within {
   background: color-mix(in oklab, var(--surface-page-muted) 70%, transparent);
@@ -1557,6 +1609,18 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.is-books-collection.is-embedded .collection-property-tags .collection-token-list,
+.is-books-collection.is-embedded .collection-property-multi-select .collection-token-list {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  overflow: visible;
+  white-space: normal;
+}
+.is-books-collection.is-embedded .collection-property-tags .collection-token-list span:not(.collection-empty-value),
+.is-books-collection.is-embedded .collection-property-multi-select .collection-token-list span:not(.collection-empty-value) {
+  max-width: 100%;
+}
+
 .collection-token-list [data-color='accent'],
 .collection-select-token[data-color='accent'] {
   background: var(--collection-token-accent-bg);
@@ -1861,7 +1925,7 @@
     font-size: var(--font-size-700);
   }
   .page-title {
-    font-size: var(--font-size-700);
+    font-size: var(--font-size-page-title-compact);
   }
   .home-workspace,
   .collections-index {

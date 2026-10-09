@@ -495,7 +495,15 @@ test('renders a read-only published site that reflects live workspace content', 
   expect(rootResponse.ok()).toBeTruthy();
   const root = (await rootResponse.json()).page as PageRecord;
 
-  const childResponse = await request.post('/api/pages', { data: { title: 'Published child', parentId: root.id } });
+  const iconUpload = await request.post('/api/assets', {
+    multipart: {
+      file: { name: 'page-icon.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64') },
+    },
+  });
+  expect(iconUpload.ok()).toBeTruthy();
+  const iconAsset = (await iconUpload.json()).asset as { id: string };
+
+  const childResponse = await request.post('/api/pages', { data: { title: 'Published child', parentId: root.id, iconAssetId: iconAsset.id } });
   expect(childResponse.ok()).toBeTruthy();
   const child = (await childResponse.json()).page as PageRecord;
 
@@ -533,7 +541,10 @@ test('renders a read-only published site that reflects live workspace content', 
 
   await page.goto(`/published/collections/${collection.id}`);
   await expect(page.getByRole('heading', { name: 'Published collection' })).toBeVisible();
-  await expect(page.locator('.collection-table').getByRole('link', { name: /Published child/ })).toHaveAttribute('href', buildPagePathFromPages(child.id, [root, child], '/published'));
+  const collectionPageLink = page.locator('.collection-table').getByRole('link', { name: /Published child/ });
+  await expect(collectionPageLink).toHaveAttribute('href', buildPagePathFromPages(child.id, [root, child], '/published'));
+  await expect(collectionPageLink.locator('.page-link-icon')).toBeVisible();
+  await expect(collectionPageLink.locator('.page-link-icon img')).toHaveAttribute('src', new RegExp(`/api/assets/${iconAsset.id}`));
   await expect(page.locator('.collection-table input')).toHaveCount(0);
   await expect(page.getByText('Delete collection')).toHaveCount(0);
 
@@ -708,6 +719,12 @@ test('renders a hosted collection with the host page cover, icon, title, and foc
   await page.goto(buildPagePathFromPages(host.id, [host]));
   await expect(page.locator('.page-collection-embed')).toBeVisible();
   await expect(page.locator('.collection-table')).toBeVisible();
+  await expect(page.locator('.editor-view')).toBeVisible();
+  await expect(page.locator('.editor-view .page-link-block')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Change page icon' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Search Commons' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Paste URL' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Upload cover' })).toBeVisible();
 
   await page.goto(`/page/${entry.id}`);
   await expect(page.locator('.page-collections-embed')).toBeVisible();

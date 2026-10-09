@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { duplicatePage, getAsset, getPage, listCollectionsForPage, listCollectionsHostedByPage, readBacklinks, trashPage, updatePage } from '@/lib/data/storage';
+import { duplicatePage, getAsset, getPage, listCollectionItems, listCollectionsForPage, listCollectionsHostedByPage, readBacklinks, trashPage, updatePage } from '@/lib/data/storage';
 import { RevisionConflictError } from '@/lib/data/types';
 import { rejectPublishedMutation } from '@/lib/surface';
 
@@ -55,6 +55,28 @@ function parseTags(value: unknown): string[] | null | undefined {
   return [...new Set(value.map((tag) => tag.trim()).filter(Boolean))].slice(0, 20);
 }
 
+function removePageLinkBlocksForIds(contentJson: string, pageIds: Set<string>): string {
+  if (!pageIds.size) return contentJson;
+  try {
+    const parsed = JSON.parse(contentJson) as unknown;
+    if (!Array.isArray(parsed)) return contentJson;
+
+    const walk = (blocks: unknown[]): unknown[] => blocks.flatMap((block) => {
+      if (!block || typeof block !== 'object') return [block];
+      const record = block as Record<string, unknown>;
+      const props = record.props && typeof record.props === 'object' ? record.props as Record<string, unknown> : null;
+      const pageId = typeof props?.pageId === 'string' ? props.pageId.trim() : '';
+      if (record.type === 'pageLink' && pageId && pageIds.has(pageId)) return [];
+      if (Array.isArray(record.children)) return [{ ...record, children: walk(record.children) }];
+      return [record];
+    });
+
+    return JSON.stringify(walk(parsed));
+  } catch {
+    return contentJson;
+  }
+}
+
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   const page = getPage(params.id);
   if (!page) {
@@ -64,7 +86,9 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
   const backlinks = readBacklinks(params.id);
   const collections = listCollectionsForPage(params.id);
   const hostCollection = listCollectionsHostedByPage(params.id)[0] ?? null;
-  return NextResponse.json({ page, backlinks, collections, hostCollection });
+  const hostItemPageIds = hostCollection ? new Set(listCollectionItems(hostCollection.id).map((item) => item.pageId)) : null;
+  const responsePage = hostItemPageIds ? { ...page, contentJson: removePageLinkBlocksForIds(page.contentJson, hostItemPageIds) } : page;
+  return NextResponse.json({ page: responsePage, backlinks, collections, hostCollection });
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {

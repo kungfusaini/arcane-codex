@@ -52,6 +52,7 @@ export type ExportManifest = {
     mimeType: string;
     sha256: string;
     size: number;
+    prompt: string | null;
     exported: boolean;
   }>;
   collections: Array<{
@@ -394,6 +395,9 @@ function pageToMarkdown(page: PageRecord, context: MarkdownContext, dataDir?: st
     `parent_id: ${page.parentId ? escapeYaml(page.parentId) : 'null'}`,
     `icon: ${page.icon ? escapeYaml(page.icon) : 'null'}`,
     `cover: ${coverPath ? escapeYaml(relativeLink(pagePath, coverPath)) : 'null'}`,
+    `cover_focal_x: ${page.coverFocalX}`,
+    `cover_focal_y: ${page.coverFocalY}`,
+    `cover_scale: ${page.coverScale}`,
     `is_article: ${page.isArticle ? 'true' : 'false'}`,
     `tags: ${JSON.stringify(page.tags)}`,
     `revision: ${page.revision}`,
@@ -537,6 +541,7 @@ export function buildWorkspaceExport(dataDir?: string): WorkspaceExport {
       mimeType: asset.mimeType,
       sha256: asset.sha256,
       size: asset.size,
+      prompt: asset.prompt,
       exported,
     };
   });

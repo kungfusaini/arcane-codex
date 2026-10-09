@@ -45,12 +45,46 @@ describe('asset storage', () => {
     assert.equal(first.asset.id, second.asset.id, 'stable hash id expected');
     assert.equal(first.asset.sha256, second.asset.sha256, 'hash metadata expected to match');
     assert.equal(first.asset.filename, 'attachment.txt');
+    assert.equal(first.asset.prompt, null);
 
     const list = listAssets(workspace);
     assert.equal(list.length, 1, 'duplicate upload should not create a second row');
 
     const assetPath = getAssetPathFromId(first.asset.id, workspace);
     assert.ok(assetPath.startsWith(getWorkspaceAssetsDir(workspace)));
+
+    rmSync(workspace, { recursive: true, force: true });
+  });
+
+  it('stores generated prompts as asset metadata', () => {
+    const workspace = createTempWorkspace();
+
+    const sourceFile = path.join(workspace, 'generated.png');
+    writeFileSync(sourceFile, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+
+    const first = createAsset(
+      {
+        filename: 'generated-page-icon.png',
+        mimeType: 'image/png',
+        sourcePath: sourceFile,
+        prompt: 'small brass astrolabe',
+      },
+      workspace,
+    );
+
+    const duplicate = createAsset(
+      {
+        filename: 'generated-page-icon.png',
+        mimeType: 'image/png',
+        sourcePath: sourceFile,
+        prompt: 'ignored duplicate prompt',
+      },
+      workspace,
+    );
+
+    assert.equal(first.asset.prompt, 'small brass astrolabe');
+    assert.equal(duplicate.asset.prompt, 'small brass astrolabe');
+    assert.equal(listAssets(workspace)[0].prompt, 'small brass astrolabe');
 
     rmSync(workspace, { recursive: true, force: true });
   });

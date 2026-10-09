@@ -73,6 +73,9 @@ type CollectionItem = {
     icon: string | null;
     iconAssetId: string | null;
     coverAssetId: string | null;
+    coverFocalX: number;
+    coverFocalY: number;
+    coverScale: number;
     firstImageUrl: string | null;
   };
 };
@@ -417,6 +420,14 @@ function compareValues(type: CollectionPropertyType | 'title', aRaw: unknown, bR
 
 function getFirstImageUrl(page: { coverAssetId: string | null; firstImageUrl: string | null }): string | null {
   return page.firstImageUrl ?? (page.coverAssetId ? `/api/assets/${page.coverAssetId}` : null);
+}
+
+function getCollectionCoverStyle(page: CollectionItem['page']): CSSProperties | undefined {
+  if (!page.coverAssetId) return undefined;
+  return {
+    objectPosition: `${page.coverFocalX}% ${page.coverFocalY}%`,
+    transform: `scale(${page.coverScale / 100})`,
+  };
 }
 
 function filterItems(items: CollectionItem[], propertyId: string, query: string): CollectionItem[] {
@@ -1472,6 +1483,7 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
           <section className="collection-gallery">
             {ordered.map((item, itemIndex) => {
               const image = getFirstImageUrl(item.page);
+              const coverStyle = getCollectionCoverStyle(item.page);
               const values = parseProperties(item.propertiesJson);
               const staggerIndex = Math.min(itemIndex, MAX_COLLECTION_STAGGER_INDEX);
               return (
@@ -1485,11 +1497,11 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
                       item={{ type: 'image', src: image, alt: `Cover for ${item.page.title}`, label: item.page.title || 'Collection cover' }}
                       className="collection-cover-link"
                     >
-                      <Image src={image} alt={`Cover for ${item.page.title}`} className="collection-cover" width={640} height={360} unoptimized />
+                      <Image src={image} alt={`Cover for ${item.page.title}`} className="collection-cover" width={640} height={360} style={coverStyle} unoptimized />
                     </PublishMediaTrigger>
                   ) : (
                     <Link href={buildWorkspacePagePathFromPages(item.pageId, pageUrlPages, pageRouteBasePath)} className="collection-cover-link">
-                      {image ? <Image src={image} alt={`Cover for ${item.page.title}`} className="collection-cover" width={640} height={360} unoptimized /> : <div className="collection-cover-blank" aria-hidden="true">{item.page.icon ?? '◆'}</div>}
+                      {image ? <Image src={image} alt={`Cover for ${item.page.title}`} className="collection-cover" width={640} height={360} style={coverStyle} unoptimized /> : <div className="collection-cover-blank" aria-hidden="true">{item.page.icon ?? '◆'}</div>}
                     </Link>
                   )}
                   <div className="collection-card-body">

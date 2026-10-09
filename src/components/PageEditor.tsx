@@ -132,6 +132,7 @@ type AssetRecord = {
   size: number;
   width: number | null;
   height: number | null;
+  prompt: string | null;
   createdAt: number;
 };
 
@@ -351,10 +352,36 @@ function ensureChildPageLinkBlocks(blocks: PartialBlock[], childPages: SidebarPa
   return [...blocks, ...additions];
 }
 
-function normalizeChildPageLinkContent(rawContent: string, childPages: SidebarPage[]): string {
+function removeChildPageLinkBlocks(blocks: PartialBlock[], childPages: SidebarPage[]): PartialBlock[] {
+  if (!childPages.length) {
+    return blocks;
+  }
+
+  const childPageIds = new Set(childPages.map((page) => page.id));
+  return blocks.flatMap((block) => {
+    if (!block || typeof block !== 'object') {
+      return [block];
+    }
+    const record = block as Record<string, unknown>;
+    if (record.type === 'pageLink' && record.props && typeof record.props === 'object') {
+      const props = record.props as Record<string, unknown>;
+      const pageId = typeof props.pageId === 'string' ? props.pageId.trim() : '';
+      if (pageId && childPageIds.has(pageId)) {
+        return [];
+      }
+    }
+    const children = Array.isArray(record.children) ? removeChildPageLinkBlocks(record.children as PartialBlock[], childPages) : null;
+    return children ? [{ ...record, children }] as unknown as PartialBlock[] : [block];
+  });
+}
+
+function normalizeChildPageLinkContent(rawContent: string, childPages: SidebarPage[], removeExisting = false): string {
   try {
     const parsed = JSON.parse(rawContent) as unknown;
     if (Array.isArray(parsed)) {
+      if (removeExisting) {
+        return JSON.stringify(removeChildPageLinkBlocks(parsed as PartialBlock[], childPages));
+      }
       return JSON.stringify(ensureChildPageLinkBlocks(parsed as PartialBlock[], childPages));
     }
   } catch {
@@ -523,6 +550,8 @@ export function PageEditor({
   const [assets, setAssets] = useState<AssetRecord[]>([]);
   const [hostCollection, setHostCollection] = useState<CollectionSummary | null>(null);
   const [pageCollections, setPageCollections] = useState<CollectionSummary[]>([]);
+  const autoChildPageTargets = useMemo(() => getAutoPageLinkTargets(pageId, allPages), [allPages, pageId]);
+  const childPageLinkTargets = hostCollection ? [] : autoChildPageTargets;
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [iconPickerPosition, setIconPickerPosition] = useState<{ top: number; left: number } | null>(null);
   const [pageIconPrompt, setPageIconPrompt] = useState('');
@@ -565,7 +594,9 @@ export function PageEditor({
     }
   }, [pageId]);
 
-  const pageIconPromptCaption = pageIconPrompt ? `Prompt: ${pageIconPrompt}` : undefined;
+  const pageIconAssetPrompt = page?.iconAssetId ? assets.find((asset) => asset.id === page.iconAssetId)?.prompt?.trim() : '';
+  const pageIconPromptText = pageIconAssetPrompt || pageIconPrompt;
+  const pageIconPromptCaption = pageIconPromptText ? `Prompt: ${pageIconPromptText}` : undefined;
 
   useEffect(() => {
     if (!tagComposerOpen) {
@@ -712,7 +743,7 @@ export function PageEditor({
     return Math.round(value / COVER_FOCAL_STEP) * COVER_FOCAL_STEP;
   }, []);
 
-  const applyInitialContent = useCallback((rawContent: string) => {
+  const applyInitialContent = useCallback((rawContent: string, childPages: SidebarPage[], removeExisting = false) => {
     let parsed: PartialBlock[] = DOCUMENT_FALLBACK;
     try {
       const candidate = JSON.parse(rawContent);
@@ -725,15 +756,15 @@ export function PageEditor({
 
     const withoutRedundantLinks = removeRedundantYouTubeLinkBlocks(parsed.length ? parsed : DOCUMENT_FALLBACK);
     const migrated = migrateLegacyImageBlocks(withoutRedundantLinks);
-    const payload = ensureChildPageLinkBlocks(migrated.blocks, getAutoPageLinkTargets(pageId, allPages));
+    const payload = normalizeChildPageLinkContent(JSON.stringify(migrated.blocks), childPages, removeExisting);
     isApplyingRemoteContent.current = true;
-    editor.replaceBlocks(editor.document, payload as Parameters<typeof editor.replaceBlocks>[1]);
-    savedDocRef.current = JSON.stringify(payload);
+    editor.replaceBlocks(editor.document, JSON.parse(payload) as Parameters<typeof editor.replaceBlocks>[1]);
+    savedDocRef.current = payload;
     queueMicrotask(() => {
       isApplyingRemoteContent.current = false;
     });
-    return migrated.changed || payload.length !== migrated.blocks.length;
-  }, [allPages, editor, pageId]);
+    return migrated.changed || payload !== JSON.stringify(migrated.blocks);
+  }, [editor]);
 
   const readRecoveryDraft = useCallback((remote: PageRecord): RecoveryDraft | null => {
     try {
@@ -795,7 +826,7 @@ export function PageEditor({
       setTitle(payload.page.title);
       titleRef.current = payload.page.title;
 
-      const migratedLegacyImages = applyInitialContent(payload.page.contentJson);
+      const migratedLegacyImages = applyInitialContent(payload.page.contentJson, autoChildPageTargets, Boolean(payload.hostCollection));
       if (migratedLegacyImages && !readOnly) {
         const migrationResponse = await fetch(`/api/pages/${pageId}`, {
           method: 'PATCH',
@@ -827,13 +858,27 @@ export function PageEditor({
       setStatus('error');
       setStatusMessage(error instanceof Error ? error.message : 'Page could not be loaded');
     }
-  }, [applyInitialContent, pageId, readRecoveryDraft, readOnly]);
+  }, [applyInitialContent, autoChildPageTargets, pageId, readRecoveryDraft, readOnly]);
 
   const loadPageList = useCallback(async () => {
     const response = await fetch('/api/pages');
     const payload = (await response.json()) as { pages: SidebarPage[] };
     setAllPages(payload.pages);
   }, []);
+
+  const loadAssets = useCallback(async () => {
+    const response = await fetch('/api/assets');
+    if (!response.ok) return;
+    const payload = (await response.json()) as { assets: AssetRecord[] };
+    setAssets(payload.assets);
+  }, []);
+
+  const loadPageRef = useRef(loadPage);
+  const loadPageListRef = useRef(loadPageList);
+  const loadAssetsRef = useRef(loadAssets);
+  loadPageRef.current = loadPage;
+  loadPageListRef.current = loadPageList;
+  loadAssetsRef.current = loadAssets;
 
   const savePage = useCallback(async () => {
     if (saveInFlightRef.current) {
@@ -843,7 +888,7 @@ export function PageEditor({
     }
 
     saveQueuedRef.current = false;
-    const documentJson = normalizeChildPageLinkContent(savedDocRef.current, getAutoPageLinkTargets(pageId, allPages));
+    const documentJson = normalizeChildPageLinkContent(savedDocRef.current, hostCollection ? autoChildPageTargets : childPageLinkTargets, Boolean(hostCollection));
     const titleToSave = titleRef.current.trim() || 'Untitled';
     const editorRevision = pendingRevision.current;
     const saveVersion = editVersionRef.current;
@@ -912,7 +957,7 @@ export function PageEditor({
         }, 0);
       }
     }
-  }, [allPages, draftKey, pageId]);
+  }, [autoChildPageTargets, childPageLinkTargets, draftKey, hostCollection, pageId]);
 
   savePageRef.current = savePage;
 
@@ -948,14 +993,14 @@ export function PageEditor({
     titleRef.current = conflictPage.title;
     setTitle(conflictPage.title);
     setPage(conflictPage);
-    applyInitialContent(conflictPage.contentJson);
+    applyInitialContent(conflictPage.contentJson, autoChildPageTargets, Boolean(hostCollection));
     setConflictPage(null);
     setRecoveryDraft(null);
     hasPendingContent.current = false;
     window.localStorage.removeItem(draftKey);
     setStatus('saved');
     setStatusMessage('Loaded the latest saved revision');
-  }, [applyInitialContent, conflictPage, draftKey]);
+  }, [applyInitialContent, autoChildPageTargets, conflictPage, draftKey, hostCollection]);
 
   const overwriteConflict = useCallback(async () => {
     if (!conflictPage) return;
@@ -970,13 +1015,13 @@ export function PageEditor({
     if (!recoveryDraft) return;
     titleRef.current = recoveryDraft.title;
     setTitle(recoveryDraft.title);
-    applyInitialContent(recoveryDraft.contentJson);
+    applyInitialContent(recoveryDraft.contentJson, autoChildPageTargets, Boolean(hostCollection));
     pendingRevision.current = page?.revision ?? recoveryDraft.baseRevision;
     setRecoveryDraft(null);
     setStatus('saving');
     setStatusMessage('Recovered draft ready to save');
     window.setTimeout(requestSave, 0);
-  }, [applyInitialContent, page?.revision, recoveryDraft, requestSave]);
+  }, [applyInitialContent, autoChildPageTargets, hostCollection, page?.revision, recoveryDraft, requestSave]);
 
   const discardLocalDraft = useCallback(() => {
     window.localStorage.removeItem(draftKey);
@@ -1072,9 +1117,22 @@ export function PageEditor({
     void updateMetadata({ icon: emoji, iconAssetId: null });
   }, [updateMetadata]);
 
-  const selectPageIconAsset = useCallback((assetId: string) => {
+  const selectPageIconAsset = useCallback((assetId: string, asset?: Partial<AssetRecord>) => {
+    if (asset?.id) {
+      rememberAsset({
+        id: asset.id,
+        filename: asset.filename ?? 'Page icon',
+        mimeType: asset.mimeType ?? 'image/png',
+        sha256: asset.sha256 ?? asset.id,
+        size: asset.size ?? 0,
+        width: asset.width ?? null,
+        height: asset.height ?? null,
+        prompt: asset.prompt ?? null,
+        createdAt: asset.createdAt ?? Date.now(),
+      });
+    }
     void updateMetadata({ icon: null, iconAssetId: assetId });
-  }, [updateMetadata]);
+  }, [rememberAsset, updateMetadata]);
 
   const removePageIcon = useCallback(() => {
     restoreIconFocusRef.current = true;
@@ -1685,9 +1743,8 @@ export function PageEditor({
       return;
     }
 
-    const linkedPages = getAutoPageLinkTargets(pageId, allPages);
-    const normalized = ensureChildPageLinkBlocks(editor.document as PartialBlock[], linkedPages);
-    const normalizedJson = JSON.stringify(normalized);
+    const normalizedJson = normalizeChildPageLinkContent(JSON.stringify(editor.document), hostCollection ? autoChildPageTargets : childPageLinkTargets, Boolean(hostCollection));
+    const normalized = JSON.parse(normalizedJson) as PartialBlock[];
     if (normalizedJson === savedDocRef.current) {
       return;
     }
@@ -1699,14 +1756,14 @@ export function PageEditor({
       isApplyingRemoteContent.current = false;
     });
     requestSave();
-  }, [allPages, editor, editorReady, page, pageId, readOnly, requestSave]);
+  }, [autoChildPageTargets, childPageLinkTargets, editor, editorReady, hostCollection, page, readOnly, requestSave]);
 
   useEditorChange(() => {
     if (readOnly || !editorReady || isApplyingRemoteContent.current || !isEditing) {
       return;
     }
 
-    const documentJson = JSON.stringify(ensureChildPageLinkBlocks(editor.document as PartialBlock[], getAutoPageLinkTargets(pageId, allPages)));
+    const documentJson = normalizeChildPageLinkContent(JSON.stringify(editor.document), hostCollection ? autoChildPageTargets : childPageLinkTargets, Boolean(hostCollection));
     savedDocRef.current = documentJson;
     requestSave();
   }, editor);
@@ -1986,23 +2043,27 @@ export function PageEditor({
         window.clearTimeout(loadingTimerRef.current);
         loadingTimerRef.current = null;
       }
-      applyInitialContent(initialPage.contentJson);
+      applyInitialContent(initialPage.contentJson, autoChildPageTargets, false);
       setEditorReady(true);
     }
-    void loadPage();
+    void loadPageRef.current();
+    void loadAssetsRef.current();
     if (initialPages.length === 0) {
-      void loadPageList();
+      void loadPageListRef.current();
     }
+  }, [pageId]);
+
+  useEffect(() => {
     const unload = () => {
       if (hasPendingContent.current) {
         clearTimeout(saveTimerRef.current ?? undefined);
-        void savePage();
+        void savePageRef.current();
       }
     };
 
     const onPagesChanged = () => {
-      void loadPageList();
-      void loadPage();
+      void loadPageListRef.current();
+      void loadPageRef.current();
     };
 
     window.addEventListener('beforeunload', unload);
@@ -2015,7 +2076,7 @@ export function PageEditor({
         clearTimeout(saveTimerRef.current);
       }
     };
-  }, [applyInitialContent, initialPage, initialPages.length, loadPage, loadPageList, savePage]);
+  }, []);
 
   useEffect(() => {
     setShowLoadingSkeleton(false);
@@ -2055,7 +2116,7 @@ export function PageEditor({
     </p>
   ) : null;
   const coverAsset = page.coverAssetId
-    ? assets.find((asset) => asset.id === page.coverAssetId) ?? { id: page.coverAssetId, filename: 'Cover image' }
+    ? assets.find((asset) => asset.id === page.coverAssetId) ?? { id: page.coverAssetId, filename: 'Cover image', prompt: null }
     : null;
   const pageTags = page.tags;
   const renderPageTags = (editable: boolean) => (
@@ -2153,14 +2214,14 @@ export function PageEditor({
                       item={{ type: 'image', src: `/api/assets/${page.iconAssetId}`, alt: title || 'Page icon', label: 'Page icon', caption: pageIconPromptCaption }}
                       className="page-icon page-icon-static"
                     >
-                      <PageIcon icon={page.icon} iconAssetId={page.iconAssetId} />
+                      <PageIcon icon={page.icon} iconAssetId={page.iconAssetId} imageVariant="page-icon" />
                     </PublishMediaTrigger>
                   ) : (
                     <PublishMediaTrigger
                       item={{ type: 'emoji', symbol: page.icon || '📄', label: 'Page icon' }}
                       className="page-icon page-icon-static"
                     >
-                      <PageIcon icon={page.icon} iconAssetId={page.iconAssetId} />
+                      <PageIcon icon={page.icon} iconAssetId={page.iconAssetId} imageVariant="page-icon" />
                     </PublishMediaTrigger>
                   )}
                 </div>
@@ -2306,7 +2367,7 @@ export function PageEditor({
 
       <div className={`document-content ${coverAsset ? 'has-cover' : ''}`}>
         <div className={`page-identity ${page.icon || page.iconAssetId ? 'has-icon' : ''}`}>
-          {!hostCollection && ((!page.icon && !page.iconAssetId) || !coverAsset) ? (
+          {((!page.icon && !page.iconAssetId) || !coverAsset) ? (
             <div className="page-media-affordances" aria-label="Page appearance">
               {!page.icon && !page.iconAssetId ? (
                 <button ref={setIconTrigger} key="add-icon" type="button" aria-haspopup="dialog" aria-expanded={iconPickerOpen} disabled={isDeleted} onClick={() => { if (iconPickerOpen) { closeIconPicker('button'); return; } openIconPicker(); }}>Add icon</button>
@@ -2321,7 +2382,7 @@ export function PageEditor({
           <div className="page-title-row">
             {page.icon || page.iconAssetId ? (
               <div className="page-icon-wrap">
-                <button ref={setIconTrigger} key={`icon-${page.icon ?? page.iconAssetId}`} type="button" className="page-icon" aria-label="Change page icon" aria-haspopup="dialog" aria-expanded={iconPickerOpen} disabled={isDeleted} onClick={() => { if (iconPickerOpen) { closeIconPicker('button'); return; } openIconPicker(); }}><PageIcon icon={page.icon} iconAssetId={page.iconAssetId} /></button>
+                <button ref={setIconTrigger} key={`icon-${page.icon ?? page.iconAssetId}`} type="button" className="page-icon" aria-label="Change page icon" aria-haspopup="dialog" aria-expanded={iconPickerOpen} disabled={isDeleted} onClick={() => { if (iconPickerOpen) { closeIconPicker('button'); return; } openIconPicker(); }}><PageIcon icon={page.icon} iconAssetId={page.iconAssetId} imageVariant="page-icon" /></button>
               </div>
             ) : null}
             <textarea className="page-title" rows={1} value={title} onChange={onTitleInput} placeholder="Untitled" disabled={isDeleted} />
@@ -2353,7 +2414,7 @@ export function PageEditor({
               style={iconPickerPosition ? { position: 'fixed', top: iconPickerPosition.top, left: iconPickerPosition.left, transform: 'none' } : undefined}
             />
           ) : null}
-          {status !== 'saving' && (!hostCollection || status === 'error' || status === 'conflict') ? (
+          {status !== 'saving' ? (
             <div className={`status ${status === 'saved' ? 'saved' : status === 'error' || status === 'conflict' ? 'error' : ''}`} role="status">
               <span>{statusMessage || 'Saved'}</span>
               {status === 'error' && hasPendingContent.current ? <button type="button" className="mini-btn" onClick={() => void savePage()}>Retry save</button> : null}

@@ -26,7 +26,7 @@ import {
 import { buildPagePathFromPages, extractLegacyPageId, slugifyPageTitle, type PageUrlPage } from '../pageUrls';
 import { buildWorkspacePagePathFromPages, resolveWorkspacePagePathSegments } from '../workspaceHome';
 
-const CURRENT_SCHEMA_VERSION = 9;
+const CURRENT_SCHEMA_VERSION = 10;
 
 const DEFAULT_COVER_FOCAL_PERCENT = 50;
 
@@ -154,6 +154,7 @@ function runMigrations(db: DatabaseSync): void {
         size INTEGER NOT NULL,
         width INTEGER,
         height INTEGER,
+        prompt TEXT,
         created_at INTEGER NOT NULL
       );
 
@@ -266,6 +267,14 @@ function runMigrations(db: DatabaseSync): void {
       db.exec("ALTER TABLE pages ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';");
     }
     db.exec('PRAGMA user_version = 9;');
+  }
+
+  if (currentVersion < 10) {
+    const assetColumns = db.prepare('PRAGMA table_info(assets);').all() as Array<{ name: string }>;
+    if (!assetColumns.some((column) => column.name === 'prompt')) {
+      db.exec('ALTER TABLE assets ADD COLUMN prompt TEXT;');
+    }
+    db.exec('PRAGMA user_version = 10;');
   }
 
   const rowsMissingSlugs = db.prepare("SELECT id, parent_id, sort_key, slug, title FROM pages WHERE slug = '' ORDER BY parent_id IS NULL DESC, parent_id, sort_key, title COLLATE NOCASE ASC").all() as DbRow[];
@@ -620,6 +629,7 @@ function rowToAsset(row: DbRow): AssetRecord {
     size: Number(row.size),
     width: row.width == null ? null : Number(row.width),
     height: row.height == null ? null : Number(row.height),
+    prompt: (row.prompt as string | null) ?? null,
     createdAt: Number(row.created_at),
   };
 }
@@ -1179,7 +1189,7 @@ export function listAssets(dataDir?: string): AssetRecord[] {
   try {
     const rows = db
       .prepare(
-        `SELECT id, filename, mime_type, sha256, size, width, height, created_at
+        `SELECT id, filename, mime_type, sha256, size, width, height, prompt, created_at
          FROM assets
          ORDER BY created_at DESC`,
       )
@@ -1195,7 +1205,7 @@ export function getAsset(id: string, dataDir?: string): AssetRecord | null {
   try {
     const row = db
       .prepare(
-        `SELECT id, filename, mime_type, sha256, size, width, height, created_at
+        `SELECT id, filename, mime_type, sha256, size, width, height, prompt, created_at
          FROM assets
          WHERE id = ?`,
       )
@@ -1209,7 +1219,7 @@ export function getAsset(id: string, dataDir?: string): AssetRecord | null {
 function getAssetBySha256(hash: string, db: DatabaseSync): AssetRecord | null {
   const row = db
     .prepare(
-      `SELECT id, filename, mime_type, sha256, size, width, height, created_at
+      `SELECT id, filename, mime_type, sha256, size, width, height, prompt, created_at
        FROM assets
        WHERE sha256 = ?`,
     )
@@ -1233,6 +1243,7 @@ export function createAsset(
     sourcePath: string;
     width?: number | null;
     height?: number | null;
+    prompt?: string | null;
   },
   dataDir?: string,
 ): AssetCreateResult {
@@ -1247,7 +1258,12 @@ export function createAsset(
     const sourceData = readFileSync(options.sourcePath);
     const hash = createHash('sha256').update(sourceData).digest('hex');
     const existing = getAssetBySha256(hash, db);
+    const prompt = options.prompt?.trim() || null;
     if (existing) {
+      if (prompt && !existing.prompt) {
+        db.prepare('UPDATE assets SET prompt = ? WHERE id = ?').run(prompt, existing.id);
+        existing.prompt = prompt;
+      }
       db.exec('COMMIT');
       inTransaction = false;
       return { asset: existing, created: false };
@@ -1261,8 +1277,8 @@ export function createAsset(
 
     copyFileSync(options.sourcePath, targetPath);
     db.prepare(
-      `INSERT INTO assets (id, filename, mime_type, sha256, size, width, height, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO assets (id, filename, mime_type, sha256, size, width, height, prompt, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       filename,
@@ -1271,6 +1287,7 @@ export function createAsset(
       sourceData.length,
       options.width ?? null,
       options.height ?? null,
+      prompt,
       now,
     );
 
@@ -1283,6 +1300,7 @@ export function createAsset(
         size: sourceData.length,
         width: options.width ?? null,
         height: options.height ?? null,
+        prompt,
         createdAt: now,
       },
       created: true,

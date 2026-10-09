@@ -66,13 +66,15 @@ describe('workspace bootstrap', () => {
       const version = migrated.prepare('PRAGMA user_version').get() as { user_version: number };
       const assetIndex = migrated.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_assets_sha256'").get();
       const pageColumns = migrated.prepare("PRAGMA table_info(pages)").all() as Array<{ name: string }>;
+      const assetColumns = migrated.prepare("PRAGMA table_info(assets)").all() as Array<{ name: string }>;
       const columnX = pageColumns.find((row) => row.name === 'cover_focal_x');
       const columnY = pageColumns.find((row) => row.name === 'cover_focal_y');
       const columnScale = pageColumns.find((row) => row.name === 'cover_scale');
       const iconAssetColumn = pageColumns.find((row) => row.name === 'icon_asset_id');
       const isArticleColumn = pageColumns.find((row) => row.name === 'is_article');
       const tagsColumn = pageColumns.find((row) => row.name === 'tags_json');
-      assert.equal(version.user_version, 9);
+      const assetPromptColumn = assetColumns.find((row) => row.name === 'prompt');
+      assert.equal(version.user_version, 10);
       assert.ok(assetIndex);
       assert.ok(columnX);
       assert.ok(columnY);
@@ -80,6 +82,7 @@ describe('workspace bootstrap', () => {
       assert.ok(iconAssetColumn);
       assert.ok(isArticleColumn);
       assert.ok(tagsColumn);
+      assert.ok(assetPromptColumn);
       const settingsColumns = migrated.prepare("PRAGMA table_info(settings)").all() as Array<{ name: string }>;
       assert.ok(settingsColumns.some((row) => row.name === 'published_mode'));
       migrated.exec('PRAGMA user_version = 99;');

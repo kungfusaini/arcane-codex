@@ -36,6 +36,10 @@
   --font-size-700: 27.2px;
   --font-size-800: 40.8px;
   --font-size-brand-hero: 47.6px;
+  --font-size-h1: var(--font-size-800);
+  --font-size-page-title: var(--font-size-h1);
+  --font-size-h1-compact: var(--font-size-700);
+  --font-size-page-title-compact: var(--font-size-h1-compact);
 
   /* 8px rhythm + small optical steps */
   --space-0: 0px;

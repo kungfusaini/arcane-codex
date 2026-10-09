@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { notFound, permanentRedirect, redirect } from 'next/navigation';
 import { PageEditorRoute } from '@/app/page/PageEditorRoute';
 import { PageWorkspaceLayout } from '@/app/page/PageWorkspaceLayout';
-import { getPage, listPageSummaries, resolvePageRoutePath } from '@/lib/data/storage';
+import { getPage, listCollectionsHostedByPage, listPageSummaries, resolvePageRoutePath } from '@/lib/data/storage';
 import { isPublishedAppSurface } from '@/lib/surface';
 import { toPublicPath, toPublishedPath } from '@/lib/workspaceMode';
 
@@ -41,7 +41,7 @@ export default function PublishedPageRoute({ params }: { params: { pagePath?: st
     permanentRedirect(toPublishedPath(resolution.canonicalPath));
   }
 
-  const initialPage = getPage(resolution.pageId) ?? undefined;
+  const initialPage = listCollectionsHostedByPage(resolution.pageId).length ? undefined : getPage(resolution.pageId) ?? undefined;
   const initialPages = listPageSummaries().map((page) => ({
     id: page.id,
     parentId: page.parentId,

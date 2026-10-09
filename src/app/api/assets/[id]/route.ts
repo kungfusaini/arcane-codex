@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { DatabaseSync } from 'node:sqlite';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { Readable } from 'node:stream';
-import { ensureIconVariant, getAssetFilePath, getIconVariantPath } from '@/lib/data/assetDerivatives';
+import { ensureIconVariant, getAssetFilePath, getIconVariantPath, getImageVariantConfig, type AssetImageVariant } from '@/lib/data/assetDerivatives';
 import { getWorkspaceDbPath } from '@/lib/data/workspace';
 
 type AssetMetadata = {
@@ -56,15 +56,16 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     return NextResponse.json({ error: 'Asset missing on disk' }, { status: 410 });
   }
 
-  const variant = request.nextUrl.searchParams.get('variant');
-  if (variant === 'icon') {
+  const requestedVariant = request.nextUrl.searchParams.get('variant');
+  const variant: AssetImageVariant | null = requestedVariant === 'icon' || requestedVariant === 'page-icon' ? requestedVariant : null;
+  if (variant) {
     if (!asset.mimeType.startsWith('image/')) {
       return NextResponse.json({ error: 'Icon variants are only available for images.' }, { status: 415 });
     }
 
-    const variantPath = getIconVariantPath(asset.id, dataDir);
+    const variantPath = getIconVariantPath(asset.id, dataDir, variant);
     try {
-      await ensureIconVariant(filePath, variantPath);
+      await ensureIconVariant(filePath, variantPath, variant);
     } catch (error) {
       return NextResponse.json(
         { error: 'Icon variant could not be generated.', detail: error instanceof Error ? error.message : 'Unknown image processing error' },
@@ -75,7 +76,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     return streamFile(variantPath, {
       'Content-Type': 'image/webp',
       'Content-Length': String(statSync(variantPath).size),
-      'Content-Disposition': `inline; filename="${asset.id}-icon.webp"`,
+      'Content-Disposition': `inline; filename="${asset.id}-${getImageVariantConfig(variant).suffix}.webp"`,
       'X-Content-Type-Options': 'nosniff',
       'Cache-Control': 'private, max-age=31536000, immutable',
     });

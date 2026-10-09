@@ -48,7 +48,7 @@ describe('collections HTTP API', () => {
         new NextRequest('http://localhost/api/pages', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ title: 'Project A' }),
+          body: JSON.stringify({ title: 'Project A', coverFocalX: 25, coverFocalY: 75 }),
         }),
       );
       const pageB = await pagesRoute.POST(
@@ -112,9 +112,12 @@ describe('collections HTTP API', () => {
         new NextRequest(`http://localhost/api/collections/${collectionId}?sortBy=title&direction=asc`),
         { params: { id: collectionId } },
       );
-      const detailPayload = (await callJson(detail)) as { items: Array<{ page: { title: string } }> };
+      const detailPayload = (await callJson(detail)) as { items: Array<{ page: { title: string; coverFocalX: number; coverFocalY: number; coverScale: number } }> };
       assert.equal(detailPayload.items.length, 2);
       assert.equal(detailPayload.items[0].page.title, 'Project A');
+      assert.equal(detailPayload.items[0].page.coverFocalX, 25);
+      assert.equal(detailPayload.items[0].page.coverFocalY, 75);
+      assert.equal(detailPayload.items[0].page.coverScale, 100);
 
       const filtered = await collectionRoute.GET(
         new NextRequest(

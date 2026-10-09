@@ -22,6 +22,9 @@ export type CollectionPayloadItem = {
     icon: string | null;
     iconAssetId: string | null;
     coverAssetId: string | null;
+    coverFocalX: number;
+    coverFocalY: number;
+    coverScale: number;
     firstImageUrl: string | null;
     revision: number;
     createdAt: number;
@@ -283,6 +286,9 @@ export function getCollectionDetailPayload(collectionId: string, options: Collec
           icon: page.icon,
           iconAssetId: page.iconAssetId,
           coverAssetId: page.coverAssetId,
+          coverFocalX: page.coverFocalX,
+          coverFocalY: page.coverFocalY,
+          coverScale: page.coverScale,
           firstImageUrl: page.coverAssetId ? `/api/assets/${page.coverAssetId}` : extractFirstImageUrl(page.contentJson),
           revision: page.revision,
           createdAt: page.createdAt,

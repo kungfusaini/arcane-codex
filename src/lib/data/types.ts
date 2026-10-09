@@ -55,6 +55,7 @@ export type AssetRecord = {
   size: number;
   width: number | null;
   height: number | null;
+  prompt: string | null;
   createdAt: number;
 };
 

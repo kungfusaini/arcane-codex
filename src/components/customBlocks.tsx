@@ -74,6 +74,10 @@ type GalleryImage = {
   caption?: string;
 };
 
+type ArtworkFrame = {
+  url: string;
+};
+
 const galleryImageSizeMin = 120;
 const galleryImageSizeMax = 480;
 const galleryImageSizeDefault = 240;
@@ -115,6 +119,22 @@ function readGalleryState(block: { id: string; props: Record<string, unknown> })
   const groupCaption = typeof block.props.groupCaption === 'string' ? block.props.groupCaption : '';
   const imageSize = readGalleryImageSize(block.props.imageSize);
   return { images, mode, groupCaption, imageSize };
+}
+
+function readArtworkFrames(value: unknown): ArtworkFrame[] {
+  if (typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is ArtworkFrame => (
+      typeof item === 'object'
+      && item !== null
+      && typeof (item as ArtworkFrame).url === 'string'
+      && Boolean((item as ArtworkFrame).url)
+    ));
+  } catch {
+    return [];
+  }
 }
 
 function getGalleryBlockStyle(imageSize: number): CSSProperties {
@@ -690,6 +710,214 @@ export function GalleryWidgetEditorShell({
   );
 }
 
+function ArtworkShowcaseBlock({
+  block,
+  editor,
+  readOnly,
+}: {
+  block: { id: string; props: Record<string, unknown> };
+  editor: BlockNoteEditor<any>;
+  readOnly: boolean;
+}) {
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  const title = typeof block.props.title === 'string' && block.props.title.trim() ? block.props.title.trim() : 'Untitled artwork';
+  const canvasUrl = typeof block.props.canvasUrl === 'string' ? block.props.canvasUrl.trim() : '';
+  const canvasAlt = typeof block.props.canvasAlt === 'string' && block.props.canvasAlt.trim() ? block.props.canvasAlt.trim() : title;
+  const prompt = typeof block.props.prompt === 'string' ? block.props.prompt.trim() : '';
+  const initialIdea = typeof block.props.initialIdea === 'string' ? block.props.initialIdea.trim() : '';
+  const finalPrompt = typeof block.props.finalPrompt === 'string' ? block.props.finalPrompt.trim() : '';
+  const turnComments = typeof block.props.turnComments === 'string' ? block.props.turnComments : '';
+  const frameUrls = readArtworkFrames(block.props.frameUrls).map((frame) => frame.url);
+  const speedValue = Number(block.props.speed);
+  const speed = Number.isFinite(speedValue) ? Math.min(4, Math.max(0.25, speedValue)) : 1;
+  const strokeCurrentValue = Number(block.props.strokeCurrent);
+  const strokeTotalValue = Number(block.props.strokeTotal);
+  const strokeTotal = Number.isFinite(strokeTotalValue) ? Math.max(0, Math.floor(strokeTotalValue)) : 0;
+  const strokeCurrent = Number.isFinite(strokeCurrentValue) ? Math.min(Math.max(0, Math.floor(strokeCurrentValue)), Math.max(0, strokeTotal - 1)) : 0;
+  const currentStrokeLabel = strokeTotal > 0 ? `${strokeCurrent + 1} / ${strokeTotal}` : '0 / 0';
+
+  const updateBlock = (props: Record<string, unknown>) => {
+    editor.updateBlock(block.id, { props: { ...block.props, ...props } } as never);
+  };
+
+  const frameCount = frameUrls.length;
+  const clampFrameIndex = (index: number) => {
+    if (frameCount < 1) return 0;
+    return Math.max(0, Math.min(frameCount - 1, index));
+  };
+  const frameIndexFromStroke = (stroke: number) => {
+    if (frameCount < 2 || strokeTotal < 1) return frameCount > 1 ? frameCount - 1 : 0;
+    return clampFrameIndex(Math.round((Math.max(0, Math.min(stroke, strokeTotal - 1)) / Math.max(1, strokeTotal - 1)) * (frameCount - 1)));
+  };
+  const [frameIndex, setFrameIndex] = useState(() => frameIndexFromStroke(strokeCurrent));
+  const currentFrameLabel = frameCount > 0 ? `${frameIndex + 1} / ${frameCount}` : '0 / 0';
+  const turnCommentItems = turnComments
+    .split(/\n+/)
+    .map((comment) => comment.trim())
+    .filter(Boolean);
+  const currentComment = turnCommentItems.length && frameCount > 1
+    ? turnCommentItems[Math.min(turnCommentItems.length - 1, Math.floor((frameIndex / Math.max(1, frameCount - 1)) * turnCommentItems.length))] || ''
+    : '';
+
+  useEffect(() => {
+    setFrameIndex(frameIndexFromStroke(strokeCurrent));
+  }, [block.id, strokeCurrent, strokeTotal, frameCount]);
+
+  useEffect(() => {
+    if (!isPlaying || readOnly || frameCount < 2) return;
+    const delay = Math.max(25, Math.round(120 / speed));
+    const timer = window.setInterval(() => {
+      setFrameIndex((current) => {
+        const next = current + 1;
+        if (next >= frameCount) {
+          window.clearInterval(timer);
+          window.setTimeout(() => setIsPlaying(false), 0);
+          updateBlock({ strokeCurrent: Math.max(0, strokeTotal - 1) });
+          return frameCount - 1;
+        }
+        const nextStroke = Math.round((next / Math.max(1, frameCount - 1)) * Math.max(0, strokeTotal - 1));
+        updateBlock({ strokeCurrent: nextStroke });
+        return next;
+      });
+    }, delay);
+    return () => window.clearInterval(timer);
+  }, [frameCount, isPlaying, readOnly, speed, strokeTotal]);
+
+  return (
+    <section className="artwork-showcase-block" contentEditable={false} aria-label="Single artwork showcase">
+      <header className="artwork-showcase-header">
+        <p className="artwork-showcase-prompt"><span>Prompt:</span> <strong>{prompt || 'Untitled'}</strong></p>
+      </header>
+
+      <div className="artwork-showcase-body">
+        <section className="artwork-showcase-stage" aria-label="Artwork preview">
+          <div className="artwork-showcase-canvas" aria-label={`${title} canvas preview`}>
+            {frameUrls[frameIndex] || canvasUrl ? <img src={frameUrls[frameIndex] || canvasUrl} alt={canvasAlt} /> : (
+              <div className="artwork-showcase-canvas-empty">
+                <strong>Canvas preview</strong>
+                <span>Rendered artwork will sit here.</span>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <aside className="artwork-showcase-aside" aria-label="Playback controls and note">
+          <div className="artwork-showcase-metric-line"><span>Frame:</span> <strong>{currentFrameLabel}</strong></div>
+          <div className="artwork-showcase-transport">
+            <button
+              type="button"
+              className="artwork-showcase-play"
+              onClick={() => {
+                setIsPlaying((current) => !current);
+              }}
+              disabled={readOnly || strokeTotal <= 0}
+              aria-pressed={isPlaying}
+              aria-label={isPlaying ? 'Pause playback' : 'Play playback'}
+            >
+              <span aria-hidden="true">{isPlaying ? 'Ⅱ' : '▶'}</span>
+            </button>
+
+            <label className="artwork-showcase-field artwork-showcase-scrubber">
+              <span>Seek</span>
+              <input
+                className="artwork-showcase-range"
+                type="range"
+                min={0}
+                max={Math.max(frameCount - 1, 0)}
+                step={1}
+                value={frameIndex}
+                onChange={(event) => {
+                  const nextFrame = Number(event.currentTarget.value);
+                  setFrameIndex(nextFrame);
+                  const nextStroke = frameCount > 1
+                    ? Math.round((nextFrame / Math.max(1, frameCount - 1)) * Math.max(0, strokeTotal - 1))
+                    : nextFrame;
+                  updateBlock({ strokeCurrent: nextStroke });
+                }}
+                disabled={readOnly || frameCount <= 0}
+                aria-valuetext={`Frame ${currentFrameLabel}`}
+              />
+            </label>
+
+          </div>
+
+          <label className="artwork-showcase-field artwork-showcase-speed">
+            <span>Speed</span>
+            <div className="artwork-showcase-speed-control">
+              <input
+                className="artwork-showcase-range"
+                type="range"
+                min={0.25}
+                max={4}
+                step={0.05}
+                value={speed}
+                onChange={(event) => updateBlock({ speed: Number(event.currentTarget.value) })}
+                disabled={readOnly}
+                aria-valuetext={`${speed.toFixed(2)}x`}
+              />
+              <strong>{speed.toFixed(2)}x</strong>
+            </div>
+          </label>
+
+          <div className="artwork-showcase-metric-line"><span>Comment:</span> <strong>{currentComment || 'No turn comments yet.'}</strong></div>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+const artworkShowcaseBlock: CustomBlockRegistration = {
+  type: 'artworkShowcase',
+  create: ({ readOnly }) => buildReactBlockSpec(
+    {
+      type: 'artworkShowcase',
+      propSchema: {
+        title: { default: 'Untitled artwork' },
+        canvasUrl: { default: '' },
+        canvasAlt: { default: '' },
+        prompt: { default: '' },
+        initialIdea: { default: '' },
+        turnComments: { default: '' },
+        finalPrompt: { default: '' },
+        strokeCurrent: { default: 0 },
+        strokeTotal: { default: 0 },
+        speed: { default: 1 },
+        frameUrls: { default: '[]' },
+      },
+      content: 'none',
+    },
+    {
+      render: (props: any) => <ArtworkShowcaseBlock block={props.block as unknown as { id: string; props: Record<string, unknown> }} editor={props.editor} readOnly={readOnly ?? false} />,
+      toExternalHTML: (props: any) => {
+        const blockProps = props.block.props as Record<string, unknown>;
+        const title = typeof blockProps.title === 'string' && blockProps.title.trim() ? blockProps.title.trim() : 'Untitled artwork';
+        const canvasUrl = typeof blockProps.canvasUrl === 'string' ? blockProps.canvasUrl.trim() : '';
+        const prompt = typeof blockProps.prompt === 'string' ? blockProps.prompt.trim() : '';
+        const initialIdea = typeof blockProps.initialIdea === 'string' ? blockProps.initialIdea.trim() : '';
+        const finalPrompt = typeof blockProps.finalPrompt === 'string' ? blockProps.finalPrompt.trim() : '';
+        return (
+          <figure>
+            {canvasUrl ? <img src={canvasUrl} alt={title} /> : null}
+            <figcaption>
+              <strong>{title}</strong>
+              {prompt ? <p>Prompt: {prompt}</p> : null}
+              {initialIdea ? <p>Initial idea: {initialIdea}</p> : null}
+              {finalPrompt ? <p>Final prompt: {finalPrompt}</p> : null}
+            </figcaption>
+          </figure>
+        );
+      },
+    },
+  )(),
+  slashMenu: ({ insertBlock }) => ({
+    title: 'Artwork showcase',
+    subtext: 'Show one artwork with playback and prompt history',
+    group: 'Media',
+    onItemClick: () => insertBlock({ type: 'artworkShowcase', props: { title: 'Untitled artwork', canvasUrl: '', canvasAlt: '', prompt: '', initialIdea: '', turnComments: '', finalPrompt: '', strokeCurrent: 0, strokeTotal: 0, speed: 1, frameUrls: '[]' } } as unknown as PartialBlock),
+  }),
+};
+
 const pageLinkBlock: CustomBlockRegistration = {
   type: 'pageLink',
   create: ({ referencedPages, pageRouteBasePath }) => {
@@ -738,6 +966,7 @@ const pageLinkBlock: CustomBlockRegistration = {
           >
             <PageIcon className="page-link-icon" icon={reference.icon} iconAssetId={reference.iconAssetId} />
             <span className="page-link-title">{reference.title || String(propsByType.title || 'Page')}</span>
+            <span className="page-link-arrow" aria-hidden="true">↗</span>
           </a>
         );
       },
@@ -828,7 +1057,7 @@ const galleryBlock: CustomBlockRegistration = {
 };
 
 /** Trusted, code-authored blocks. Add a registration here; slashMenu is opt-in. */
-export const customBlockRegistry: CustomBlockRegistration[] = [pageLinkBlock, youtubeBlock, galleryBlock];
+export const customBlockRegistry: CustomBlockRegistration[] = [pageLinkBlock, youtubeBlock, galleryBlock, artworkShowcaseBlock];
 
 export function createCustomBlockSpecs(context: CustomBlockSchemaContext): Record<string, BlockSpec<any, any, any>> {
   return Object.fromEntries(customBlockRegistry.map((registration) => [registration.type, registration.create(context)]));

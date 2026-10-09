@@ -44,7 +44,7 @@ describe('workspace export', () => {
         { type: 'gallery', props: { images: JSON.stringify([{ url: `/api/assets/${asset.id}`, caption: 'Cover image', name: 'Cover image.png' }]), columns: 3, mode: 'single', captionMode: 'individual', groupCaption: '', width: 100 } },
         { type: 'futureWidget', content: [{ type: 'text', text: 'Readable fallback', styles: {} }] },
       ]);
-      const source = createPage({ title: 'Source / Notes', coverAssetId: asset.id, tags: ['research', 'draft'], contentJson }, workspace);
+      const source = createPage({ title: 'Source / Notes', coverAssetId: asset.id, coverFocalX: 20, coverFocalY: 80, coverScale: 150, tags: ['research', 'draft'], contentJson }, workspace);
 
       const collection = createCollection({
         name: 'Projects & plans',
@@ -69,6 +69,9 @@ describe('workspace export', () => {
       assert.match(markdown, /\.\.\/assets\//);
       assert.match(markdown, /lost page _\(missing page:/);
       assert.match(markdown, /Readable fallback/);
+      assert.match(markdown, /cover_focal_x: 20/);
+      assert.match(markdown, /cover_focal_y: 80/);
+      assert.match(markdown, /cover_scale: 150/);
       assert.match(markdown, /tags: \["research","draft"\]/);
       assert.match(markdown, /Unsupported Arcane Codex block: futureWidget/);
 

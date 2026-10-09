@@ -45,6 +45,7 @@ export async function POST(request: Request) {
       sourcePath: outputPath,
       width: null,
       height: null,
+      prompt: requested,
     }, getDataDir());
 
     return NextResponse.json({ asset: created.asset, url: `/api/assets/${created.asset.id}` }, { status: created.created ? 201 : 200 });

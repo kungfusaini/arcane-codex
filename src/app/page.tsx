@@ -1,7 +1,7 @@
 import { PageEditorRoute } from '@/app/page/PageEditorRoute';
 import { PageWorkspaceLayout } from '@/app/page/PageWorkspaceLayout';
 import { WorkspaceHome } from '@/components/WorkspaceHome';
-import { getPage, listPageSummaries } from '@/lib/data/storage';
+import { getPage, listCollectionsHostedByPage, listPageSummaries } from '@/lib/data/storage';
 import { isPublishedAppSurface } from '@/lib/surface';
 import { findWorkspaceHomePage } from '@/lib/workspaceHome';
 
@@ -35,7 +35,7 @@ export default function HomePage() {
     return <WorkspaceHome initialPages={initialSidebarPages} readOnly={readOnly} pageRouteBasePath="/" />;
   }
 
-  const initialPage = getPage(homePage.id) ?? undefined;
+  const initialPage = listCollectionsHostedByPage(homePage.id).length ? undefined : getPage(homePage.id) ?? undefined;
 
   return (
     <PageWorkspaceLayout initialPageId={homePage.id} initialPages={initialPages} initialSidebarPages={initialSidebarPages} readOnly={readOnly} pageRouteBasePath="/">
