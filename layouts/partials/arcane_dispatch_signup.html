@@ -1,0 +1,188 @@
+<section class="arcane-dispatch-signup" aria-label="Arcane Dispatch email signup">
+  <style>
+    .arcane-dispatch-signup {
+      max-width: var(--nav-width);
+      margin: .25rem auto 0;
+      padding: .65rem .8rem;
+      border: 1px solid rgba(204, 36, 29, .28);
+      border-left: 3px solid var(--primary);
+      border-radius: 6px;
+      background: rgba(204, 36, 29, .045);
+      color: var(--secondary);
+      font-size: .78rem;
+    }
+    .arcane-dispatch-inner {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: .7rem;
+      flex-wrap: wrap;
+    }
+    .arcane-dispatch-copy {
+      margin: 0 auto 0 0;
+      line-height: 1.35;
+    }
+    .arcane-dispatch-mark,
+    .arcane-dispatch-copy strong {
+      color: var(--primary);
+    }
+    .arcane-dispatch-mark {
+      margin-right: .35rem;
+    }
+    .arcane-dispatch-copy strong {
+      font-weight: 600;
+    }
+    .arcane-dispatch-form {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      margin: 0;
+    }
+    .arcane-dispatch-form input[type="email"] {
+      width: 13rem;
+      padding: .4rem .55rem;
+      border: 1px solid rgba(204, 36, 29, .22);
+      border-radius: 4px;
+      background: rgba(0, 0, 0, .08);
+      color: var(--content);
+      font: inherit;
+    }
+    .arcane-dispatch-form button,
+    .arcane-dispatch-modal-close {
+      padding: .4rem .6rem;
+      border: 1px solid var(--primary);
+      border-radius: 4px;
+      background: var(--primary);
+      color: var(--theme);
+      font: inherit;
+      cursor: pointer;
+    }
+    .arcane-dispatch-form button:hover,
+    .arcane-dispatch-modal-close:hover {
+      filter: brightness(1.12);
+    }
+    .arcane-dispatch-form button:disabled {
+      cursor: wait;
+      opacity: .75;
+    }
+    .arcane-dispatch-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: none;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 6rem 1rem 1rem;
+      background: rgba(0, 0, 0, .42);
+    }
+    .arcane-dispatch-modal-backdrop.is-open {
+      display: flex;
+    }
+    .arcane-dispatch-modal {
+      width: min(28rem, 100%);
+      border: 1px solid rgba(204, 36, 29, .35);
+      border-left: 3px solid var(--primary);
+      border-radius: 6px;
+      background: var(--theme);
+      box-shadow: 0 16px 48px rgba(0, 0, 0, .35);
+      padding: 1rem;
+      color: var(--content);
+    }
+    .arcane-dispatch-modal-title {
+      margin: 0 0 .5rem;
+      color: var(--primary);
+      font-family: var(--heading-font-family);
+      font-size: 1.05rem;
+      line-height: 1.25;
+    }
+    .arcane-dispatch-modal-text {
+      margin: 0 0 1rem;
+      color: var(--secondary);
+      line-height: 1.45;
+    }
+    .arcane-dispatch-modal-actions {
+      display: flex;
+      justify-content: flex-end;
+    }
+    @media (max-width: 700px) {
+      .arcane-dispatch-signup { margin-left: var(--gap); margin-right: var(--gap); }
+      .arcane-dispatch-inner { align-items: stretch; }
+      .arcane-dispatch-copy { width: 100%; }
+      .arcane-dispatch-form { width: 100%; }
+      .arcane-dispatch-form input[type="email"] { flex: 1; width: auto; }
+    }
+  </style>
+  <div class="arcane-dispatch-inner">
+    <p class="arcane-dispatch-copy"><span class="arcane-dispatch-mark">✦</span><strong>Arcane Dispatch</strong> — occasional Codex updates. No spam.</p>
+    <form class="arcane-dispatch-form" method="POST" action="/arcane/subscribe">
+      <input type="email" name="email" placeholder="you@example.com" autocomplete="email" aria-label="Email address" required>
+      <input type="hidden" name="source_page" value="{{ .RelPermalink }}">
+      <input type="text" name="website" style="display:none" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <button type="submit">Join</button>
+    </form>
+  </div>
+  <div class="arcane-dispatch-modal-backdrop" role="presentation">
+    <div class="arcane-dispatch-modal" role="dialog" aria-modal="true" aria-labelledby="arcane-dispatch-modal-title">
+      <h2 class="arcane-dispatch-modal-title" id="arcane-dispatch-modal-title"></h2>
+      <p class="arcane-dispatch-modal-text"></p>
+      <div class="arcane-dispatch-modal-actions">
+        <button type="button" class="arcane-dispatch-modal-close">Close</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var root = document.currentScript.closest('.arcane-dispatch-signup');
+      var form = root && root.querySelector('.arcane-dispatch-form');
+      var modal = root && root.querySelector('.arcane-dispatch-modal-backdrop');
+      var title = root && root.querySelector('.arcane-dispatch-modal-title');
+      var text = root && root.querySelector('.arcane-dispatch-modal-text');
+      var close = root && root.querySelector('.arcane-dispatch-modal-close');
+      if (!form || !modal || !window.fetch) return;
+
+      function showModal(nextTitle, nextText) {
+        title.textContent = nextTitle;
+        text.textContent = nextText;
+        modal.classList.add('is-open');
+        close.focus();
+      }
+
+      function hideModal() {
+        modal.classList.remove('is-open');
+      }
+
+      close.addEventListener('click', hideModal);
+      modal.addEventListener('click', function (event) {
+        if (event.target === modal) hideModal();
+      });
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') hideModal();
+      });
+
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        var button = form.querySelector('button');
+        if (button) button.disabled = true;
+
+        fetch(form.action, {
+          method: 'POST',
+          body: new URLSearchParams(new FormData(form)),
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded'
+          }
+        }).then(function (response) {
+          return response.json().catch(function () { return {}; }).then(function (body) {
+            if (!response.ok) throw new Error(body.error || 'Something went wrong. Please try again.');
+            form.reset();
+            showModal('You\u2019re on the early list.', 'Thanks — Arcane Dispatch will wake when the Codex is ready.');
+          });
+        }).catch(function (error) {
+          showModal('The spell fizzled.', error.message || 'Something went wrong. Please try again.');
+        }).finally(function () {
+          if (button) button.disabled = false;
+        });
+      });
+    })();
+  </script>
+</section>

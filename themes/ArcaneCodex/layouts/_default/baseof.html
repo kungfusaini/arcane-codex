@@ -22,6 +22,7 @@
 <body id="top">
 {{- end }}
     {{ partialCached "header.html" . .Page -}}
+    {{- partial "arcane_dispatch_signup.html" . }}
     <main class="main">
         {{- if not .IsHome }}
         <div class="main-top-back">
