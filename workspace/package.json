@@ -1,0 +1,48 @@
+{
+  "name": "arcane-codex",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first Notion-style workspace",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "next dev -H 0.0.0.0",
+    "build": "next build",
+    "start": "next start -H 127.0.0.1",
+    "lint": "next lint",
+    "test": "tsx --test --test-concurrency=1 tests/*.test.ts",
+    "test:integration": "tsx --test --test-concurrency=1 tests/page-api.test.ts tests/collection-api.test.ts",
+    "test:e2e": "tsx --test --test-concurrency=1 tests/page-editor-flow.test.ts",
+    "test:ux": "npm run test:integration && npm run test:e2e",
+    "test:unit": "tsx --test --test-concurrency=1 tests/storage.test.ts tests/assets.test.ts tests/export.test.ts tests/recovery.test.ts",
+    "typecheck": "tsc --noEmit",
+    "test:browser": "npm run build && playwright test",
+    "assets:prewarm-icons": "tsx scripts/prewarm-icon-derivatives.ts",
+    "import:hugo-blog": "tsx scripts/import-hugo-blog.ts"
+  },
+  "dependencies": {
+    "@blocknote/core": "^0.54.0",
+    "@blocknote/react": "^0.54.0",
+    "@emoji-mart/data": "1.2.1",
+    "archiver": "^6.0.2",
+    "emoji-mart": "5.6.0",
+    "next": "^14.2.24",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sharp": "^0.35.4"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@testing-library/react": "^16.0.1",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.3",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "^14.2.24",
+    "tsx": "^4.17.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.0"
+  }
+}

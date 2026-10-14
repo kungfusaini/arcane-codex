@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Arcane Codex Theme Specimen · Gruvbox Dark 85% Density</title>
+  <style>
+    :root {
+      /* Gruvbox Dark 85%-density specimen: warm charcoal, cream text, orange accent. */
+      --color-neutral: #1d2021;
+      --color-ink: #ebdbb2;
+      --color-ink-strong: #fbf1c7;
+      --color-muted: #d5c4a1;
+      --color-border: #504945;
+      --color-accent: #fe8019;
+      --color-accent-deep: #d65d03;
+      --color-accent-on: #1d2021;
+      --color-card: #3c3836;
+      --color-page: #282828;
+      --color-page-muted: #504945;
+      --color-surface-muted: #665c54;
+      --color-success: #b8bb26;
+      --color-warning: #fabd2f;
+      --color-danger: #fb4934;
+      --color-danger-muted: #3c2826;
+      --font-base: ProFontIIx, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --font-mono: ProFontIIx, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --font-size-100: 10.2px;
+      --font-size-200: 11.9px;
+      --font-size-300: 13.6px;
+      --font-size-500: 17px;
+      --font-size-700: 27.2px;
+      --font-size-800: 40.8px;
+      --font-size-h1: var(--font-size-800);
+      --font-size-page-title: var(--font-size-h1);
+      --space-0: 0px;
+      --space-px: 1px;
+      --space-1: 3.4px;
+      --space-2: 6.8px;
+      --space-3: 10.2px;
+      --space-4: 13.6px;
+      --space-6: 20.4px;
+      --space-8: 27.2px;
+      --space-12: 40.8px;
+      --space-16: 54.4px;
+      --radius-sm: 3.4px;
+      --radius-md: 5.1px;
+      --radius-lg: 6.8px;
+      --control-radius: var(--radius-sm);
+      --image-tool-radius: var(--radius-md);
+      --elevation-md: 0 6.8px 20.4px rgba(0, 0, 0, 0.34);
+      --elevation-lg: 0 13.6px 34px rgba(0, 0, 0, 0.34);
+      --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+      --motion-slow: 200ms;
+      --rail-width: 285.6px;
+      --state-disabled-opacity-strong: 0.55;
+      --state-focus-outline-width: 1.7px;
+      --state-focus-outline-offset: 1.7px;
+      --surface-canvas: var(--color-neutral);
+      --surface-page: var(--color-page);
+      --surface-panel: var(--color-card);
+      --surface-hover: var(--color-page-muted);
+      --surface-field: var(--color-page-muted);
+      --text-primary: var(--color-ink);
+      --text-strong: var(--color-ink-strong);
+      --text-muted: var(--color-muted);
+      --text-accent: var(--color-ink-strong);
+      --divider-subtle: var(--color-border);
+      --focus-ring: var(--color-warning);
+      --art-canvas-image: url('./theme-background-pandora-ships.jpg');
+      --art-veil-strong: color-mix(in oklab, var(--surface-canvas) 46%, transparent);
+      --art-veil-panel: color-mix(in oklab, var(--surface-page) 90%, transparent);
+      --art-veil-raised: color-mix(in oklab, var(--surface-panel) 92%, transparent);
+      --media-modal-scrim: color-mix(in oklab, var(--surface-canvas) 96%, transparent);
+      --media-modal-panel-bg: transparent;
+      --media-modal-panel-shadow: none;
+      --gallery-image-size-min: 102px;
+      --gallery-image-size-default: 204px;
+      --gallery-image-size-max: 408px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--surface-canvas);
+      color: var(--text-primary);
+      font-family: var(--font-base);
+      font-size: var(--font-size-300);
+      line-height: 1.5;
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background:
+        linear-gradient(90deg, color-mix(in oklab, var(--surface-canvas) 78%, transparent), color-mix(in oklab, var(--surface-canvas) 46%, transparent)),
+        linear-gradient(180deg, color-mix(in oklab, var(--surface-canvas) 50%, transparent), color-mix(in oklab, var(--surface-canvas) 64%, transparent)),
+        var(--art-canvas-image) center / cover no-repeat;
+    }
+    a { color: inherit; }
+    button, input, select, textarea { font: inherit; }
+    button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible {
+      outline: 1.7px solid var(--focus-ring);
+      outline-offset: 1.7px;
+    }
+    button:disabled, input:disabled, select:disabled, textarea:disabled { opacity: .5; cursor: not-allowed; }
+
+    .page { display: grid; grid-template-columns: 285.6px minmax(0, 1fr); min-height: 100vh; background: var(--art-veil-strong); }
+    .sidebar { background: var(--art-veil-panel); padding: var(--space-4); border-right: var(--space-px) solid var(--divider-subtle); }
+    .brand { display: flex; align-items: center; gap: var(--space-2); font-weight: 700; margin-bottom: var(--space-4); }
+    .brand-mark { display: grid; place-items: center; width: var(--space-8); height: var(--space-8); background: var(--surface-hover); color: var(--color-accent); border-radius: var(--radius-md); }
+    .nav-group {
+      position: relative;
+      margin: var(--space-4) 0;
+      padding-left: var(--space-1);
+    }
+    .nav-tree {
+      display: grid;
+      gap: var(--space-1);
+      padding-left: var(--space-0);
+    }
+    .nav-tree-children {
+      display: grid;
+      gap: var(--space-1);
+      padding-left: var(--space-4);
+    }
+    .section-label { color: var(--text-muted); font-size: var(--font-size-100); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 var(--space-2); }
+    .nav-item { display: flex; align-items: center; gap: var(--space-1); min-height: 0; padding: 0 var(--space-2); color: var(--text-strong); border: 0; background: transparent; border-radius: 0; text-decoration: none; position: relative; font-family: var(--font-mono); white-space: pre; font-size: var(--font-size-200); line-height: 1.05; letter-spacing: 0; font-variant-ligatures: none; }
+    .nav-toggle { width: 100%; text-align: left; cursor: pointer; }
+    .tree-caret { display: inline-block; width: 1ch; color: var(--text-muted); flex: 0 0 auto; }
+    .tree-icon { display: none; }
+    .tree-branch { display: inline-block; width: auto; margin-right: var(--space-2); color: var(--text-muted); flex: 0 0 auto; }
+    .nav-tree-children[hidden] { display: none; }
+    .nav-item-child { padding-left: var(--space-0); }
+    .nav-branch { display: none; }
+    .nav-item:hover { background: var(--surface-hover); color: var(--text-strong); }
+    .nav-item.is-active { background: var(--surface-hover); color: var(--text-strong); border-radius: var(--radius-sm); }
+
+    .inline-link { color: inherit; text-decoration: none; }
+    .inline-link:hover { color: var(--text-strong); }
+
+    .page-link-block {
+      width: fit-content;
+      max-width: 100%;
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-2);
+      color: inherit;
+      text-decoration: none;
+      font-weight: inherit;
+      transition: opacity 150ms var(--ease-out);
+    }
+    .page-link-block:hover { opacity: .72; }
+    .page-link-block:active { opacity: var(--state-disabled-opacity-strong); }
+    .page-link-block:focus-visible { outline: var(--state-focus-outline-width) solid var(--focus-ring); outline-offset: var(--state-focus-outline-offset); }
+    .page-link-icon {
+      width: var(--space-8);
+      min-width: var(--space-8);
+      height: var(--space-8);
+      display: inline-grid;
+      place-items: center;
+      overflow: hidden;
+      font-size: var(--font-size-400);
+      line-height: 1;
+    }
+    .page-link-arrow {
+      display: inline-grid;
+      place-items: center;
+      margin-left: var(--space-1);
+      color: var(--text-muted);
+      font-size: var(--font-size-400);
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .main { padding: var(--space-8); overflow: hidden; }
+    .hero { max-width: 952px; margin: 0 auto var(--space-8); }
+    .hero-kicker { display: none; }
+    h1 { color: var(--text-strong); font-size: var(--font-size-h1); line-height: 1.05; letter-spacing: -.04em; margin: var(--space-2) 0; }
+    .hero p { max-width: 612px; color: var(--text-muted); margin: 0; }
+    .decision-note { margin-top: var(--space-4); padding: var(--space-3); background: var(--art-veil-panel); border-radius: 0; color: var(--text-muted); box-shadow: inset 2.55px 0 0 var(--color-accent); }
+
+    .grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(306px, .8fr); gap: var(--space-8); max-width: 952px; margin: 0 auto; align-items: start; }
+    .specimen-section { margin-bottom: var(--space-8); }
+    .specimen-section > h2 { font-size: var(--font-size-500); margin: 0 0 var(--space-4); }
+    .surface { background: var(--art-veil-panel); padding: var(--space-6); border-radius: var(--radius-lg); }
+    .stack { display: grid; gap: var(--space-4); }
+    .row { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+
+    .button { min-height: var(--space-8); border: 0; border-radius: var(--radius-sm); padding: var(--space-1) var(--space-3); color: var(--text-primary); background: transparent; cursor: pointer; transition: background-color 150ms var(--ease-out), transform 100ms var(--ease-out); }
+    .button:hover { background: var(--surface-hover); }
+    .button:active { transform: scale(.97); }
+    .button-primary { background: var(--color-accent); color: var(--color-accent-on); font-weight: 700; }
+    .button-primary:hover { background: var(--color-accent-deep); color: var(--text-strong); }
+    .button-danger { background: var(--color-danger-muted); color: var(--text-strong); box-shadow: inset 2.55px 0 0 var(--color-danger); }
+    .button-icon { width: var(--space-8); padding: 0; display: inline-grid; place-items: center; }
+
+    .field { display: grid; gap: var(--space-1); min-width: 153px; }
+    .field label { color: var(--text-muted); font-size: var(--font-size-100); font-weight: 700; }
+    .input, .select, .textarea { width: 100%; min-height: var(--space-8); border: 0; border-radius: var(--radius-sm); background: var(--surface-field); color: var(--text-strong); padding: var(--space-1) var(--space-2); }
+    .textarea { min-height: 74.8px; resize: vertical; }
+    .helper { color: var(--text-muted); font-size: var(--font-size-100); }
+
+    .token {
+      display: inline-flex;
+      align-items: center;
+      min-height: 20.4px;
+      padding: var(--space-1) var(--space-2);
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text-strong);
+      font-size: var(--font-size-100);
+      font-weight: 700;
+      line-height: 1;
+      white-space: nowrap;
+      box-shadow: inset 2.55px 0 0 var(--color-border);
+    }
+    .token-accent { box-shadow: inset 2.55px 0 0 var(--color-accent); }
+    .token-success { box-shadow: inset 2.55px 0 0 var(--color-success); }
+    .token-warning { box-shadow: inset 2.55px 0 0 var(--color-warning); }
+    .token-danger { box-shadow: inset 2.55px 0 0 var(--color-danger); }
+
+    .page-tags-specimen {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-1);
+    }
+    .page-tags-specimen-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-1);
+    }
+    .page-tags-specimen-item {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-0);
+    }
+    .page-tags-specimen-chip,
+    .page-tags-specimen-add {
+      min-height: 20.4px;
+      padding: var(--space-1) var(--space-2);
+      border-radius: var(--radius-sm);
+      font-size: var(--font-size-100);
+      font-weight: 700;
+      line-height: 1;
+    }
+    .page-tags-specimen-chip {
+      display: inline-flex;
+      align-items: center;
+      background: transparent;
+      color: var(--text-strong);
+      box-shadow: inset 2.55px 0 0 var(--color-accent);
+      white-space: nowrap;
+    }
+    .page-tags-specimen-add {
+      padding-inline: var(--space-1);
+      background: transparent;
+      color: var(--text-muted);
+      opacity: .55;
+      border: 0;
+      cursor: pointer;
+      transition: opacity 150ms var(--ease-out), color 150ms var(--ease-out), background-color 150ms var(--ease-out), transform 100ms var(--ease-out);
+    }
+    .page-tags-specimen:hover .page-tags-specimen-add,
+    .page-tags-specimen:focus-within .page-tags-specimen-add {
+      opacity: 1;
+    }
+    .page-tags-specimen-add:hover {
+      background: var(--surface-hover);
+      color: var(--text-primary);
+    }
+    .page-tags-specimen-add:focus-visible {
+      outline: var(--state-focus-outline-width) solid var(--focus-ring);
+      outline-offset: var(--state-focus-outline-offset);
+    }
+    .page-tags-specimen-add:active {
+      transform: scale(.97);
+    }
+
+    .document { background: color-mix(in oklab, var(--surface-canvas) 72%, transparent); padding: var(--space-6); border-radius: var(--radius-md); }
+    .cover { height: 142.8px; border-radius: 0; background: var(--color-surface-muted); box-shadow: inset 0 -3.6px 0 var(--color-accent); margin-bottom: -25.2px; }
+    .page-icon { width: 54.4px; height: 54.4px; display: grid; place-items: center; font-size: 30.6px; background: var(--surface-panel); color: var(--color-accent); border-radius: var(--radius-lg); margin-left: var(--space-6); position: relative; }
+    .doc-body { max-width: 652.8px; margin: var(--space-4) auto 0; }
+    .doc-body > .row:first-child { margin-bottom: var(--space-3); }
+    .doc-title { font-size: var(--font-size-page-title); line-height: 1.08; letter-spacing: -.03em; margin: 0 0 var(--space-4); }
+    .block { padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+    .block:hover { background: var(--surface-hover); }
+    .quote { color: var(--text-muted); padding-left: var(--space-4); border-left: 2.55px solid var(--divider-subtle); }
+
+    .table-wrap { overflow: auto; margin-top: var(--space-2); }
+    table { width: 100%; min-width: 578px; border-collapse: collapse; }
+    th, td { text-align: left; padding: var(--space-2); border-bottom: var(--space-px) solid var(--divider-subtle); }
+    th { color: var(--text-muted); font-size: var(--font-size-100); font-weight: 700; }
+    tr:hover td { background: color-mix(in oklab, var(--surface-hover) 55%, transparent); }
+    .gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+    .gallery-card { background: var(--art-veil-raised); border-radius: var(--radius-md); overflow: hidden; }
+    .gallery-cover { height: 81.6px; background: var(--surface-hover); }
+    .gallery-body { padding: var(--space-3); }
+
+    .popover, .modal, .drawer, .toast { background: var(--art-veil-raised); border-radius: var(--radius-md); box-shadow: var(--elevation-md); }
+    .popover { width: 238px; padding: var(--space-2); }
+    .menu-item { display: flex; justify-content: space-between; min-height: var(--space-8); padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); color: var(--text-muted); }
+    .menu-item:hover { background: var(--surface-hover); color: var(--text-primary); }
+    .modal { padding: var(--space-4); }
+    .modal header, .popup-header { display: flex; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-3); }
+    .modal h3, .popup-header strong { margin: 0; }
+    .modal p, .popup-header p { color: var(--text-muted); margin: var(--space-1) 0 0; }
+    .drawer { padding: var(--space-4); min-height: 187px; border-radius: var(--radius-md) var(--radius-md) 0 0; }
+    .desktop-rail-motion { display: grid; grid-template-columns: var(--space-12) minmax(0, 1fr); min-height: calc(var(--space-16) * 2 + var(--space-2)); overflow: hidden; background: var(--surface-canvas); }
+    .desktop-rail-motion .rail-ghost { padding: var(--space-2); background: var(--surface-page); transform: translateX(calc(var(--rail-width) * -1)); opacity: 0; transition: transform var(--motion-slow) var(--ease-out), opacity var(--motion-slow) var(--ease-out); }
+    .desktop-rail-motion .work-ghost { display: grid; align-content: center; gap: var(--space-2); padding: var(--space-4); }
+    .desktop-rail-motion .reopen-ghost { width: var(--space-8); min-height: var(--space-8); padding: var(--space-0); }
+    .toast { padding: var(--space-3); display: flex; justify-content: space-between; gap: var(--space-3); }
+
+    .state { padding: var(--space-4); background: var(--art-veil-raised); border-radius: var(--radius-md); }
+    .skeleton { height: 11.9px; width: 100%; background: var(--surface-hover); border-radius: var(--radius-sm); margin: var(--space-2) 0; }
+    .error { background: var(--color-danger-muted); color: var(--color-danger); }
+
+    .media-player { display: grid; gap: var(--space-3); padding: var(--space-3); background: var(--art-veil-raised); border-radius: var(--radius-md); box-shadow: var(--elevation-lg); }
+    .media-bar { height: var(--space-1); border-radius: var(--radius-sm); background: var(--surface-hover); overflow: hidden; }
+    .media-progress { width: 38%; height: 100%; background: var(--color-accent); }
+    .gallery-block-specimen { --gallery-image-size: var(--gallery-image-size-default); display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--gallery-image-size)), var(--gallery-image-size))); justify-content: start; gap: var(--space-1); }
+    .gallery-block-specimen figure { margin: 0; }
+    .gallery-block-specimen div { height: 112.2px; display: grid; place-items: center; border-radius: var(--radius-md); background: var(--surface-hover); color: var(--text-accent); }
+    .gallery-block-specimen figcaption { color: var(--text-muted); font-size: var(--font-size-200); text-align: center; overflow-wrap: normal; word-break: normal; hyphens: none; }
+    .publish-media-trigger { display: inline-grid; padding: 0; border: 0; border-radius: var(--radius-md); background: transparent; color: inherit; cursor: zoom-in; overflow: hidden; }
+    .publish-media-trigger:focus-visible { outline: var(--state-focus-outline-width) solid var(--text-accent); outline-offset: var(--state-focus-outline-offset); }
+    .publish-media-trigger:disabled { cursor: not-allowed; opacity: var(--state-disabled-opacity-strong); }
+    .publish-media-thumb { width: 100%; height: 102px; display: grid; place-items: center; background: var(--surface-hover); color: var(--text-accent); font-size: var(--font-size-700); }
+    .publish-media-modal { display: grid; gap: var(--space-3); padding: var(--space-4); border-radius: var(--image-tool-radius); background: var(--media-modal-panel-bg); box-shadow: var(--media-modal-panel-shadow); }
+    .publish-media-stage { min-height: 112.2px; display: grid; place-items: center; border-radius: var(--control-radius); background: var(--surface-page); color: var(--text-muted); }
+    .publish-media-modal footer { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); color: var(--text-muted); font-size: var(--font-size-200); }
+
+    .decision-list { display: grid; grid-template-columns: 1fr; gap: var(--space-2); padding-left: var(--space-4); color: var(--text-muted); }
+    .decision-list li { padding-left: var(--space-1); }
+
+    @media (max-width: 782px) {
+      .page { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .main { padding: var(--space-4); }
+      .grid { grid-template-columns: 1fr; gap: var(--space-6); }
+      .surface { padding: var(--space-4); }
+      .specimen-section { margin-bottom: var(--space-6); }
+      .decision-list { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <aside class="sidebar" aria-label="Workspace navigation specimen">
+      <div class="brand"><span class="brand-mark">☾</span><span>Arcane Codex</span></div>
+      <label class="field"><span class="section-label">Search</span><input class="input" value="zill experiments" /></label>
+      <nav class="nav-group" aria-label="Pages">
+        <p class="section-label">Pages</p>
+        <div class="nav-tree" aria-label="Page tree">
+          <button class="nav-item nav-toggle is-active" type="button" aria-expanded="true"><span class="tree-caret" aria-hidden="true">v</span><span>Quick Observations</span></button>
+          <div class="nav-tree-children">
+            <a class="nav-item nav-item-child" href="#"><span class="tree-branch" aria-hidden="true">├──</span><span>Experiments</span></a>
+            <a class="nav-item nav-item-child" href="#"><span class="tree-branch" aria-hidden="true">├──</span><span>Books / Notes</span></a>
+            <a class="nav-item nav-item-child" href="#"><span class="tree-branch" aria-hidden="true">└──</span><span>Drafts</span></a>
+          </div>
+        </div>
+      </nav>
+      <div class="nav-group">
+        <p class="section-label">State examples</p>
+        <div class="nav-tree" aria-label="State tree">
+          <button class="nav-item nav-toggle" type="button" aria-expanded="true"><span class="tree-caret" aria-hidden="true">v</span><span>Saving…</span></button>
+          <a class="nav-item nav-item-child" href="#"><span class="tree-branch" aria-hidden="true">└──</span><span>Offline recovery</span></a>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <section class="hero">
+        <h1>Arcane Codex should feel quick, funny, personal, and useful.</h1>
+        <p>This page is not final styling. It is a Gruvbox Dark starting point: warm charcoal surfaces, cream text, orange product accent, yellow focus, compact mono-forward chrome.</p>
+        <div class="decision-note">Review this like a design checklist: keep, reject, or adjust the look of each element family before it becomes the product theme.</div>
+      </section>
+
+      <div class="grid">
+        <div>
+          <section class="specimen-section">
+            <h2>Core app mockup</h2>
+            <div class="document surface">
+              <div class="cover"></div>
+              <div class="page-icon">🗒️</div>
+              <div class="doc-body">
+                <div class="row"><span class="token token-accent">Observation</span><span class="token">3 min thought</span><span class="token token-warning">Drafty</span></div>
+                <h2 class="doc-title">The tiny notes are probably the real blog.</h2>
+                <p class="block">I keep making Serious Writing Machines, then immediately want to write one sentence about a weird cafe chair.</p>
+                <p class="block quote">Question: should casual notes look raw and fast, or still polished?</p>
+                <div class="row"><button class="button button-primary">Publish note</button><button class="button">Add block</button><button class="button button-icon" aria-label="More actions">⋯</button></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="specimen-section">
+            <h2>Links</h2>
+            <div class="surface stack">
+              <p>Inline link: <a class="inline-link" href="https://emojipedia.org/apple" target="_blank" rel="noopener noreferrer nofollow" data-inline-content-type="link">https://emojipedia.org/apple</a></p>
+              <a class="page-link-block" href="#" aria-label="Open AI Image gen experiments"><span class="page-link-icon" aria-hidden="true">✦</span><span>AI Image gen experiments</span><span class="page-link-arrow" aria-hidden="true">↗</span></a>
+            </div>
+          </section>
+
+          <section class="specimen-section">
+            <h2>Collections: table and gallery</h2>
+            <div class="surface stack">
+              <div class="row"><button class="button button-primary">New item</button><button class="button">Table</button><button class="button">Gallery</button><label class="field"><span class="section-label">Filter</span><input class="input" placeholder="Category" /></label></div>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Name</th><th>Status</th><th>Type</th><th>Score</th><th>URL</th></tr></thead>
+                  <tbody>
+                    <tr><td>Neovim markdown bug</td><td><span class="token token-success">Done</span></td><td><span class="token">Tech</span></td><td>8</td><td>Open</td></tr>
+                    <tr><td>Bike changed my life</td><td><span class="token token-accent">Published</span></td><td><span class="token">Thoughts</span></td><td>9</td><td>Open</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="gallery">
+                <article class="gallery-card"><div class="gallery-cover"></div><div class="gallery-body"><strong>Zill experiment #12</strong><p class="helper">Tiny observation card with tags and quick action.</p><span class="token token-danger">Needs edit</span></div></article>
+                <article class="gallery-card"><div class="gallery-cover"></div><div class="gallery-body"><strong>Book note</strong><p class="helper">Cover/media card treatment.</p><span class="token token-success">Ready</span></div></article>
+              </div>
+            </div>
+          </section>
+
+          <section class="specimen-section">
+            <h2>States</h2>
+            <div class="stack">
+              <div class="state"><strong>Empty</strong><p class="helper">No quick observations yet. Start with one throwaway sentence.</p><button class="button button-primary">Write first note</button></div>
+              <div class="state"><strong>Loading</strong><div class="skeleton"></div><div class="skeleton" style="width: 72%"></div></div>
+              <div class="state error"><strong>Error</strong><p>Could not save the note. Keep the draft visible and offer retry/recovery.</p><button class="button button-danger">Retry save</button></div>
+            </div>
+          </section>
+        </div>
+
+        <aside>
+          <section class="specimen-section">
+            <h2>Decision checklist</h2>
+            <div class="surface">
+              <ol class="decision-list">
+                <li>Brand mark/logo treatment</li>
+                <li>Background/canvas colour</li>
+                <li>Sidebar density and active rows</li>
+                <li>Page cover treatment</li>
+                <li>Page icon/avatar treatment</li>
+                <li>H1/H2/body/caption/mono typography</li>
+                <li>Links and inline emphasis</li>
+                <li>Primary buttons</li>
+                <li>Secondary/quiet buttons</li>
+                <li>Danger buttons</li>
+                <li>Icon buttons/toolbars</li>
+                <li>Inputs/search/textarea</li>
+                <li>Select/dropdown triggers</li>
+                <li>Labels/helper/error text</li>
+                <li>Badges/property tokens</li>
+                <li>Table headers/rows/cells</li>
+                <li>Gallery cards/covers</li>
+                <li>Menus/context menus</li>
+                <li>Popovers/tooltips</li>
+                <li>Modals/dialogs</li>
+                <li>Mobile drawer</li>
+                <li>Desktop push-collapse rail</li>
+                <li>Toast/recovery messages</li>
+                <li>Empty/loading/error states</li>
+                <li>Media player controls</li>
+                <li>Image grabber popup</li>
+                <li>Focus/hover/active/disabled states</li>
+              </ol>
+            </div>
+          </section>
+
+          <section class="specimen-section">
+            <h2>Controls and forms</h2>
+            <div class="surface stack">
+              <div class="row"><button class="button button-primary">Primary</button><button class="button">Quiet</button><button class="button button-danger">Danger</button><button class="button" disabled>Disabled</button></div>
+              <label class="field"><span>Visible label</span><input class="input" placeholder="Placeholder text" /></label>
+              <label class="field"><span>Select label</span><select class="select"><option>Quick note</option><option>Experiment</option><option>Essay</option></select></label>
+              <label class="field"><span>Textarea label</span><textarea class="textarea">Small observation draft…</textarea></label>
+              <div class="row"><span class="token">Default</span><span class="token token-accent">Accent</span><span class="token token-success">Success</span><span class="token token-warning">Warning</span><span class="token token-danger">Danger</span></div>
+              <div class="page-tags-specimen" aria-label="Page tags specimen"><ul class="page-tags-specimen-list"><li class="page-tags-specimen-item"><span class="page-tags-specimen-chip">Space</span></li><li class="page-tags-specimen-item"><span class="page-tags-specimen-chip">Draft</span></li><li class="page-tags-specimen-item"><span class="page-tags-specimen-chip">Research</span></li></ul><button class="page-tags-specimen-add" type="button" aria-label="Add tag">＋</button></div>
+            </div>
+          </section>
+
+          <section class="specimen-section">
+            <h2>Popups, windows, overlays</h2>
+            <div class="stack">
+              <div class="popover"><div class="menu-item"><span>Rename</span><span>⌘R</span></div><div class="menu-item"><span>Duplicate</span><span>⌘D</span></div><div class="menu-item"><span>Delete</span><span>⌫</span></div></div>
+              <div class="modal"><header><div><h3>Publish note?</h3><p>Dialog layout, title, body, actions.</p></div><button class="button button-icon" aria-label="Close">×</button></header><div class="row"><button class="button button-primary">Publish</button><button class="button">Cancel</button></div></div>
+              <div class="drawer"><div class="popup-header"><div><strong>Mobile drawer</strong><p>Navigation/action sheet treatment.</p></div></div><a class="nav-item is-active" href="#"><span class="nav-branch" aria-hidden="true">├──</span><span>Quick Observations</span></a><a class="nav-item" href="#"><span class="nav-branch" aria-hidden="true">└──</span><span>Experiments</span></a></div>
+              <div class="desktop-rail-motion"><div class="rail-ghost" aria-hidden="true"><a class="nav-item is-active" href="#"><span class="nav-branch" aria-hidden="true">├──</span><span>Notes</span></a></div><div class="work-ghost"><button class="button reopen-ghost" aria-label="Open sidebar">☰</button><strong>Desktop rail collapsed</strong><span class="helper">The sidebar slides away while the work surface shifts into the released track.</span></div></div>
+              <div class="toast"><span>Saved locally.</span><button class="button">Undo</button></div>
+            </div>
+          </section>
+
+          <section class="specimen-section">
+            <h2>Media and image tools</h2>
+            <div class="stack">
+              <div class="media-player">
+                <strong>Mini player / embed controls</strong>
+                <div class="media-bar"><div class="media-progress"></div></div>
+                <div class="row"><button class="button button-icon" aria-label="Previous">⏮</button><button class="button button-primary">Play</button><button class="button button-icon" aria-label="Next">⏭</button></div>
+              </div>
+              <div class="gallery-block-specimen" aria-label="Dynamic gallery image sizing specimen">
+                <figure><div>☾</div><figcaption>Medium image</figcaption></figure>
+                <figure><div>✦</div><figcaption>Same size</figcaption></figure>
+                <figure><div>☼</div><figcaption>Columns auto fit</figcaption></figure>
+              </div>
+              <button class="publish-media-trigger" type="button" aria-label="Open published image"><span class="publish-media-thumb">☾</span></button>
+              <div class="publish-media-modal" role="dialog" aria-label="Published media modal specimen">
+                <div class="popup-header"><div><strong>Published media modal</strong><p>Baseline shell for images now; videos, 3D models, and future media reuse this format.</p></div><button class="button button-icon" aria-label="Close">×</button></div>
+                <div class="publish-media-stage">Opened media stage</div>
+                <footer><button class="button">Previous</button><span>1 of 3</span><button class="button">Next</button></footer>
+              </div>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </main>
+  </div>
+  <script>
+    document.querySelectorAll('.nav-toggle').forEach((button) => {
+      const child = button.nextElementSibling;
+      const caret = button.querySelector('.tree-caret');
+      const setOpen = (open) => {
+        button.setAttribute('aria-expanded', String(open));
+        if (caret) caret.textContent = open ? 'v' : '>';
+        if (child && child.classList.contains('nav-tree-children')) child.hidden = !open;
+      };
+      setOpen(button.getAttribute('aria-expanded') !== 'false');
+      button.addEventListener('click', () => setOpen(button.getAttribute('aria-expanded') !== 'true'));
+    });
+  </script>
+</body>
+</html>

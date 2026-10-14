@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Arcane Codex Theme Run Examples</title>
+  <style>
+    :root {
+      --canvas: #1d2021;
+      --surface: #282828;
+      --raised: #3c3836;
+      --active: #504945;
+      --muted-surface: #665c54;
+      --text: #ebdbb2;
+      --text-strong: #fbf1c7;
+      --accent: #fe8019;
+      --accent-deep: #d65d03;
+      --warning: #fabd2f;
+      --success: #b8bb26;
+      --danger: #fb4934;
+      --shadow: 0 18px 42px rgba(0, 0, 0, .32);
+      --font-ui: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --font-body: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--text);
+      font: 14px/1.5 var(--font-ui);
+    }
+
+    .page {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 40px 24px 64px;
+    }
+
+    header {
+      margin-bottom: 24px;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+    h1 {
+      color: var(--text-strong);
+      font-size: 28px;
+      letter-spacing: -0.04em;
+      line-height: 1.1;
+    }
+    .lede {
+      max-width: 760px;
+      margin-top: 10px;
+      color: var(--text);
+      opacity: .84;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .option {
+      background: var(--surface);
+      border: 1px solid rgba(251, 241, 199, .08);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: none;
+    }
+
+    .option-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      background: var(--raised);
+      border-bottom: 1px solid rgba(251, 241, 199, .08);
+    }
+
+    .option-title {
+      color: var(--text-strong);
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .tag {
+      color: var(--canvas);
+      background: var(--accent);
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .mock {
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      min-height: 330px;
+    }
+
+    .rail {
+      padding: 14px 10px;
+      background: #242424;
+      border-right: 1px solid rgba(251, 241, 199, .07);
+    }
+
+    .brand {
+      color: var(--text-strong);
+      margin-bottom: 14px;
+      font-weight: 800;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 28px;
+      padding: 4px 7px;
+      border-radius: 4px;
+      color: rgba(235, 219, 178, .8);
+    }
+    .nav-item.active { background: var(--active); color: var(--text-strong); }
+    .nav-item .mark { color: var(--accent); }
+
+    .work {
+      padding: 18px 20px 22px;
+      background: var(--canvas);
+    }
+
+    .crumbs {
+      color: rgba(235, 219, 178, .58);
+      font-size: 12px;
+      margin-bottom: 16px;
+    }
+
+    .doc-title {
+      color: var(--text-strong);
+      font-size: 25px;
+      line-height: 1.1;
+      margin-bottom: 8px;
+    }
+
+    .meta {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+
+    .pill {
+      background: var(--raised);
+      color: var(--text);
+      border-radius: 4px;
+      padding: 3px 7px;
+      font-size: 11px;
+    }
+
+    .copy {
+      font-family: var(--font-body);
+      color: rgba(235, 219, 178, .9);
+      max-width: 520px;
+      font-size: 15px;
+    }
+
+    .actions { display: flex; gap: 8px; margin-top: 18px; }
+    button {
+      height: 32px;
+      border: 0;
+      border-radius: 4px;
+      padding: 0 10px;
+      font: 700 12px var(--font-ui);
+      cursor: default;
+    }
+    .primary { background: var(--accent); color: var(--canvas); }
+    .quiet { background: var(--raised); color: var(--text); }
+
+    .callout {
+      margin-top: 16px;
+      max-width: 520px;
+      padding: 10px 12px;
+      border-radius: 6px;
+      background: var(--raised);
+      color: var(--text);
+    }
+
+    .a .doc-title { font-family: var(--font-ui); }
+    .a .sigil { color: var(--warning); }
+    .a .brand::before { content: "✶ "; color: var(--accent); }
+
+    .b .cover {
+      height: 64px;
+      margin: -18px -20px 18px;
+      background: linear-gradient(135deg, #3c3836, #282828 68%);
+      border-bottom: 1px solid rgba(251, 241, 199, .08);
+    }
+    .b .card-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 16px;
+    }
+    .b .mini-card {
+      padding: 10px;
+      border-radius: 6px;
+      background: var(--surface);
+      border-left: 3px solid var(--accent);
+    }
+
+    .c .empty {
+      margin-top: 16px;
+      max-width: 500px;
+      padding: 12px;
+      border-radius: 6px;
+      background: var(--raised);
+      color: var(--text);
+    }
+    .c .empty strong { color: var(--warning); }
+    .c .pill { background: rgba(254, 128, 25, .16); color: var(--text-strong); }
+
+    .d .rail { background: #1d2021; }
+    .d .nav-item { border-left: 2px solid transparent; border-radius: 0 4px 4px 0; }
+    .d .nav-item.active { border-left-color: var(--accent); }
+    .d .doc-title { color: var(--accent); }
+    .d .work { background: #282828; }
+    .d .callout { border: 1px solid var(--active); box-shadow: var(--shadow); }
+
+    @media (max-width: 860px) {
+      .grid { grid-template-columns: 1fr; }
+      .mock { grid-template-columns: 1fr; }
+      .rail { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <h1>Arcane Codex: Gruvbox + Notion + magic direction samples</h1>
+      <p class="lede">These are not final designs. They are decision aids: choose where the magic should live so the actual theme contract stays consistent.</p>
+    </header>
+
+    <section class="grid">
+      <article class="option a">
+        <div class="option-head"><h2 class="option-title">A. Magic in typography + symbols</h2><span class="tag">quiet UI</span></div>
+        <div class="mock">
+          <aside class="rail"><div class="brand">Arcane Codex</div><div class="nav-item active"><span class="mark">✶</span> Notes</div><div class="nav-item">Experiments</div><div class="nav-item">Books</div></aside>
+          <section class="work"><div class="crumbs">Codex / tiny observations</div><h3 class="doc-title"><span class="sigil">✦</span> Small spell for avoiding fake seriousness</h3><div class="meta"><span class="pill">zill</span><span class="pill">12 min ago</span></div><p class="copy">Quick notes stay light. The magic comes from glyphs, title rhythm, and metadata — not decorative boxes everywhere.</p><div class="actions"><button class="primary">Capture</button><button class="quiet">Later</button></div></section>
+        </div>
+      </article>
+
+      <article class="option b">
+        <div class="option-head"><h2 class="option-title">B. Magic in content surfaces</h2><span class="tag">editorial blocks</span></div>
+        <div class="mock">
+          <aside class="rail"><div class="brand">Arcane Codex</div><div class="nav-item active">Notes</div><div class="nav-item">Experiments</div><div class="nav-item">Books</div></aside>
+          <section class="work"><div class="cover"></div><div class="crumbs">Codex / experiments</div><h3 class="doc-title">A tiny experiment log</h3><p class="copy">Navigation and controls stay practical, while covers, callouts, post previews, and experiments carry the personality.</p><div class="card-row"><div class="mini-card">Observation<br><small>funny little thing</small></div><div class="mini-card">Experiment<br><small>probably cursed</small></div></div></section>
+        </div>
+      </article>
+
+      <article class="option c">
+        <div class="option-head"><h2 class="option-title">C. Magic in microcopy + details</h2><span class="tag">playful system</span></div>
+        <div class="mock">
+          <aside class="rail"><div class="brand">Arcane Codex</div><div class="nav-item active">Inbox</div><div class="nav-item">Fragments</div><div class="nav-item">Rituals</div></aside>
+          <section class="work"><div class="crumbs">Codex / inbox</div><h3 class="doc-title">Unprocessed fragments</h3><div class="meta"><span class="pill">3 sparks</span><span class="pill">1 suspicious idea</span></div><p class="copy">The interface is mostly restrained, but labels, empty states, hover affordances, and helper text have your voice.</p><div class="empty"><strong>Nothing summoned yet.</strong><br>Drop a thought before it escapes into the walls.</div></section>
+        </div>
+      </article>
+
+      <article class="option d">
+        <div class="option-head"><h2 class="option-title">D. Stronger overall art direction</h2><span class="tag">most arcane</span></div>
+        <div class="mock">
+          <aside class="rail"><div class="brand">The Codex</div><div class="nav-item active">✦ Index</div><div class="nav-item">◇ Experiments</div><div class="nav-item">☉ Archive</div></aside>
+          <section class="work"><div class="crumbs">root / grimoires / draft</div><h3 class="doc-title">Field notes from the little web goblin</h3><p class="copy">The whole surface feels more branded: nav, headings, buttons, labels, and blocks all carry the arcane personality.</p><div class="callout">Risk: distinctive and fun, but easier to overdo. Needs stricter rules.</div><div class="actions"><button class="primary">Inscribe</button><button class="quiet">Banish</button></div></section>
+        </div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>
