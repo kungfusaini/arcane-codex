@@ -25,6 +25,7 @@ import {
 } from './workspace';
 import { buildPagePathFromPages, extractLegacyPageId, slugifyPageTitle, type PageUrlPage } from '../pageUrls';
 import { buildWorkspacePagePathFromPages, resolveWorkspacePagePathSegments } from '../workspaceHome';
+import { ICON_VARIANT_DIR } from './assetDerivatives';
 
 const CURRENT_SCHEMA_VERSION = 10;
 
@@ -359,6 +360,9 @@ export function inspectWorkspaceHealth(dataDir?: string): WorkspaceHealth {
     }
 
     for (const filename of readdirSync(getWorkspaceAssetsDir(dataDir))) {
+      if (filename === ICON_VARIANT_DIR) {
+        continue;
+      }
       if (!expectedFiles.has(filename)) {
         issues.push(`Unregistered file is present in the assets directory: ${filename}.`);
         recovery.add('Keep unregistered files until you confirm they are not needed, then move them out of the workspace.');
