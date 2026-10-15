@@ -7,19 +7,20 @@ import {
   getSettings,
   listAssets,
   listCollectionItems,
+  isAssetPublished,
   listCollections,
   listPages,
+  listPublishedCollections,
+  listPublishedPages,
   readBacklinks,
 } from './storage';
 import type {
   AssetRecord,
   CollectionItemRecord,
-  CollectionProperty,
   CollectionRecord,
   CollectionSchema,
   PageRecord,
 } from './types';
-import { extractLegacyPageId, resolvePagePathSegments } from '../pageUrls';
 
 const ZIP_ENTRY_DATE = new Date('1980-01-01T00:00:00.000Z');
 const EXPORT_FORMAT_VERSION = 1;
@@ -41,7 +42,8 @@ export type ExportManifest = {
     path: string;
     title: string;
     parentId: string | null;
-    isArticle: boolean;
+    kind: import('./types').PageKind;
+    summary: string;
     revision: number;
     updatedAt: number;
   }>;
@@ -78,6 +80,7 @@ type MarkdownContext = {
   assetById: Map<string, AssetRecord>;
   pages: PageRecord[];
   warnings: Set<string>;
+  includeBacklinks: boolean;
 };
 
 function compareText(left: string, right: string): number {
@@ -115,35 +118,8 @@ function canonicalize(value: unknown): unknown {
   return value;
 }
 
-function parseObject(raw: string, warning: string, warnings: Set<string>): Record<string, unknown> {
-  try {
-    const value = JSON.parse(raw) as unknown;
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      return value as Record<string, unknown>;
-    }
-  } catch {
-    // warning below
-  }
-  warnings.add(warning);
-  return {};
-}
-
-function parseSchema(collection: CollectionRecord, warnings: Set<string>): CollectionSchema {
-  const parsed = parseObject(
-    collection.schemaJson,
-    `Collection ${collection.id} has invalid schema JSON; property IDs were used as CSV headers.`,
-    warnings,
-  );
-  return {
-    properties: Array.isArray(parsed.properties)
-      ? (parsed.properties.filter((property): property is CollectionProperty => Boolean(
-          property &&
-          typeof property === 'object' &&
-          typeof (property as CollectionProperty).id === 'string' &&
-          typeof (property as CollectionProperty).name === 'string',
-        )))
-      : [],
-  };
+function parseSchema(collection: CollectionRecord): CollectionSchema {
+  return collection.schema;
 }
 
 function escapeYaml(value: string): string {
@@ -169,219 +145,70 @@ function pageLink(pageId: string, label: string, context: MarkdownContext): stri
   return `[${escapeMarkdownText(label || pageId)}](${relativeLink(context.pagePathById.get(context.page.id)!, target)})`;
 }
 
-function assetLink(assetId: string, label: string, context: MarkdownContext, image: boolean): string {
-  const target = context.assetPathById.get(assetId);
-  const asset = context.assetById.get(assetId);
-  if (!target || !asset) {
-    context.warnings.add(`Page ${context.page.id} references missing asset ${assetId}.`);
-    return `${escapeMarkdownText(label || 'Missing asset')} _(missing asset: ${assetId})_`;
-  }
-  const href = relativeLink(context.pagePathById.get(context.page.id)!, target);
-  return image
-    ? `![${escapeMarkdownText(label || asset.filename)}](${href})`
-    : `[${escapeMarkdownText(label || asset.filename)}](${href})`;
-}
-
-type GalleryExportImage = {
-  url: string;
-  name?: string;
-  caption?: string;
-};
-
-function parseGalleryImages(value: unknown, context: MarkdownContext): GalleryExportImage[] {
-  if (typeof value !== 'string') {
-    return [];
-  }
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (!Array.isArray(parsed)) {
-      context.warnings.add(`Page ${context.page.id} contains a gallery block with invalid image data.`);
-      return [];
+function stripLocalExtensionUrls(source: string, context: MarkdownContext): string {
+  const isLocalUrl = (value: unknown): value is string => typeof value === 'string' && /^https?:\/\/(?:localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d+)?(?:\/|$)/i.test(value);
+  let removed = 0;
+  const sanitize = (value: unknown): unknown => {
+    if (Array.isArray(value)) {
+      return value
+        .filter((item) => {
+          const local = isLocalUrl(item) || Boolean(item && typeof item === 'object' && isLocalUrl((item as { url?: unknown }).url));
+          if (local) removed += 1;
+          return !local;
+        })
+        .map(sanitize);
     }
-    return parsed.filter((item): item is GalleryExportImage => Boolean(
-      item &&
-      typeof item === 'object' &&
-      typeof (item as GalleryExportImage).url === 'string' &&
-      (item as GalleryExportImage).url,
-    ));
-  } catch {
-    context.warnings.add(`Page ${context.page.id} contains a gallery block with invalid image data.`);
-    return [];
-  }
-}
-
-function rewriteHref(href: string, label: string, context: MarkdownContext): string {
-  const pageMatch = /^\/?page\/(.+?)\/?$/i.exec(href);
-  const rootPageMatch = !pageMatch && href.startsWith('/') && !href.startsWith('/api/') && !href.startsWith('/collections')
-    ? /^\/(.+?)\/?$/i.exec(href)
-    : null;
-  const pageSegments = pageMatch ? pageMatch[1].split('/') : rootPageMatch ? rootPageMatch[1].split('/') : [];
-  const pageId = pageSegments.length ? resolvePagePathSegments(pageSegments, context.pages) ?? extractLegacyPageId(pageSegments.at(-1)) : null;
-  if (pageId) {
-    return pageLink(pageId, label, context);
-  }
-  const assetMatch = /^\/?api\/assets\/([0-9a-f]+)\/?$/i.exec(href);
-  if (assetMatch) {
-    return assetLink(assetMatch[1], label, context, false);
-  }
-  return `[${escapeMarkdownText(label || href)}](${href})`;
-}
-
-function inlineMarkdown(value: unknown, context: MarkdownContext): string {
-  if (typeof value === 'string') {
-    return escapeMarkdownText(value);
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => inlineMarkdown(item, context)).join('');
-  }
-  if (!value || typeof value !== 'object') {
-    return '';
-  }
-
-  const record = value as Record<string, unknown>;
-  const type = typeof record.type === 'string' ? record.type : '';
-  if (type === 'link' && typeof record.href === 'string') {
-    const label = inlineMarkdown(record.content, context) || String(record.href);
-    return rewriteHref(record.href, label.replace(/\\([\\`*_[\]<>])/g, '$1'), context);
-  }
-  if (type === 'pageLink') {
-    const props = (record.props ?? record) as Record<string, unknown>;
-    return pageLink(String(props.pageId ?? ''), String(props.title ?? 'Page'), context);
-  }
-
-  const rawText = typeof record.text === 'string'
-    ? escapeMarkdownText(record.text)
-    : inlineMarkdown(record.content ?? record.children, context);
-  const styles = record.styles && typeof record.styles === 'object'
-    ? record.styles as Record<string, unknown>
-    : {};
-  let text = rawText;
-  if (styles.code) text = `\`${text}\``;
-  if (styles.bold) text = `**${text}**`;
-  if (styles.italic) text = `_${text}_`;
-  if (styles.strike) text = `~~${text}~~`;
-  return text;
-}
-
-function blockMarkdown(block: unknown, context: MarkdownContext): string {
-  if (!block || typeof block !== 'object') {
-    return '';
-  }
-  const record = block as Record<string, unknown>;
-  const type = typeof record.type === 'string' ? record.type : 'unknown';
-  const props = record.props && typeof record.props === 'object'
-    ? record.props as Record<string, unknown>
-    : {};
-  const text = inlineMarkdown(record.content ?? record.text, context).trim();
-  let rendered: string;
-
-  switch (type) {
-    case 'paragraph':
-      rendered = text;
-      break;
-    case 'heading': {
-      const level = Math.min(6, Math.max(1, Number(props.level ?? record.level ?? 1)));
-      rendered = `${'#'.repeat(level)} ${text}`;
-      break;
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, child]) => {
+        if (isLocalUrl(child)) {
+          removed += 1;
+          return [key, ''];
+        }
+        return [key, sanitize(child)];
+      }));
     }
-    case 'heading_1':
-    case 'heading_2':
-    case 'heading_3':
-      rendered = `${'#'.repeat(Number(type.at(-1)))} ${text}`;
-      break;
-    case 'bulletListItem':
-      rendered = `- ${text}`;
-      break;
-    case 'numberedListItem':
-      rendered = `1. ${text}`;
-      break;
-    case 'checkListItem':
-    case 'todo':
-      rendered = `- [${props.checked ? 'x' : ' '}] ${text}`;
-      break;
-    case 'quote':
-    case 'callout':
-      rendered = text.split('\n').map((line) => `> ${line}`).join('\n');
-      break;
-    case 'codeBlock': {
-      const language = typeof props.language === 'string' ? props.language : '';
-      rendered = `\`\`\`${language}\n${text}\n\`\`\``;
-      break;
+    return value;
+  };
+
+  const rewritten = source.replace(/(```arcane-data\n)([\s\S]*?)(\n```)/g, (whole, start: string, payload: string, end: string) => {
+    try {
+      return `${start}${JSON.stringify(sanitize(JSON.parse(payload)), null, 2)}${end}`;
+    } catch {
+      return whole;
     }
-    case 'pageLink':
-    case 'pageCard':
-      rendered = pageLink(String(props.pageId ?? record.pageId ?? ''), String(props.title ?? record.title ?? 'Page'), context);
-      break;
-    case 'gallery': {
-      const images = parseGalleryImages(props.images, context);
-      const groupCaption = typeof props.groupCaption === 'string' ? props.groupCaption.trim() : '';
-      if (!images.length) {
-        rendered = groupCaption || '_Empty gallery_';
-        break;
+  });
+  if (removed) {
+    context.warnings.add(`Page ${context.page.id} omitted ${removed} non-portable local extension URL(s).`);
+  }
+  return rewritten;
+}
+
+function rewriteCanonicalBody(source: string, context: MarkdownContext): string {
+  for (const match of source.matchAll(/<!-- arcane:begin ([A-Za-z][\w-]*) -->/g)) {
+    if (!['gallery', 'youtube', 'artworkShowcase'].includes(match[1])) {
+      context.warnings.add(`Page ${context.page.id} contains unsupported block type "${match[1]}"; its readable fallback and extension data were retained.`);
+    }
+  }
+  return stripLocalExtensionUrls(source, context)
+    .replace(/arcane:\/\/page\/([0-9a-f-]{36})/gi, (_match, pageId: string) => {
+      const target = context.pagePathById.get(pageId);
+      if (!target) {
+        context.warnings.add(`Page ${context.page.id} links to missing or trashed page ${pageId}.`);
+        return `arcane://page/${pageId}`;
       }
-      const body = images.map((image) => {
-        const label = image.caption || image.name || 'Gallery image';
-        const assetMatch = /^\/?api\/assets\/([0-9a-f]+)\/?$/i.exec(image.url);
-        return assetMatch
-          ? assetLink(assetMatch[1], label, context, true)
-          : `![${escapeMarkdownText(label)}](${image.url})`;
-      }).join('\n\n');
-      rendered = groupCaption ? `${body}\n\n_${escapeMarkdownText(groupCaption)}_` : body;
-      break;
-    }
-    case 'image':
-    case 'file':
-    case 'audio':
-    case 'video': {
-      const url = String(props.url ?? record.url ?? '');
-      const label = String(props.caption ?? props.name ?? record.caption ?? type);
-      const assetMatch = /^\/?api\/assets\/([0-9a-f]+)\/?$/i.exec(url);
-      rendered = assetMatch
-        ? assetLink(assetMatch[1], label, context, type === 'image')
-        : (url ? (type === 'image' ? `![${escapeMarkdownText(label)}](${url})` : `[${escapeMarkdownText(label)}](${url})`) : `${label} _(missing URL)_`);
-      if (!url) {
-        context.warnings.add(`Page ${context.page.id} contains a ${type} block without a URL.`);
+      return relativeLink(context.pagePathById.get(context.page.id)!, target);
+    })
+    .replace(/arcane:\/\/asset\/(?:sha256:)?([0-9a-f]{64})/gi, (_match, assetId: string) => {
+      const target = context.assetPathById.get(assetId);
+      if (!target) {
+        context.warnings.add(`Page ${context.page.id} references missing asset ${assetId}.`);
+        return `arcane://asset/sha256:${assetId}`;
       }
-      break;
-    }
-    default: {
-      const fallback = text || inlineMarkdown(record.children, context);
-      context.warnings.add(`Page ${context.page.id} contains unsupported block type "${type}"; readable text and source JSON were retained.`);
-      rendered = `${fallback ? `${fallback}\n\n` : ''}<!-- Unsupported Arcane Codex block: ${type}\n${JSON.stringify(canonicalize(record), null, 2)}\n-->`;
-      break;
-    }
-  }
-
-  if (Array.isArray(record.children) && record.children.length > 0) {
-    const children = record.children
-      .map((child) => blockMarkdown(child, context))
-      .filter(Boolean)
-      .map((child) => child.split('\n').map((line) => `  ${line}`).join('\n'))
-      .join('\n');
-    return children ? `${rendered}\n${children}` : rendered;
-  }
-  return rendered;
+      return relativeLink(context.pagePathById.get(context.page.id)!, target);
+    });
 }
 
 function pageToMarkdown(page: PageRecord, context: MarkdownContext, dataDir?: string): string {
-  let blocks: unknown[] = [];
-  let invalidBody: string | null = null;
-  try {
-    const parsed = JSON.parse(page.contentJson) as unknown;
-    if (Array.isArray(parsed)) {
-      blocks = parsed;
-    } else if (typeof parsed === 'string') {
-      invalidBody = parsed;
-      context.warnings.add(`Page ${page.id} stored a string instead of block JSON; it was exported as plain text.`);
-    } else {
-      invalidBody = JSON.stringify(canonicalize(parsed), null, 2);
-      context.warnings.add(`Page ${page.id} has non-array content JSON; its source was retained.`);
-    }
-  } catch {
-    invalidBody = page.contentJson;
-    context.warnings.add(`Page ${page.id} has invalid content JSON; its raw content was retained.`);
-  }
-
   const pagePath = context.pagePathById.get(page.id)!;
   const coverPath = page.coverAssetId ? context.assetPathById.get(page.coverAssetId) : null;
   if (page.coverAssetId && !coverPath) {
@@ -398,7 +225,8 @@ function pageToMarkdown(page: PageRecord, context: MarkdownContext, dataDir?: st
     `cover_focal_x: ${page.coverFocalX}`,
     `cover_focal_y: ${page.coverFocalY}`,
     `cover_scale: ${page.coverScale}`,
-    `is_article: ${page.isArticle ? 'true' : 'false'}`,
+    `kind: ${escapeYaml(page.kind)}`,
+    `summary: ${escapeYaml(page.summary)}`,
     `tags: ${JSON.stringify(page.tags)}`,
     `revision: ${page.revision}`,
     `created_at: ${escapeYaml(new Date(page.createdAt).toISOString())}`,
@@ -406,11 +234,10 @@ function pageToMarkdown(page: PageRecord, context: MarkdownContext, dataDir?: st
     '---',
   ];
 
-  const body = invalidBody === null
-    ? blocks.map((block) => blockMarkdown(block, context)).filter(Boolean).join('\n\n')
-    : `${invalidBody}\n\n<!-- Original page content was not valid BlockNote block JSON. -->`;
-  const backlinks = readBacklinks(page.id, dataDir)
-    .sort((left, right) => compareText(left.title, right.title) || compareText(left.id, right.id));
+  const body = rewriteCanonicalBody(page.bodyMarkdown.trim(), context);
+  const backlinks = context.includeBacklinks
+    ? readBacklinks(page.id, dataDir).sort((left, right) => compareText(left.title, right.title) || compareText(left.id, right.id))
+    : [];
   const backlinkSection = backlinks.length
     ? `## Backlinks\n\n${backlinks.map((source) => `- ${pageLink(source.id, source.title || 'Untitled', context)}`).join('\n')}`
     : '';
@@ -433,15 +260,8 @@ function collectionToCsv(
   pagesById: Map<string, PageRecord>,
   warnings: Set<string>,
 ): string {
-  const schema = parseSchema(collection, warnings);
-  const parsedItems = items.map((item) => ({
-    item,
-    properties: parseObject(
-      item.propertiesJson,
-      `Collection ${collection.id} item ${item.pageId} has invalid properties JSON; empty properties were exported.`,
-      warnings,
-    ),
-  }));
+  const schema = parseSchema(collection);
+  const parsedItems = items.map((item) => ({ item, properties: item.properties }));
   const schemaIds = new Set(schema.properties.map((property) => property.id));
   const extraIds = [...new Set(parsedItems.flatMap(({ properties }) => Object.keys(properties)))]
     .filter((id) => !schemaIds.has(id))
@@ -501,11 +321,12 @@ function exportReadme(manifest: ExportManifest): string {
   return `# Arcane Codex export\n\nThis deterministic snapshot contains active pages as Markdown, workspace assets, collection indexes and rows as Markdown/CSV, and a machine-readable manifest.\n\n- Page links are relative paths inside \`pages/\`.\n- Asset links are relative paths into \`assets/\`.\n- Collection indexes link to their page entries and companion CSV files.\n- Missing references and unsupported block fallbacks are listed in \`manifest.json\`.\n- Deleted pages and revision history are not included.\n\nSnapshot: ${manifest.snapshotAt}\nWarnings: ${manifest.warnings.length}\n`;
 }
 
-export function buildWorkspaceExport(dataDir?: string): WorkspaceExport {
+export function buildWorkspaceExport(dataDir?: string, mode: 'workspace' | 'published' = 'workspace'): WorkspaceExport {
   const warnings = new Set<string>();
-  const pages = listPages(dataDir).sort((left, right) => compareText(left.id, right.id));
-  const assets = listAssets(dataDir).sort((left, right) => compareText(left.id, right.id));
-  const collections = listCollections(dataDir).sort((left, right) => compareText(left.id, right.id));
+  const published = mode === 'published';
+  const pages = (published ? listPublishedPages(true, dataDir) : listPages(dataDir)).sort((left, right) => compareText(left.id, right.id));
+  const assets = listAssets(dataDir).filter((asset) => !published || isAssetPublished(asset.id, dataDir)).sort((left, right) => compareText(left.id, right.id));
+  const collections = (published ? listPublishedCollections(dataDir) : listCollections(dataDir)).sort((left, right) => compareText(left.id, right.id));
   const pagesById = new Map(pages.map((page) => [page.id, page]));
   const assetById = new Map(assets.map((asset) => [asset.id, asset]));
   const pagePathById = new Map(pages.map((page) => [page.id, `pages/${slug(page.title, 'untitled')}--${page.id}.md`]));
@@ -524,7 +345,7 @@ export function buildWorkspaceExport(dataDir?: string): WorkspaceExport {
   for (const page of pages) {
     entries.push({
       path: pagePathById.get(page.id)!,
-      data: pageToMarkdown(page, { page, pagePathById, assetPathById, assetById, pages, warnings }, dataDir),
+      data: pageToMarkdown(page, { page, pagePathById, assetPathById, assetById, pages, warnings, includeBacklinks: !published }, dataDir),
     });
   }
 
@@ -550,7 +371,7 @@ export function buildWorkspaceExport(dataDir?: string): WorkspaceExport {
     const basename = `${slug(collection.name, 'collection')}--${collection.id}`;
     const collectionPath = `collections/${basename}.csv`;
     const indexPath = `collections/${basename}.md`;
-    const items = listCollectionItems(collection.id, dataDir);
+    const items = listCollectionItems(collection.id, dataDir).filter((item) => !published || pagesById.has(item.pageId));
     entries.push({
       path: collectionPath,
       data: collectionToCsv(collection, items, pagesById, warnings),
@@ -578,7 +399,8 @@ export function buildWorkspaceExport(dataDir?: string): WorkspaceExport {
       path: pagePathById.get(page.id)!,
       title: page.title,
       parentId: page.parentId,
-      isArticle: page.isArticle,
+      kind: page.kind,
+      summary: page.summary,
       revision: page.revision,
       updatedAt: page.updatedAt,
     })),
@@ -594,12 +416,12 @@ export function buildWorkspaceExport(dataDir?: string): WorkspaceExport {
   return {
     entries,
     manifest,
-    filename: `arcane-codex-export-${snapshotAt.slice(0, 10)}.zip`,
+    filename: `arcane-codex-${published ? 'published-site' : 'workspace-backup'}-${snapshotAt.slice(0, 10)}.zip`,
   };
 }
 
-export async function exportWorkspaceZip(dataDir?: string): Promise<{ buffer: Buffer; manifest: ExportManifest; filename: string }> {
-  const snapshot = buildWorkspaceExport(dataDir);
+export async function exportWorkspaceZip(dataDir?: string, mode: 'workspace' | 'published' = 'workspace'): Promise<{ buffer: Buffer; manifest: ExportManifest; filename: string }> {
+  const snapshot = buildWorkspaceExport(dataDir, mode);
   const archive = archiver('zip', { zlib: { level: 9 } });
   const output = new PassThrough();
   const chunks: Buffer[] = [];

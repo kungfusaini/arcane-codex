@@ -4,8 +4,8 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { Buffer } from 'node:buffer';
-import { createAsset, type AssetCreateResult, listAssets } from '@/lib/data/storage';
-import { rejectPublishedMutation } from '@/lib/surface';
+import { createAsset, isAssetPublished, type AssetCreateResult, listAssets } from '@/lib/data/storage';
+import { isPublishedAppSurface, rejectPublishedMutation } from '@/lib/surface';
 
 const MAX_ASSET_BYTES = 20 * 1024 * 1024;
 const MIME_EXTENSIONS: Record<string, string[]> = {
@@ -106,7 +106,9 @@ async function validateUpload(file: File): Promise<{ bytes: Buffer; filename: st
 
 export async function GET() {
   try {
-    return NextResponse.json({ assets: listAssets(getDataDir()) });
+    const dataDir = getDataDir();
+    const assets = listAssets(dataDir).filter((asset) => !isPublishedAppSurface() || isAssetPublished(asset.id, dataDir));
+    return NextResponse.json({ assets });
   } catch (error) {
     return NextResponse.json(
       {

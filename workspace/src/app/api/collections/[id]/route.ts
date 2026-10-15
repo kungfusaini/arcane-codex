@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { deleteCollection, updateCollection } from '@/lib/data/storage';
+import { deleteCollection, isCollectionPublished, updateCollection } from '@/lib/data/storage';
 import { getCollectionDetailPayload } from '@/lib/data/collectionPayload';
 import { CollectionProperty, CollectionPropertyType, CollectionSchema, CollectionViews } from '@/lib/data/types';
+import { isPublishedAppSurface } from '@/lib/surface';
 
 type CollectionPayload = {
   name?: unknown;
-  hostPageId?: unknown;
+  embedPageId?: unknown;
   schema?: unknown;
   views?: unknown;
 };
@@ -114,11 +115,16 @@ function parseCollectionViews(payload: unknown): CollectionViews {
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   const { searchParams } = new URL(request.url);
+  const published = isPublishedAppSurface() || searchParams.get('published') === 'true';
+  if (published && !isCollectionPublished(params.id)) {
+    return NextResponse.json({ error: 'Collection not found' }, { status: 404 });
+  }
   const payload = getCollectionDetailPayload(params.id, {
     sortBy: searchParams.get('sortBy') || 'sortKey',
     direction: searchParams.get('direction') === 'desc' ? 'desc' : 'asc',
     filterBy: searchParams.get('filterBy'),
     filterQuery: searchParams.get('filterQuery') || '',
+    published,
   });
 
   if (!payload) {
@@ -133,7 +139,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
   const updates: {
     name?: string;
-    hostPageId?: string | null;
+    embedPageId?: string | null;
     schema?: CollectionSchema;
     views?: CollectionViews;
   } = {};
@@ -141,8 +147,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   if (Object.hasOwn(payload, 'name') && typeof payload.name === 'string') {
     updates.name = payload.name.trim();
   }
-  if (Object.hasOwn(payload, 'hostPageId')) {
-    updates.hostPageId = payload.hostPageId === null ? null : typeof payload.hostPageId === 'string' ? payload.hostPageId : null;
+  if (Object.hasOwn(payload, 'embedPageId')) {
+    updates.embedPageId = payload.embedPageId === null ? null : typeof payload.embedPageId === 'string' ? payload.embedPageId : null;
   }
   if (Object.hasOwn(payload, 'schema')) {
     updates.schema = parseCollectionSchema(payload.schema);

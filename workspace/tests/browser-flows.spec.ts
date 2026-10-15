@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { buildPagePathFromPages } from '../src/lib/pageUrls';
+import { blocksToMarkdown, splitMarkdownExtensions } from '../src/lib/documents/markdown';
 
 type MotionSample = {
   tx: number;
@@ -37,16 +38,18 @@ type PageBlock = {
   };
 };
 
-function parsePageBlocks(contentJson: string): PageBlock[] {
+function parsePageBlocks(bodyMarkdown: string): PageBlock[] {
   try {
-    const parsed = JSON.parse(contentJson) as unknown;
-    if (Array.isArray(parsed)) {
-      return parsed as PageBlock[];
-    }
+    return splitMarkdownExtensions(bodyMarkdown).flatMap((segment) => {
+      if (segment.type === 'extension') return [segment.block as PageBlock];
+      return segment.source.split(/\n\s*\n/).filter(Boolean).map((text) => ({
+        type: 'paragraph',
+        content: [{ type: 'text', text: text.trim(), styles: {} }],
+      }));
+    });
   } catch {
-    // keep empty on malformed payloads
+    return [];
   }
-  return [];
 }
 
 function blockText(block: PageBlock): string {
@@ -99,8 +102,8 @@ async function readMotion(locator: Locator): Promise<MotionSample> {
 
 async function loadPageBlocks(request: APIRequestContext, pageId: string): Promise<PageBlock[]> {
   const response = await request.get(`/api/pages/${pageId}`);
-  const payload = (await response.json()) as { page?: { contentJson: string } };
-  return parsePageBlocks(payload.page?.contentJson ?? '[]');
+  const payload = (await response.json()) as { page?: { bodyMarkdown: string } };
+  return parsePageBlocks(payload.page?.bodyMarkdown ?? '');
 }
 
 async function dispatchPasteIntoEditor(page: Page, editorSelector: string, file: ClipboardUploadFile) {
@@ -195,24 +198,25 @@ test('core local workspace flows survive reload and remain recoverable', async (
   expect(upload.ok()).toBeTruthy();
   const asset = (await upload.json()).asset as { id: string };
 
-  const contentJson = JSON.stringify([
+  const bodyMarkdown = blocksToMarkdown([
     {
       type: 'paragraph',
       content: [
         { type: 'text', text: 'See ', styles: {} },
-        { type: 'link', href: buildPagePathFromPages(child.id, [root, child]), content: [{ type: 'text', text: child.title, styles: {} }] },
+        { type: 'link', href: `arcane://page/${child.id}`, content: [{ type: 'text', text: child.title, styles: {} }] },
       ],
     },
     { type: 'gallery', props: { images: JSON.stringify([{ url: `/api/assets/${asset.id}`, caption: 'Cover study', name: 'cover.png' }]), columns: 3, mode: 'single', captionMode: 'individual', groupCaption: '', width: 100 } },
   ]);
   const enrichRoot = await request.patch(`/api/pages/${root.id}`, {
-    data: { revision: root.revision, title: root.title, icon: '🧭', coverAssetId: asset.id, contentJson },
+    data: { revision: root.revision, title: root.title, icon: '🧭', coverAssetId: asset.id, bodyMarkdown },
   });
   expect(enrichRoot.ok()).toBeTruthy();
 
   await page.goto(buildPagePathFromPages(root.id, [root, child]));
   await expect(page.locator('.page-title')).toHaveValue('Field Notes');
-  await expect(page.locator('.page-child-links').getByRole('link', { name: /Index of Symbols/ })).toHaveAttribute('href', buildPagePathFromPages(child.id, [root, child]));
+  await expect(page.locator('.page-child-links')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Index of Symbols' })).toBeVisible();
   await expect(page.locator('.cover-preview-image')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Change page icon' })).toHaveText('🧭');
   await page.keyboard.press('Control+k');
@@ -258,7 +262,8 @@ test('core local workspace flows survive reload and remain recoverable', async (
   await page.waitForLoadState('networkidle');
 
   await page.goto(`/page/${child.id}`);
-  await expect(page.getByRole('heading', { name: 'Backlinks' })).toHaveCount(0);
+  const childPayload = await (await request.get(`/api/pages/${child.id}`)).json() as { backlinks: PageRecord[] };
+  expect(childPayload.backlinks.some((backlink) => backlink.id === root.id)).toBe(true);
 
   const collectionResponse = await request.post('/api/collections', {
     data: {
@@ -309,9 +314,9 @@ test('shows page appearance affordances and selects a searchable emoji icon', as
   const identity = page.locator('.page-identity');
   await identity.hover();
   await expect(page.getByRole('button', { name: 'Add icon' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Add cover', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Upload cover' })).toBeVisible();
   const coverChooser = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: 'Add cover', exact: true }).click();
+  await page.getByRole('button', { name: 'Upload cover' }).click();
   await (await coverChooser).setFiles({
     name: 'fresh-cover.png',
     mimeType: 'image/png',
@@ -319,6 +324,7 @@ test('shows page appearance affordances and selects a searchable emoji icon', as
   });
   await expect(page.locator('.cover-preview-image')).toBeVisible();
 
+  await identity.hover();
   await page.getByRole('button', { name: 'Add icon' }).click();
   const emojiPopover = page.getByRole('dialog', { name: 'Choose page icon' });
   await expect(emojiPopover).toBeVisible();
@@ -339,7 +345,8 @@ test('shows page appearance affordances and selects a searchable emoji icon', as
   await expect(page.getByRole('button', { name: 'Change page icon' })).toHaveText(/🐉/);
 
   await page.getByRole('button', { name: 'Change page icon' }).click();
-  await emojiPopover.getByRole('tab', { name: 'Settings' }).click();
+  const iconRegion = page.getByRole('region', { name: 'Icon' });
+  await iconRegion.getByRole('tab', { name: 'Settings' }).click();
   await expect(emojiPopover.getByText('This page already uses an emoji icon.')).toBeVisible();
   await expect(emojiPopover.getByRole('button', { name: 'Remove icon' })).toBeVisible();
   await expect(emojiPopover.getByLabel('Generate icon')).toHaveCount(0);
@@ -405,7 +412,7 @@ test('allows choosing an icon image from URL', async ({ page, request }) => {
   await page.locator('.page-identity').hover();
   await page.getByRole('button', { name: 'Add icon' }).click();
 
-  await page.getByLabel('Icon image URL').fill('https://example.com/icon.png');
+  await page.getByRole('textbox', { name: 'Icon image URL' }).fill('https://example.com/icon.png');
   await page.getByRole('button', { name: 'Use image URL' }).click();
 
   const iconButton = page.getByRole('button', { name: 'Change page icon' });
@@ -447,7 +454,8 @@ test('shows the generated icon prompt when an image icon is selected', async ({ 
   await page.locator('.page-identity').hover();
   await page.getByRole('button', { name: 'Add icon' }).click();
   const emojiPopover = page.getByRole('dialog', { name: 'Choose page icon' });
-  await emojiPopover.getByRole('tab', { name: 'Settings' }).click();
+  const iconRegion = page.getByRole('region', { name: 'Add icon' });
+  await iconRegion.getByRole('tab', { name: 'Settings' }).click();
   await emojiPopover.getByLabel('Generate icon').fill('The Mona Lisa Very simple');
   await emojiPopover.getByRole('button', { name: 'Generate' }).click();
   await expect(emojiPopover.getByText('Prompt: The Mona Lisa Very simple')).toBeVisible();
@@ -456,38 +464,27 @@ test('shows the generated icon prompt when an image icon is selected', async ({ 
   await page.unroute('**/api/page-icon-generate');
 });
 
-test('toggles local published preview on editor routes without changing the URL', async ({ page, request }) => {
-  const createResponse = await request.post('/api/pages', { data: { title: 'Preview toggle source' } });
+test('opens the published workspace in a new tab from page actions', async ({ page, request }) => {
+  const createResponse = await request.post('/api/pages', { data: { title: 'Published workspace source' } });
   expect(createResponse.ok()).toBeTruthy();
   const previewPage = (await createResponse.json()).page as PageRecord;
+  const publishResponse = await request.patch(`/api/pages/${previewPage.id}/publication`, { data: { visibility: 'public' } });
+  expect(publishResponse.ok()).toBeTruthy();
 
   await page.goto(`/page/${previewPage.id}`);
   await expect(page.locator('.editor-view')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Page actions' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Add icon' })).toBeVisible();
-
-  const previewButton = page.locator('section[aria-label="Published preview mode"]').getByRole('button');
-  await expect(previewButton).toHaveText('Preview published');
   const editorUrl = page.url();
+  await page.getByRole('button', { name: 'Page actions' }).click();
 
-  await previewButton.click();
-  await expect(page).toHaveURL(editorUrl);
-  await expect(previewButton).toHaveText('Back to editor');
-  await expect(page.getByRole('button', { name: 'Page actions' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Add icon' })).toHaveCount(0);
-  await expect(page.getByRole('textbox', { name: 'Untitled' })).toHaveCount(0);
+  const popupPromise = page.waitForEvent('popup');
+  await page.getByRole('button', { name: 'View published workspace ↗' }).click();
+  const publishedPage = await popupPromise;
+  await publishedPage.waitForLoadState();
 
-  await page.reload();
+  await expect(publishedPage).toHaveURL(/\/published$/);
+  await expect(publishedPage.getByRole('button', { name: 'Page actions' })).toHaveCount(0);
   await expect(page).toHaveURL(editorUrl);
-  await expect(page.locator('section[aria-label="Published preview mode"]').getByRole('button')).toHaveText('Back to editor');
-  await expect(page.getByRole('button', { name: 'Page actions' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Add icon' })).toHaveCount(0);
-
-  await page.locator('section[aria-label="Published preview mode"]').getByRole('button').click();
-  await expect(page).toHaveURL(editorUrl);
-  await expect(page.locator('section[aria-label="Published preview mode"]').getByRole('button')).toHaveText('Preview published');
-  await expect(page.getByRole('button', { name: 'Page actions' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Add icon' })).toBeVisible();
+  await expect(page.locator('.editor-view')).toBeVisible();
 });
 
 test('renders a read-only published site that reflects live workspace content', async ({ page, request }) => {
@@ -514,7 +511,7 @@ test('renders a read-only published site that reflects live workspace content', 
   const collectionResponse = await request.post('/api/collections', {
     data: {
       name: 'Published collection',
-      hostPageId: root.id,
+      embedPageId: root.id,
       schema: { properties: [{ id: 'status', name: 'Status', type: 'text' }] },
     },
   });
@@ -524,6 +521,13 @@ test('renders a read-only published site that reflects live workspace content', 
     data: { pageId: child.id, properties: { status: 'Live' } },
   });
   expect(itemResponse.ok()).toBeTruthy();
+
+  for (const publishedPage of [root, child, normalChild]) {
+    const publicationResponse = await request.patch(`/api/pages/${publishedPage.id}/publication`, {
+      data: { visibility: 'public' },
+    });
+    expect(publicationResponse.ok(), await publicationResponse.text()).toBeTruthy();
+  }
 
   await page.goto('/published');
   await expect(page.locator('section[aria-label="Published preview mode"]')).toHaveCount(0);
@@ -557,12 +561,47 @@ test('renders a read-only published site that reflects live workspace content', 
   await expect(page.getByRole('button', { name: 'Add icon' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Add cover', exact: true })).toHaveCount(0);
   await expect(page.locator('.editor-view .bn-editor[contenteditable="true"]')).toHaveCount(0);
+  await page.locator('.sidebar').getByRole('button', { name: 'Expand Published root' }).click();
   await expect(page.locator('.sidebar').getByRole('link', { name: 'Published child' })).toHaveCount(0);
   await expect(page.locator('.sidebar').getByRole('link', { name: 'Published normal child' })).toBeVisible();
-  await expect(page.locator('.page-child-links').getByRole('link', { name: /Published normal child/ })).toHaveAttribute('href', buildPagePathFromPages(normalChild.id, [root, child, normalChild], '/published'));
-  await expect(page.locator('.page-child-links').getByRole('link', { name: /Published child/ })).toHaveCount(0);
+  await expect(page.locator('.page-child-links')).toHaveCount(0);
   await expect(page.getByText('Live')).toBeVisible();
   await expect(page.locator('.collection-table input')).toHaveCount(0);
+});
+
+test('creates a page into a focused title and moves Enter into the editor', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.sidebar').getByRole('button', { name: 'New page', exact: true }).click();
+  const title = page.locator('.page-title');
+  await expect(title).toBeFocused();
+  await page.keyboard.type('Quick capture');
+  await expect(title).toHaveValue('Quick capture');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.editor-view .bn-editor[contenteditable="true"]')).toBeFocused();
+
+  await page.keyboard.press('Control+p');
+  const quickFind = page.getByRole('dialog', { name: 'Quick find' });
+  await expect(quickFind).toBeVisible();
+  const quickFindInput = quickFind.getByRole('textbox', { name: 'Search workspace' });
+  await expect(quickFindInput).toBeFocused();
+  await quickFindInput.fill('Quick capture');
+  await expect(quickFind.getByRole('option', { name: /Quick capture/ })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(quickFind).toBeHidden();
+
+  const currentTreeItem = page.locator('.tree-item').filter({ has: page.getByRole('link', { name: 'Quick capture' }) });
+  await currentTreeItem.hover();
+  await currentTreeItem.getByRole('button', { name: 'New page inside Quick capture' }).click();
+  await expect(title).toBeFocused();
+
+  const parentTreeItem = page.locator('.tree-item').filter({ has: page.getByRole('link', { name: 'Quick capture' }) });
+  await parentTreeItem.locator('summary[aria-label="Actions for Quick capture"]').click();
+  await parentTreeItem.getByRole('button', { name: 'Rename' }).click();
+  const renameInput = page.getByRole('textbox', { name: 'Rename Quick capture' });
+  await expect(renameInput).toBeFocused();
+  await renameInput.fill('Cancelled rename');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.sidebar').getByRole('link', { name: 'Quick capture' })).toBeVisible();
 });
 
 test('renders custom slash and mention suggestion menus without BlockNote UI context errors', async ({ page, request }) => {
@@ -588,6 +627,20 @@ test('renders custom slash and mention suggestion menus without BlockNote UI con
   expect(await slashMenu.getByRole('option').count()).toBeGreaterThan(0);
   await page.keyboard.press('Enter');
   await expect(slashMenu).toBeHidden();
+
+  const firstBlock = page.locator('.editor-view .bn-block-outer').first();
+  await firstBlock.hover();
+  const addBlockButton = page.getByRole('button', { name: 'Add block' });
+  await expect(addBlockButton).toBeVisible();
+  await addBlockButton.click();
+  await expect(slashMenu).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(slashMenu).toBeHidden();
+
+  await slashEditor.click();
+  await page.keyboard.type('/todo');
+  await expect(slashMenu.getByRole('option', { name: /check list/i })).toBeVisible();
+  await page.keyboard.press('Escape');
 
   const mentionSourceResponse = await request.post('/api/pages', { data: { title: 'Mention menu source' } });
   expect(mentionSourceResponse.ok()).toBeTruthy();
@@ -653,9 +706,9 @@ test('rolls back a failed inline collection edit and recovers on retry', async (
   await expect(cell).not.toHaveClass(/is-error/);
   await expect.poll(async () => {
     const response = await request.get(`/api/collections/${collection.id}`);
-    const payload = await response.json() as { items: Array<{ pageId: string; propertiesJson: string }> };
+    const payload = await response.json() as { items: Array<{ pageId: string; properties: { notes?: string } }> };
     const item = payload.items.find((entry) => entry.pageId === pageRecord.id);
-    return item ? (JSON.parse(item.propertiesJson) as { notes?: string }).notes : undefined;
+    return item?.properties.notes;
   }).toBe('Saved value');
   await page.unroute(`**/api/collections/${collection.id}/items`);
 });
@@ -673,7 +726,7 @@ test('renders a hosted collection with the host page cover, icon, title, and foc
   });
   expect(hostPatch.ok()).toBeTruthy();
   const collectionResponse = await request.post('/api/collections', {
-    data: { name: 'Books', hostPageId: host.id },
+    data: { name: 'Books', embedPageId: host.id },
   });
   expect(collectionResponse.ok()).toBeTruthy();
   const collection = (await collectionResponse.json()).collection as { id: string };
@@ -701,8 +754,8 @@ test('renders a hosted collection with the host page cover, icon, title, and foc
   await expect(page.getByRole('main').getByRole('link', { name: 'Hosted library' })).toHaveAttribute('href', buildPagePathFromPages(host.id, [host]));
   await expect(page.locator('input[name="name"]')).toHaveValue('Books');
 
-  await page.getByRole('button', { name: /Collection settings/ }).click();
-  const authorRow = page.locator('.collection-property-item').filter({ hasText: 'Author' }).first();
+  await page.locator('summary', { hasText: 'Collection settings' }).click();
+  const authorRow = page.getByRole('listitem', { name: 'Author', exact: true });
   await expect(authorRow.getByLabel('Type')).toHaveValue('select');
 
   const authorCell = page.locator('.collection-row').first().locator('.collection-cell-select').first();
@@ -710,8 +763,8 @@ test('renders a hosted collection with the host page cover, icon, title, and foc
   await authorCell.press('Enter');
   await expect.poll(async () => {
     const response = await request.get(`/api/collections/${collection.id}`);
-    const payload = await response.json() as { collection: { schemaJson: string } };
-    const schema = JSON.parse(payload.collection.schemaJson) as { properties: Array<{ id: string; options?: string[] }> };
+    const payload = await response.json() as { collection: { schema: { properties: Array<{ id: string; options?: string[] }> } } };
+    const schema = payload.collection.schema;
     return schema.properties.find((property) => property.id === 'author')?.options ?? [];
   }).toContain('Frank Herbert');
   await expect(page.locator('#collection-options-author option[value="Frank Herbert"]')).toHaveCount(1);
@@ -722,14 +775,12 @@ test('renders a hosted collection with the host page cover, icon, title, and foc
   await expect(page.locator('.editor-view')).toBeVisible();
   await expect(page.locator('.editor-view .page-link-block')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Change page icon' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Search Commons' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Paste URL' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Upload cover' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Reposition cover' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Upload cover' })).toHaveCount(0);
 
   await page.goto(`/page/${entry.id}`);
   await expect(page.locator('.page-collections-embed')).toBeVisible();
-  await expect(page.getByRole('link', { name: /Books.*Open collection/ })).toHaveAttribute('href', `/collections/${collection.id}`);
-  await expect(page.locator('.page-collection-embed')).toContainText('Books');
+  await expect(page.locator('.page-collection-embed[aria-label="Books collection"]')).toBeVisible();
   await expect(page.locator('.page-collection-embed')).toContainText('Frank Herbert');
 });
 
@@ -810,13 +861,13 @@ test.describe('cover controls and reference refresh', () => {
     expect(targetResponse.ok()).toBeTruthy();
     const target = (await targetResponse.json()).page as { id: string; revision: number };
 
-    const contentJson = JSON.stringify([
+    const bodyMarkdown = blocksToMarkdown([
       {
         type: 'paragraph',
         content: [
           {
             type: 'link',
-            href: buildPagePathFromPages(target.id, [{ ...target, parentId: root.id, sortKey: 2, title: 'Target old' }]),
+            href: `arcane://page/${target.id}`,
             content: [{ type: 'text', text: 'Target old', styles: {} }],
           },
         ],
@@ -834,7 +885,7 @@ test.describe('cover controls and reference refresh', () => {
       data: {
         revision: root.revision,
         title: 'Source root',
-        contentJson,
+        bodyMarkdown,
       },
     });
 
@@ -1004,7 +1055,7 @@ test.describe('body uploads from paste and drop', () => {
     expect(rootResponse.ok()).toBeTruthy();
     const root = (await rootResponse.json()).page as PageRecord;
 
-    const initialContent = JSON.stringify([
+    const initialContent = blocksToMarkdown([
       { type: 'paragraph', content: [{ type: 'text', text: 'Paste start', styles: {} }] },
       { type: 'paragraph', content: [{ type: 'text', text: 'Paste end', styles: {} }] },
     ]);
@@ -1013,7 +1064,7 @@ test.describe('body uploads from paste and drop', () => {
       data: {
         revision: root.revision,
         title: 'Paste upload test',
-        contentJson: initialContent,
+        bodyMarkdown: initialContent,
       },
     });
 
@@ -1079,7 +1130,7 @@ test.describe('body uploads from paste and drop', () => {
     expect(rootResponse.ok()).toBeTruthy();
     const root = (await rootResponse.json()).page as PageRecord;
 
-    const initialContent = JSON.stringify([
+    const initialContent = blocksToMarkdown([
       { type: 'paragraph', content: [{ type: 'text', text: 'Drop top', styles: {} }] },
       { type: 'paragraph', content: [{ type: 'text', text: 'Drop middle', styles: {} }] },
       { type: 'paragraph', content: [{ type: 'text', text: 'Drop bottom', styles: {} }] },
@@ -1089,7 +1140,7 @@ test.describe('body uploads from paste and drop', () => {
       data: {
         revision: root.revision,
         title: 'Drop upload test',
-        contentJson: initialContent,
+        bodyMarkdown: initialContent,
       },
     });
     expect(patchResponse.ok()).toBeTruthy();

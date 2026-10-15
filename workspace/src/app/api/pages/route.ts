@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createPage, getAsset, listPages, listPageSummaries, listTrashPages, listTrashPageSummaries, searchPageSummaries, searchPages } from '@/lib/data/storage';
-import { rejectPublishedMutation } from '@/lib/surface';
+import { createPage, getAsset, listPages, listPageSummaries, listPublishedPages, listTrashPages, listTrashPageSummaries, searchPageSummaries, searchPages } from '@/lib/data/storage';
+import { isPublishedAppSurface, rejectPublishedMutation } from '@/lib/surface';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const includeDeleted = searchParams.get('includeDeleted') === 'true';
+  const published = isPublishedAppSurface() || searchParams.get('published') === 'true';
   const includeContent = searchParams.get('includeContent') === 'true';
   const includeCollectionPages = searchParams.get('includeCollectionPages') !== 'false';
   const query = searchParams.get('query')?.trim();
@@ -14,6 +15,10 @@ export async function GET(request: NextRequest) {
       ? searchPages(query, undefined, includeCollectionPages)
       : searchPageSummaries(query, undefined, includeCollectionPages);
     return NextResponse.json({ pages });
+  }
+
+  if (published) {
+    return NextResponse.json({ pages: listPublishedPages(false, undefined, false) });
   }
 
   const pages = includeContent
@@ -55,6 +60,10 @@ export async function POST(request: NextRequest) {
   if (blocked) return blocked;
   const payload = await request.json().catch(() => ({}));
   const title = String(payload.title ?? '').trim() || 'Untitled';
+  const bodyMarkdown = typeof payload.bodyMarkdown === 'string' ? payload.bodyMarkdown : '';
+  if (Buffer.byteLength(bodyMarkdown, 'utf8') > 5 * 1024 * 1024) {
+    return NextResponse.json({ error: 'Page content is too large to save.' }, { status: 413 });
+  }
   const parentId = payload.parentId === null || typeof payload.parentId === 'string' ? payload.parentId : null;
 
   const sortKey =
@@ -86,9 +95,10 @@ export async function POST(request: NextRequest) {
     coverAssetId: payload.coverAssetId ?? null,
     coverFocalX: clampFocal(payload.coverFocalX),
     coverFocalY: clampFocal(payload.coverFocalY),
-    isArticle: payload.isArticle === true,
+    kind: payload.kind === 'page' || payload.kind === 'article' || payload.kind === 'project' || payload.kind === 'fiction' ? payload.kind : 'note',
+    summary: typeof payload.summary === 'string' ? payload.summary.trim().slice(0, 240) : '',
     tags,
-    contentJson: payload.contentJson ?? '[]',
+    bodyMarkdown,
   });
 
   return NextResponse.json({ page }, { status: 201 });

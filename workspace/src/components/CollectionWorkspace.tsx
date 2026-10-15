@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { CollectionEditor } from '@/components/CollectionEditor';
 import type { CollectionDetailPayload } from '@/lib/data/collectionPayload';
 import { WorkspaceSidebar } from '@/components/WorkspaceSidebar';
-import { usePublishedPreview } from '@/components/usePublishedPreview';
 import { getWorkspaceHomePathFromBase } from '@/lib/workspaceHome';
 
 type PageSummary = {
@@ -35,8 +34,7 @@ export function CollectionWorkspace({
   homePath?: string;
   initialCollectionPayload?: CollectionDetailPayload | null;
 }) {
-  const { previewPublished, effectiveReadOnly, canTogglePreview, setPreviewPublished } = usePublishedPreview(readOnly);
-  const onCreated = effectiveReadOnly ? undefined : () => {
+  const onCreated = readOnly ? undefined : () => {
     window.dispatchEvent(new Event('arcane-pages-changed'));
   };
 
@@ -45,13 +43,10 @@ export function CollectionWorkspace({
       <WorkspaceSidebar
         currentPageId={undefined}
         initialPages={initialPages}
-        readOnly={effectiveReadOnly}
+        readOnly={readOnly}
         pageRouteBasePath={pageRouteBasePath}
         collectionHomePath={collectionHomePath}
         homePath={homePath}
-        previewPublished={previewPublished}
-        canTogglePreview={canTogglePreview}
-        onPreviewPublishedChange={setPreviewPublished}
         onCreated={onCreated}
       />
       <main className="main-column page-main">
@@ -64,7 +59,7 @@ export function CollectionWorkspace({
             </nav>
           </header>
           <div className="document-content collection-document-content">
-            <CollectionEditor collectionId={collectionId} readOnly={effectiveReadOnly} pageRouteBasePath={pageRouteBasePath} initialPayload={initialCollectionPayload} />
+            <CollectionEditor collectionId={collectionId} readOnly={readOnly} pageRouteBasePath={pageRouteBasePath} initialPayload={initialCollectionPayload} />
           </div>
         </section>
       </main>

@@ -1,12 +1,15 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { exportWorkspaceZip } from '@/lib/data/export';
+import { isPublishedAppSurface } from '@/lib/surface';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
-    const exported = await exportWorkspaceZip(process.env.ARCANE_DATA_DIR);
+    const requestedMode = new URL(request.url).searchParams.get('mode');
+    const mode = isPublishedAppSurface() || requestedMode === 'published' ? 'published' : 'workspace';
+    const exported = await exportWorkspaceZip(process.env.ARCANE_DATA_DIR, mode);
     return new NextResponse(exported.buffer as unknown as BodyInit, {
       headers: {
         'Content-Type': 'application/zip',

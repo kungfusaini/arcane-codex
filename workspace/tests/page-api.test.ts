@@ -60,7 +60,7 @@ describe('page API endpoints', () => {
         page: {
           id: string;
           revision: number;
-          contentJson: string;
+          bodyMarkdown: string;
           title: string;
           coverFocalX: number;
           coverFocalY: number;
@@ -75,18 +75,18 @@ describe('page API endpoints', () => {
       const getRes1 = await pageRoute.GET(new NextRequest(`http://localhost/api/pages/${created.page.id}`), {
         params: { id: created.page.id },
       });
-      const loaded = (await callJson(getRes1)) as { page: { id: string; revision: number; contentJson: string } };
+      const loaded = (await callJson(getRes1)) as { page: { id: string; revision: number; bodyMarkdown: string } };
       assert.equal(loaded.page.id, created.page.id);
       assert.equal(loaded.page.revision, created.page.revision);
 
-      const contentJson = '[{"type":"paragraph","content":"checkpoint"}]';
+      const bodyMarkdown = 'checkpoint\n';
       const patchRes = await pageRoute.PATCH(
         new NextRequest(`http://localhost/api/pages/${created.page.id}`, {
           method: 'PATCH',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             revision: loaded.page.revision,
-            contentJson,
+            bodyMarkdown,
             title: 'Restart-safe page',
             coverFocalX: 125,
             coverFocalY: -10,
@@ -96,9 +96,9 @@ describe('page API endpoints', () => {
         { params: { id: created.page.id } },
       );
       const patched = (await callJson(patchRes)) as {
-        page: { id: string; revision: number; contentJson: string; title: string; coverFocalX: number; coverFocalY: number; tags: string[] };
+        page: { id: string; revision: number; bodyMarkdown: string; title: string; coverFocalX: number; coverFocalY: number; tags: string[] };
       };
-      assert.equal(patched.page.contentJson, contentJson);
+      assert.equal(patched.page.bodyMarkdown, bodyMarkdown);
       assert.equal(patched.page.title, 'Restart-safe page');
       assert.equal(patched.page.coverFocalX, 100);
       assert.equal(patched.page.coverFocalY, 0);
@@ -108,8 +108,8 @@ describe('page API endpoints', () => {
       const getRes2 = await pageRoute.GET(new NextRequest(`http://localhost/api/pages/${created.page.id}`), {
         params: { id: created.page.id },
       });
-      const reloaded = (await callJson(getRes2)) as { page: { contentJson: string; coverFocalX: number; coverFocalY: number; tags: string[] } };
-      assert.equal(reloaded.page.contentJson, contentJson);
+      const reloaded = (await callJson(getRes2)) as { page: { bodyMarkdown: string; coverFocalX: number; coverFocalY: number; tags: string[] } };
+      assert.equal(reloaded.page.bodyMarkdown, bodyMarkdown);
       assert.equal(reloaded.page.coverFocalX, 100);
       assert.equal(reloaded.page.coverFocalY, 0);
       assert.deepEqual(reloaded.page.tags, ['draft', 'published']);

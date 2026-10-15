@@ -4,6 +4,8 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import { ensureIconVariant, getAssetFilePath, getIconVariantPath, getImageVariantConfig, type AssetImageVariant } from '@/lib/data/assetDerivatives';
 import { getWorkspaceDbPath } from '@/lib/data/workspace';
+import { isAssetPublished } from '@/lib/data/storage';
+import { isPublishedAppSurface } from '@/lib/surface';
 
 type AssetMetadata = {
   id: string;
@@ -46,6 +48,9 @@ function streamFile(filePath: string, headers: Record<string, string>): NextResp
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   const dataDir = getDataDir();
+  if (isPublishedAppSurface() && !isAssetPublished(params.id, dataDir)) {
+    return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
+  }
   const asset = getAssetMetadata(params.id, dataDir);
   if (!asset) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });

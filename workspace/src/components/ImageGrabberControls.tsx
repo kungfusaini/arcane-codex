@@ -142,7 +142,7 @@ export function WikimediaCommonsSearch({ label = 'Search Wikimedia Commons', def
     }
   };
 
-  const useResult = async (result: WikimediaCommonsImageResult) => {
+  const importResult = async (result: WikimediaCommonsImageResult) => {
     if (disabled || usingId) return;
     setUsingId(result.id);
     setError('');
@@ -176,7 +176,7 @@ export function WikimediaCommonsSearch({ label = 'Search Wikimedia Commons', def
                 {result.description ? <p>{result.description}</p> : null}
                 <a href={result.pageUrl} target="_blank" rel="noreferrer">View source</a>
               </div>
-              <button type="button" onClick={() => void useResult(result)} disabled={disabled || Boolean(usingId)}>{usingId === result.id ? 'Importing…' : useLabel}</button>
+              <button type="button" onClick={() => void importResult(result)} disabled={disabled || Boolean(usingId)}>{usingId === result.id ? 'Importing…' : useLabel}</button>
             </article>
           ))}
         </div>

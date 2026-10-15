@@ -1,3 +1,5 @@
+export type PageKind = 'page' | 'note' | 'article' | 'project' | 'fiction';
+
 export type PageRecord = {
   id: string;
   parentId: string | null;
@@ -10,9 +12,10 @@ export type PageRecord = {
   coverFocalX: number;
   coverFocalY: number;
   coverScale: number;
-  isArticle: boolean;
+  kind: PageKind;
+  summary: string;
   tags: string[];
-  contentJson: string;
+  bodyMarkdown: string;
   revision: number;
   createdAt: number;
   updatedAt: number;
@@ -29,13 +32,14 @@ export type NewPage = {
   coverFocalX?: number;
   coverFocalY?: number;
   coverScale?: number;
-  isArticle?: boolean;
+  kind?: PageKind;
+  summary?: string;
   tags?: string[];
-  contentJson?: string;
+  bodyMarkdown?: string;
 };
 
 export type PageUpdate = Partial<
-  Pick<PageRecord, 'parentId' | 'sortKey' | 'title' | 'icon' | 'iconAssetId' | 'coverAssetId' | 'coverFocalX' | 'coverFocalY' | 'coverScale' | 'isArticle' | 'tags' | 'contentJson'>
+  Pick<PageRecord, 'parentId' | 'sortKey' | 'title' | 'icon' | 'iconAssetId' | 'coverAssetId' | 'coverFocalX' | 'coverFocalY' | 'coverScale' | 'kind' | 'summary' | 'tags' | 'bodyMarkdown'>
 > & {
   revision: number;
 };
@@ -84,16 +88,16 @@ export type CollectionSchema = {
 export type CollectionItemRecord = {
   collectionId: string;
   pageId: string;
-  propertiesJson: string;
+  properties: Record<string, unknown>;
   sortKey: number;
 };
 
 export type CollectionRecord = {
   id: string;
-  hostPageId: string | null;
+  embedPageId: string | null;
   name: string;
-  schemaJson: string;
-  viewsJson: string;
+  schema: CollectionSchema;
+  view: CollectionViews;
   createdAt: number;
   updatedAt: number;
 };
@@ -116,6 +120,21 @@ export type CollectionViews = {
   filter?: CollectionFilter;
 };
 
+export type CollectionViewRecord = {
+  id: string;
+  collectionId: string;
+  name: string;
+  mode: CollectionViewMode;
+  config: Omit<CollectionViews, 'mode'>;
+  position: number;
+};
+
+export type PageCollectionViewRecord = {
+  pageId: string;
+  viewId: string;
+  sortKey: number;
+};
+
 export type CollectionItemPayload = {
   collectionId: string;
   pageId: string;
@@ -135,10 +154,24 @@ export type CollectionUpdateItemSort = {
   sortKey: number;
 };
 
+export type PublicationVisibility = 'private' | 'unlisted' | 'public';
+
+export type PagePublicationRecord = {
+  pageId: string;
+  visibility: PublicationVisibility;
+  sourceRevision: number | null;
+  publishedAt: number | null;
+};
+
+export type PublishedPageRecord = PageRecord & {
+  visibility: Exclude<PublicationVisibility, 'private'>;
+  sourceRevision: number;
+  publishedAt: number;
+};
+
 export type SettingsRecord = {
   schemaVersion: number;
   workspaceName: string;
-  publishedMode: boolean;
   createdAt: number;
   updatedAt: number;
 };

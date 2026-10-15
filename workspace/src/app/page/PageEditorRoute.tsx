@@ -4,26 +4,7 @@ import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
 import { PageEditorSkeleton } from '@/components/PageEditorSkeleton';
 import type { PageUrlPage } from '@/lib/pageUrls';
-
-type InitialPage = {
-  id: string;
-  parentId: string | null;
-  sortKey: number;
-  title: string;
-  icon: string | null;
-  iconAssetId: string | null;
-  coverAssetId: string | null;
-  coverFocalX: number;
-  coverFocalY: number;
-  coverScale: number;
-  isArticle: boolean;
-  tags: string[];
-  contentJson: string;
-  revision: number;
-  createdAt: number;
-  updatedAt: number;
-  deletedAt: number | null;
-};
+import type { PageRecord } from '@/lib/data/types';
 
 type LayoutPage = PageUrlPage & {
   icon: string | null;
@@ -54,13 +35,15 @@ export function PageEditorRoute({
   initialNavigablePages,
   readOnly = false,
   pageRouteBasePath = '/',
+  showDiscovery = false,
 }: {
   pageId: string;
-  initialPage?: InitialPage;
+  initialPage?: PageRecord;
   initialPages?: LayoutPage[];
   initialNavigablePages?: LayoutPage[];
   readOnly?: boolean;
   pageRouteBasePath?: string;
+  showDiscovery?: boolean;
 }) {
-  return <PageEditor pageId={pageId} initialPage={initialPage} initialPages={initialPages} initialNavigablePages={initialNavigablePages} readOnly={readOnly} pageRouteBasePath={pageRouteBasePath} />;
+  return <PageEditor pageId={pageId} initialPage={initialPage} initialPages={initialPages} initialNavigablePages={initialNavigablePages} readOnly={readOnly} pageRouteBasePath={pageRouteBasePath} showDiscovery={showDiscovery} />;
 }

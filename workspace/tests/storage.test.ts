@@ -3,22 +3,32 @@ import { describe, it } from 'node:test';
 import { mkdtempSync, existsSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 import {
   applyCollectionItemMoves,
   applyPageMoves,
   createCollection,
   createCollectionItem,
+  createCollectionView,
   createPage,
   createStorageConnection,
   duplicatePage,
+  embedCollectionView,
   extractLinkedPageIds,
+  getCollection,
   getPage,
+  getPagePublication,
+  getPublishedPage,
   getSettings,
   listCollectionItems,
   listCollectionsForPage,
+  listCollectionsHostedByPage,
+  listCollectionViews,
   listPages,
+  listPublishedPages,
   openWorkspace,
+  publishPage,
   readBacklinks,
   registerPagePathAlias,
   updateSettings,
@@ -27,6 +37,7 @@ import {
   trashPage,
   updateCollection,
   updateCollectionItemProperties,
+  unpublishPage,
   updatePage,
   WorkspaceIntegrityError,
 } from '../src/lib/data/storage';
@@ -53,40 +64,23 @@ describe('workspace bootstrap', () => {
     rmSync(base, { recursive: true, force: true });
   });
 
-  it('migrates legacy schema versions and rejects newer incompatible workspaces', () => {
+  it('rejects legacy and newer incompatible workspace schemas', () => {
     const base = mkdtempSync(path.join(os.tmpdir(), 'arcane-codex-migration-'));
     try {
       openWorkspace({ dataDir: base });
-      const legacy = createStorageConnection(base);
-      legacy.exec('DROP INDEX IF EXISTS idx_assets_sha256; PRAGMA user_version = 1;');
+      const databasePath = getWorkspaceDbPath(base);
+      const legacy = new DatabaseSync(databasePath);
+      legacy.exec('PRAGMA user_version = 1;');
       legacy.close();
 
-      openWorkspace({ dataDir: base });
-      const migrated = createStorageConnection(base);
-      const version = migrated.prepare('PRAGMA user_version').get() as { user_version: number };
-      const assetIndex = migrated.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_assets_sha256'").get();
-      const pageColumns = migrated.prepare("PRAGMA table_info(pages)").all() as Array<{ name: string }>;
-      const assetColumns = migrated.prepare("PRAGMA table_info(assets)").all() as Array<{ name: string }>;
-      const columnX = pageColumns.find((row) => row.name === 'cover_focal_x');
-      const columnY = pageColumns.find((row) => row.name === 'cover_focal_y');
-      const columnScale = pageColumns.find((row) => row.name === 'cover_scale');
-      const iconAssetColumn = pageColumns.find((row) => row.name === 'icon_asset_id');
-      const isArticleColumn = pageColumns.find((row) => row.name === 'is_article');
-      const tagsColumn = pageColumns.find((row) => row.name === 'tags_json');
-      const assetPromptColumn = assetColumns.find((row) => row.name === 'prompt');
-      assert.equal(version.user_version, 10);
-      assert.ok(assetIndex);
-      assert.ok(columnX);
-      assert.ok(columnY);
-      assert.ok(columnScale);
-      assert.ok(iconAssetColumn);
-      assert.ok(isArticleColumn);
-      assert.ok(tagsColumn);
-      assert.ok(assetPromptColumn);
-      const settingsColumns = migrated.prepare("PRAGMA table_info(settings)").all() as Array<{ name: string }>;
-      assert.ok(settingsColumns.some((row) => row.name === 'published_mode'));
-      migrated.exec('PRAGMA user_version = 99;');
-      migrated.close();
+      assert.throws(
+        () => openWorkspace({ dataDir: base }),
+        (error: unknown) => error instanceof WorkspaceIntegrityError && /offline migration/.test(error.message),
+      );
+
+      const newer = new DatabaseSync(databasePath);
+      newer.exec('PRAGMA user_version = 99;');
+      newer.close();
 
       assert.throws(
         () => openWorkspace({ dataDir: base }),
@@ -99,20 +93,20 @@ describe('workspace bootstrap', () => {
 });
 
 describe('workspace settings', () => {
-  it('stores published mode toggles', () => {
+  it('stores workspace names independently of publication', () => {
     const workspace = mkdtempSync(path.join(os.tmpdir(), 'arcane-codex-settings-'));
     ensureWorkspaceDirs(workspace);
     openWorkspace({ dataDir: workspace });
 
     try {
       const initial = getSettings(workspace);
-      assert.equal(initial.publishedMode, false);
+      assert.equal(initial.workspaceName, 'Arcane Codex');
 
-      const updated = updateSettings(workspace, { publishedMode: true });
-      assert.equal(updated.publishedMode, true);
+      const updated = updateSettings(workspace, { workspaceName: 'Publications test' });
+      assert.equal(updated.workspaceName, 'Publications test');
 
       const reread = getSettings(workspace);
-      assert.equal(reread.publishedMode, true);
+      assert.equal(reread.workspaceName, 'Publications test');
     } finally {
       rmSync(workspace, { recursive: true, force: true });
     }
@@ -140,7 +134,7 @@ describe('collections CRUD and item storage', () => {
       workspace,
     );
     const books = createCollection({ name: 'Books' }, workspace);
-    assert.equal(JSON.parse(books.schemaJson).properties[0].type, 'select');
+    assert.equal(books.schema.properties[0].type, 'select');
     const solo = createPage({ title: 'Standalone' }, workspace);
 
     const firstItem = createCollectionItem(
@@ -179,7 +173,7 @@ describe('collections CRUD and item storage', () => {
       },
       workspace,
     );
-    assert.equal(typeof JSON.parse(updated.propertiesJson).progress, 'number');
+    assert.equal(typeof updated.properties.progress, 'number');
 
     const moved = applyCollectionItemMoves(
       [
@@ -208,8 +202,54 @@ describe('collections CRUD and item storage', () => {
     );
 
     assert.equal(collectionUpdated.name, 'Project tracker');
-    assert.equal(collectionUpdated.schemaJson.includes('Blocked'), true);
+    assert.equal(collectionUpdated.schema.properties[0].options?.includes('Blocked'), true);
+
+    const embeddedPage = createPage({ title: 'Collection dashboard' }, workspace);
+    const reusableView = createCollectionView(collection.id, { name: 'Gallery', settings: { mode: 'gallery' } }, workspace);
+    embedCollectionView(embeddedPage.id, reusableView.id, 1, workspace);
+    assert.equal(listCollectionViews(collection.id, workspace).length, 2);
+    assert.equal(listCollectionsHostedByPage(embeddedPage.id, workspace)[0].id, collection.id);
+
+    const database = createStorageConnection(workspace);
+    const collectionColumns = database.prepare('PRAGMA table_info(collections)').all() as Array<{ name: string }>;
+    const itemColumns = database.prepare('PRAGMA table_info(collection_items)').all() as Array<{ name: string }>;
+    assert.equal(collectionColumns.some((column) => ['host_page_id', 'schema_json', 'views_json'].includes(column.name)), false);
+    assert.equal(itemColumns.some((column) => column.name === 'properties_json'), false);
+    database.prepare('DELETE FROM pages WHERE id = ?').run(embeddedPage.id);
+    database.close();
+    assert.ok(getCollection(collection.id, workspace), 'deleting an embedding page must not delete its collection');
+    assert.equal(listCollectionViews(collection.id, workspace).length, 2);
     rmSync(workspace, { recursive: true, force: true });
+  });
+});
+
+describe('publication snapshots', () => {
+  it('keeps private drafts off the public surface and publishes immutable snapshots', () => {
+    const workspace = mkdtempSync(path.join(os.tmpdir(), 'arcane-codex-publication-'));
+    try {
+      openWorkspace({ dataDir: workspace });
+      const root = createPage({ title: 'Private root', bodyMarkdown: 'Draft one\n' }, workspace);
+      const child = createPage({ title: 'Child', parentId: root.id }, workspace);
+      assert.equal(getPagePublication(root.id, workspace)?.visibility, 'private');
+      assert.equal(getPublishedPage(root.id, workspace), null);
+      assert.throws(() => publishPage(child.id, 'public', workspace), /parent pages/i);
+
+      const firstSnapshot = publishPage(root.id, 'public', workspace);
+      assert.equal(firstSnapshot.bodyMarkdown, 'Draft one\n');
+      publishPage(child.id, 'unlisted', workspace);
+      assert.equal(listPublishedPages(false, workspace).some((page) => page.id === child.id), false);
+      assert.equal(listPublishedPages(true, workspace).some((page) => page.id === child.id), true);
+
+      updatePage(root.id, { revision: root.revision, title: 'Changed draft', bodyMarkdown: 'Draft two\n' }, workspace);
+      assert.equal(getPublishedPage(root.id, workspace)?.title, 'Private root');
+      assert.equal(getPublishedPage(root.id, workspace)?.bodyMarkdown, 'Draft one\n');
+      assert.throws(() => unpublishPage(root.id, workspace), /child pages/i);
+      unpublishPage(child.id, workspace);
+      unpublishPage(root.id, workspace);
+      assert.equal(getPublishedPage(root.id, workspace), null);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
   });
 });
 
@@ -241,7 +281,7 @@ describe('pages CRUD and ordering', () => {
 
     const loaded = getPage(root.id, workspace);
     assert.equal(loaded?.revision, 0);
-    assert.equal(loaded?.isArticle, false);
+    assert.equal(loaded?.kind, 'note');
     assert.deepEqual(loaded?.tags, ['anchor', 'draft']);
 
     const updated = updatePage(
@@ -249,10 +289,10 @@ describe('pages CRUD and ordering', () => {
       {
         revision: childA.revision,
         title: 'Renamed Child A',
-        contentJson: '[{"type":"paragraph","content":"Hello"}]',
+        bodyMarkdown: 'Hello\n',
         coverFocalX: 12,
         coverFocalY: 88,
-        isArticle: true,
+        kind: 'article',
         tags: ['edited', 'review', 'review'],
       },
       workspace,
@@ -260,13 +300,13 @@ describe('pages CRUD and ordering', () => {
     assert.equal(updated.title, 'Renamed Child A');
     assert.equal(updated.coverFocalX, 12);
     assert.equal(updated.coverFocalY, 88);
-    assert.equal(updated.isArticle, true);
+    assert.equal(updated.kind, 'article');
     assert.deepEqual(updated.tags, ['edited', 'review']);
 
     const reloaded = getPage(childA.id, workspace);
     assert.equal(reloaded?.coverFocalX, 12);
     assert.equal(reloaded?.coverFocalY, 88);
-    assert.equal(reloaded?.isArticle, true);
+    assert.equal(reloaded?.kind, 'article');
     assert.deepEqual(reloaded?.tags, ['edited', 'review']);
 
     const duplicated = duplicatePage(childA.id, workspace);
@@ -388,7 +428,7 @@ describe('pages CRUD and ordering', () => {
 
     try {
       const root = createPage({ title: 'Matrix' }, workspace);
-      const page = createPage({ title: 'The Anatomy of AI Agents', parentId: root.id, isArticle: true }, workspace);
+      const page = createPage({ title: 'The Anatomy of AI Agents', parentId: root.id, kind: 'article' }, workspace);
       registerPagePathAlias('/posts/ai/the-anatomy-of-ai-agents/', page.id, workspace);
       registerPagePathAlias('posts/ai_learning/the-anatomy-of-ai-agents', page.id, workspace);
 
@@ -474,40 +514,10 @@ describe('pages CRUD and ordering', () => {
     const source = createPage({
       title: 'Source',
       parentId: root.id,
-      contentJson: JSON.stringify([
-        {
-          type: 'paragraph',
-          content: [
-            {
-              type: 'text',
-              text: 'intro',
-              styles: {},
-            },
-          ],
-        },
-        {
-          type: 'paragraph',
-          content: [
-            {
-              type: 'pageLink',
-              props: { pageId: target.id, title: 'Target' },
-            },
-            {
-              type: 'text',
-              text: 'and ',
-              styles: {},
-            },
-            {
-              type: 'link',
-              href: buildPagePathFromPages(target.id, [root, target]),
-              content: [{ type: 'text', text: 'same target', styles: {} }],
-            },
-          ],
-        },
-      ]),
+      bodyMarkdown: `intro\n\n[Target](arcane://page/${target.id})\n`,
     }, workspace);
 
-    const ids = extractLinkedPageIds(source.contentJson);
+    const ids = extractLinkedPageIds(source.bodyMarkdown);
     assert.equal(ids.includes(target.id), true);
 
     const backlinksAfterCreate = readBacklinks(target.id, workspace);

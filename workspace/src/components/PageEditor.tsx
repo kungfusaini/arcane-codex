@@ -13,6 +13,7 @@ import {
   useRef,
   useState,
   type ClipboardEvent as ReactClipboardEvent,
+  type DragEvent as ReactDragEvent,
   type FocusEvent as ReactFocusEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
@@ -34,16 +35,17 @@ import {
 } from '@blocknote/react';
 import {
   SideMenuExtension,
-  filterSuggestionItems,
+  SuggestionMenu,
   insertOrUpdateBlockForSlashMenu,
 } from '@blocknote/core/extensions';
 import { getBreadcrumbs } from '@/lib/pageTree';
 import { PageIcon } from '@/components/PageIcon';
+import { HomeDiscovery } from '@/components/HomeDiscovery';
 import { extractGrabberPaste, ImageGrabberPanel, ImageGrabberPromptForm, ImageGrabberUrlForm, WikimediaCommonsSearch } from '@/components/ImageGrabberControls';
 import { ImageGrabberPopup, ImagePopupSection } from '@/components/ImageGrabberPopup';
 import { PublishMediaModal, PublishMediaTrigger, type PublishMediaItem } from '@/components/PublishMediaModal';
 import { useDismissibleDetails } from '@/components/useDismissibleDetails';
-import { buildWorkspacePagePathFromPages, findWorkspaceHomePage, getWorkspaceTopLevelPages, isWorkspacePagePathForId } from '@/lib/workspaceHome';
+import { buildWorkspacePagePathFromPages, findWorkspaceHomePage } from '@/lib/workspaceHome';
 import {
   editGrabberImageToAsset,
   IMAGE_GRABBER_UPLOAD_TYPES,
@@ -61,28 +63,11 @@ import {
   getYouTubeVideoId,
   type ReferencedPage,
 } from '@/components/customBlocks';
+import { blocksToMarkdown, splitMarkdownExtensions } from '@/lib/documents/markdown';
+import type { PageKind, PageRecord } from '@/lib/data/types';
 
 import './page-editor.css';
-
-type PageRecord = {
-  id: string;
-  parentId: string | null;
-  sortKey: number;
-  title: string;
-  icon: string | null;
-  iconAssetId: string | null;
-  coverAssetId: string | null;
-  coverFocalX: number;
-  coverFocalY: number;
-  coverScale: number;
-  isArticle: boolean;
-  tags: string[];
-  contentJson: string;
-  revision: number;
-  createdAt: number;
-  updatedAt: number;
-  deletedAt: number | null;
-};
+import './home-discovery.css';
 
 type SidebarPage = {
   id: string;
@@ -95,13 +80,21 @@ type SidebarPage = {
 
 type CollectionSummary = {
   id: string;
-  hostPageId: string | null;
+  embedPageId: string | null;
   name: string;
+};
+
+type PagePublication = {
+  pageId: string;
+  visibility: 'private' | 'unlisted' | 'public';
+  sourceRevision: number | null;
+  publishedAt: number | null;
 };
 
 type PageCollectionsPayload = {
   collections?: CollectionSummary[];
   hostCollection?: CollectionSummary | null;
+  publication?: PagePublication | null;
 };
 
 const PageEmojiPicker = dynamic(
@@ -148,7 +141,7 @@ type UploadTask = {
 type RecoveryDraft = {
   pageId: string;
   title: string;
-  contentJson: string;
+  bodyMarkdown: string;
   baseRevision: number;
   savedAt: number;
 };
@@ -200,269 +193,40 @@ function getUrlTitle(value: string): string {
   }
 }
 
-function replaceImageBlockUrl(blocks: unknown, blockId: string, url: string): { blocks: unknown; changed: boolean } {
-  if (!Array.isArray(blocks)) return { blocks, changed: false };
-  let changed = false;
-  const next = blocks.map((block) => {
-    if (!block || typeof block !== 'object') return block;
-    const record = block as Record<string, unknown>;
-    let updated: Record<string, unknown> = record;
-    if (record.id === blockId) {
-      updated = { ...updated, props: { ...(record.props as Record<string, unknown>), url } };
-      changed = true;
-    }
-    const children = replaceImageBlockUrl(record.children, blockId, url);
-    if (children.changed) {
-      updated = { ...updated, children: children.blocks };
-      changed = true;
-    }
-    return updated;
-  });
-  return { blocks: next, changed };
-}
-
-async function saveEditedImageToPage(pageId: string, blockId: string, url: string) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const response = await fetch(`/api/pages/${pageId}`);
-    const payload = await response.json() as { page?: Pick<PageRecord, 'revision' | 'contentJson'>; error?: string };
-    if (!response.ok || !payload.page) throw new Error(payload.error || 'Original page could not be loaded.');
-    const replaced = replaceImageBlockUrl(JSON.parse(payload.page.contentJson), blockId, url);
-    if (!replaced.changed) throw new Error('The original image block no longer exists.');
-    const update = await fetch(`/api/pages/${pageId}`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ revision: payload.page.revision, contentJson: JSON.stringify(replaced.blocks) }),
-    });
-    if (update.ok) return;
-    if (update.status !== 409 || attempt === 1) {
-      const error = await update.json().catch(() => ({})) as { error?: string };
-      throw new Error(error.error || 'Edited image could not be saved.');
-    }
-  }
-}
-
 function isImageUrl(value: string): boolean {
   return isLikelyImageUrl(value);
-}
-
-function migrateLegacyImageBlocks(blocks: PartialBlock[]): { blocks: PartialBlock[]; changed: boolean } {
-  let changed = false;
-  const next = blocks.map((block) => {
-    const record = block as PartialBlock & { props?: Record<string, unknown>; children?: PartialBlock[] };
-    let migrated = record;
-    if (record.type === 'image' && typeof record.props?.url === 'string' && record.props.url) {
-      const name = typeof record.props.name === 'string' && record.props.name ? record.props.name : record.props.url;
-      migrated = {
-        ...record,
-        type: 'gallery',
-        props: {
-          images: JSON.stringify([{
-            url: record.props.url,
-            name,
-            caption: typeof record.props.caption === 'string' ? record.props.caption : '',
-          }]),
-          imageSize: 240,
-          mode: 'single',
-          captionMode: 'individual',
-          groupCaption: '',
-        },
-      } as unknown as PartialBlock & { props?: Record<string, unknown>; children?: PartialBlock[] };
-      changed = true;
-    }
-    if (Array.isArray(record.children)) {
-      const children = migrateLegacyImageBlocks(record.children);
-      if (children.changed) {
-        migrated = { ...migrated, children: children.blocks };
-        changed = true;
-      }
-    }
-    return migrated;
-  });
-  return { blocks: next, changed };
-}
-
-function removeRedundantYouTubeLinkBlocks(blocks: PartialBlock[]): PartialBlock[] {
-  return blocks.filter((block, index) => {
-    if (block.type !== 'paragraph' || !Array.isArray(block.content) || block.content.length !== 1) {
-      return true;
-    }
-    const inline = block.content[0] as { type?: string; href?: string } | undefined;
-    const next = blocks[index + 1] as { type?: string; props?: Record<string, unknown> } | undefined;
-    if (inline?.type !== 'link' || typeof inline.href !== 'string' || next?.type !== 'youtube') {
-      return true;
-    }
-    return getYouTubeVideoId(inline.href) !== getYouTubeVideoId(String(next.props?.url || ''));
-  });
-}
-
-function ensureChildPageLinkBlocks(blocks: PartialBlock[], childPages: SidebarPage[]): PartialBlock[] {
-  if (!childPages.length) {
-    return blocks;
-  }
-
-  const childPagesById = new Map(childPages.map((page) => [page.id, page]));
-  const present = new Set<string>();
-
-  const visit = (node: unknown): void => {
-    if (!node || typeof node !== 'object') {
-      return;
-    }
-    if (Array.isArray(node)) {
-      for (const child of node) {
-        visit(child);
-      }
-      return;
-    }
-
-    const record = node as Record<string, unknown>;
-    if (record.type === 'pageLink' && record.props && typeof record.props === 'object') {
-      const props = record.props as Record<string, unknown>;
-      const pageId = typeof props.pageId === 'string' ? props.pageId.trim() : '';
-      if (pageId && childPagesById.has(pageId)) {
-        present.add(pageId);
-      }
-      return;
-    }
-
-    for (const value of Object.values(record)) {
-      if (Array.isArray(value)) {
-        visit(value);
-      } else if (value && typeof value === 'object') {
-        visit(value);
-      }
-    }
-  };
-
-  visit(blocks);
-
-  const additions = childPages
-    .slice()
-    .sort((a, b) => a.sortKey - b.sortKey || a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }))
-    .filter((page) => !present.has(page.id))
-    .map((page) => ({
-      type: 'pageLink',
-      props: {
-        pageId: page.id,
-        title: page.title || 'Untitled',
-        icon: page.icon ?? '',
-        url: '',
-      },
-    } as unknown as PartialBlock));
-
-  return [...blocks, ...additions];
-}
-
-function removeChildPageLinkBlocks(blocks: PartialBlock[], childPages: SidebarPage[]): PartialBlock[] {
-  if (!childPages.length) {
-    return blocks;
-  }
-
-  const childPageIds = new Set(childPages.map((page) => page.id));
-  return blocks.flatMap((block) => {
-    if (!block || typeof block !== 'object') {
-      return [block];
-    }
-    const record = block as Record<string, unknown>;
-    if (record.type === 'pageLink' && record.props && typeof record.props === 'object') {
-      const props = record.props as Record<string, unknown>;
-      const pageId = typeof props.pageId === 'string' ? props.pageId.trim() : '';
-      if (pageId && childPageIds.has(pageId)) {
-        return [];
-      }
-    }
-    const children = Array.isArray(record.children) ? removeChildPageLinkBlocks(record.children as PartialBlock[], childPages) : null;
-    return children ? [{ ...record, children }] as unknown as PartialBlock[] : [block];
-  });
-}
-
-function normalizeChildPageLinkContent(rawContent: string, childPages: SidebarPage[], removeExisting = false): string {
-  try {
-    const parsed = JSON.parse(rawContent) as unknown;
-    if (Array.isArray(parsed)) {
-      if (removeExisting) {
-        return JSON.stringify(removeChildPageLinkBlocks(parsed as PartialBlock[], childPages));
-      }
-      return JSON.stringify(ensureChildPageLinkBlocks(parsed as PartialBlock[], childPages));
-    }
-  } catch {
-    // keep the original content; other recovery logic will handle invalid JSON.
-  }
-  return rawContent;
-}
-
-function getAutoPageLinkTargets(pageId: string, pages: SidebarPage[]): SidebarPage[] {
-  const workspaceHome = findWorkspaceHomePage(pages);
-  if (workspaceHome?.id === pageId) {
-    return getWorkspaceTopLevelPages(pages);
-  }
-  return pages.filter((item) => item.parentId === pageId);
 }
 
 function ArcaneSideMenu() {
   const editor = useBlockNoteEditor();
   const sideMenu = useExtension(SideMenuExtension);
-  const moveUpRef = useRef<HTMLButtonElement>(null);
-  const moveDownRef = useRef<HTMLButtonElement>(null);
+  const suggestionMenu = useExtension(SuggestionMenu);
   const block = useExtensionState(SideMenuExtension, {
     selector: (state) => state?.block,
   });
 
-  const moveBlock = (direction: -1 | 1) => {
-    if (!block) {
-      return;
-    }
-    const blocks = editor.document;
-    const index = blocks.findIndex((candidate) => candidate.id === block.id);
-    const targetIndex = index + direction;
-    if (index < 0 || targetIndex < 0 || targetIndex >= blocks.length) {
-      return;
-    }
-    const source = blocks[index];
-    const target = blocks[targetIndex];
-    if (!source || !target) {
-      return;
-    }
-    const partialSource = { ...source };
-    delete (partialSource as { id?: string }).id;
-    editor.insertBlocks([partialSource], target, direction < 0 ? 'before' : 'after');
-    editor.removeBlocks([source]);
+  if (!block) return null;
+
+  const openBlockMenu = () => {
+    editor.setTextCursorPosition(block, 'start');
+    editor.focus();
+    suggestionMenu.openSuggestionMenu('/', { deleteTriggerCharacter: false, ignoreQueryLength: true });
   };
-
-  useEffect(() => {
-    if (!block) {
-      return;
-    }
-    const up = moveUpRef.current;
-    const down = moveDownRef.current;
-    const moveUp = (event: globalThis.MouseEvent) => { event.preventDefault(); moveBlock(-1); };
-    const moveDown = (event: globalThis.MouseEvent) => { event.preventDefault(); moveBlock(1); };
-    up?.addEventListener('click', moveUp);
-    down?.addEventListener('click', moveDown);
-    return () => {
-      up?.removeEventListener('click', moveUp);
-      down?.removeEventListener('click', moveDown);
-    };
-  });
-
-  if (!block) {
-    return null;
-  }
 
   return (
     <div className="arcane-side-menu-actions">
+      <button type="button" className="arcane-add-block" aria-label="Add block" title="Add block" onMouseDown={(event) => event.preventDefault()} onClick={openBlockMenu}>+</button>
       <button
-      type="button"
-      className="arcane-drag-handle"
-      draggable
-      aria-label="Drag block"
-      onDragStart={(event) => sideMenu.blockDragStart(event, block)}
-      onDragEnd={sideMenu.blockDragEnd}
-      title="Drag block"
-    >
-      ⋮⋮
-    </button>
-      <button type="button" ref={moveUpRef} className="arcane-move-button" aria-label="Move block up" title="Move block up">↑</button>
-      <button type="button" ref={moveDownRef} className="arcane-move-button" aria-label="Move block down" title="Move block down">↓</button>
+        type="button"
+        className="arcane-drag-handle"
+        draggable
+        aria-label="Drag block"
+        onDragStart={(event) => sideMenu.blockDragStart(event, block)}
+        onDragEnd={sideMenu.blockDragEnd}
+        title="Drag to move block"
+      >
+        ⋮⋮
+      </button>
     </div>
   );
 }
@@ -474,13 +238,57 @@ type MentionItem = DefaultReactSuggestionItem & {
   label: string;
 };
 
+type SlashSuggestionItem = DefaultReactSuggestionItem & {
+  aliases?: string[];
+  pageId?: string;
+};
+
+const slashCommandMetadata: Record<string, { group: string; aliases: string[] }> = {
+  'paragraph': { group: 'Basic blocks', aliases: ['text', 'plain'] },
+  'heading': { group: 'Basic blocks', aliases: ['h1', 'title'] },
+  'heading 2': { group: 'Basic blocks', aliases: ['h2', 'subtitle'] },
+  'heading 3': { group: 'Basic blocks', aliases: ['h3'] },
+  'bullet list': { group: 'Lists', aliases: ['bulleted', 'unordered', 'ul'] },
+  'numbered list': { group: 'Lists', aliases: ['ordered', 'ol', 'number'] },
+  'check list': { group: 'Lists', aliases: ['todo', 'task', 'checkbox'] },
+  'quote': { group: 'Basic blocks', aliases: ['blockquote'] },
+  'code block': { group: 'Advanced', aliases: ['code', 'snippet'] },
+  'divider': { group: 'Basic blocks', aliases: ['line', 'separator', 'hr'] },
+  'table': { group: 'Advanced', aliases: ['grid'] },
+  'image': { group: 'Media', aliases: ['img', 'photo', 'picture'] },
+  'video': { group: 'Media', aliases: ['movie', 'youtube'] },
+  'audio': { group: 'Media', aliases: ['sound', 'music'] },
+  'file': { group: 'Media', aliases: ['attachment', 'upload'] },
+};
+
+function slashMatchRank(item: SlashSuggestionItem, query: string): number {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return 0;
+  const values = [item.title, item.subtext ?? '', ...(item.aliases ?? [])].map((value) => value.toLowerCase());
+  if (values.some((value) => value === normalized)) return 0;
+  if (values.some((value) => value.startsWith(normalized))) return 1;
+  if (values.some((value) => value.split(/\s+/).some((word) => word.startsWith(normalized)))) return 2;
+  if (values.some((value) => value.includes(normalized))) return 3;
+  const isSubsequence = (value: string) => {
+    let index = 0;
+    for (const character of value) if (character === normalized[index]) index += 1;
+    return index === normalized.length;
+  };
+  return values.some(isSubsequence) ? 4 : Number.POSITIVE_INFINITY;
+}
+
 function ArcaneSuggestionMenu<T extends DefaultReactSuggestionItem>({
   items,
   loadingState,
   selectedIndex,
   onItemClick,
 }: SuggestionMenuProps<T>) {
+  const selectedItemRef = useRef<HTMLButtonElement>(null);
   let activeGroup: string | undefined;
+
+  useEffect(() => {
+    selectedItemRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [selectedIndex]);
 
   return (
     <div id="bn-suggestion-menu" className="arcane-suggestion-menu" role="listbox" aria-label="Editor suggestions">
@@ -493,6 +301,7 @@ function ArcaneSuggestionMenu<T extends DefaultReactSuggestionItem>({
             {groupChanged && item.group ? <div className="arcane-suggestion-group">{item.group}</div> : null}
             <button
               id={`bn-suggestion-menu-item-${index}`}
+              ref={index === selectedIndex ? selectedItemRef : undefined}
               className={`arcane-suggestion-item ${item.icon ? '' : 'without-icon'}`}
               type="button"
               role="option"
@@ -526,15 +335,16 @@ type PageEditorProps = {
   initialNavigablePages?: SidebarPage[];
   readOnly?: boolean;
   pageRouteBasePath?: string;
+  showDiscovery?: boolean;
 };
 
 export function PageEditor({
   pageId,
   initialPage,
   initialPages = [],
-  initialNavigablePages,
   readOnly = false,
   pageRouteBasePath = '/',
+  showDiscovery = false,
 }: PageEditorProps) {
   useDismissibleDetails('.action-menu');
 
@@ -546,12 +356,15 @@ export function PageEditor({
   const [statusMessage, setStatusMessage] = useState('');
   const [allPages, setAllPages] = useState<SidebarPage[]>(initialPages);
   const [editorReady, setEditorReady] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(!readOnly);
   const [assets, setAssets] = useState<AssetRecord[]>([]);
+
+  useEffect(() => {
+    setIsEditing(!readOnly);
+  }, [readOnly]);
   const [hostCollection, setHostCollection] = useState<CollectionSummary | null>(null);
   const [pageCollections, setPageCollections] = useState<CollectionSummary[]>([]);
-  const autoChildPageTargets = useMemo(() => getAutoPageLinkTargets(pageId, allPages), [allPages, pageId]);
-  const childPageLinkTargets = hostCollection ? [] : autoChildPageTargets;
+  const [publication, setPublication] = useState<PagePublication | null>(null);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [iconPickerPosition, setIconPickerPosition] = useState<{ top: number; left: number } | null>(null);
   const [pageIconPrompt, setPageIconPrompt] = useState('');
@@ -578,13 +391,12 @@ export function PageEditor({
   const [recoveryDraft, setRecoveryDraft] = useState<RecoveryDraft | null>(null);
   const [coverDraft, setCoverDraft] = useState<{ x: number; y: number; scale: number } | null>(null);
 
-  const referencedPages = useMemo(() => {
-    const map = new Map<string, ReferencedPage>();
-    for (const item of allPages) {
-      map.set(item.id, { id: item.id, parentId: item.parentId, sortKey: item.sortKey, title: item.title || 'Untitled', icon: item.icon ?? null, iconAssetId: item.iconAssetId ?? null });
-    }
-    return map;
-  }, [allPages]);
+  const referencedPagesRef = useRef(new Map<string, ReferencedPage>());
+  const referencedPages = referencedPagesRef.current;
+  referencedPages.clear();
+  for (const item of allPages) {
+    referencedPages.set(item.id, { id: item.id, parentId: item.parentId, sortKey: item.sortKey, title: item.title || 'Untitled', icon: item.icon ?? null, iconAssetId: item.iconAssetId ?? null });
+  }
 
   useEffect(() => {
     try {
@@ -694,8 +506,9 @@ export function PageEditor({
   const isApplyingRemoteContent = useRef(false);
   const hasPendingContent = useRef(false);
   const pendingRevision = useRef(initialPage?.revision ?? 0);
-  const savedDocRef = useRef(initialPage?.contentJson ?? '[]');
+  const savedBodyRef = useRef(initialPage?.bodyMarkdown ?? '');
   const titleRef = useRef(initialPage?.title ?? '');
+  const titleInputRef = useRef<HTMLTextAreaElement>(null);
   const bodyUploadRef = useRef<HTMLInputElement>(null);
   const coverUploadRef = useRef<HTMLInputElement>(null);
   const iconUploadRef = useRef<HTMLInputElement>(null);
@@ -743,28 +556,72 @@ export function PageEditor({
     return Math.round(value / COVER_FOCAL_STEP) * COVER_FOCAL_STEP;
   }, []);
 
-  const applyInitialContent = useCallback((rawContent: string, childPages: SidebarPage[], removeExisting = false) => {
-    let parsed: PartialBlock[] = DOCUMENT_FALLBACK;
+  const applyInitialContent = useCallback((bodyMarkdown: string) => {
+    const toRuntimeValue = (value: unknown): unknown => {
+      if (typeof value === 'string') {
+        return value
+          .replace(/arcane:\/\/asset\/(?:sha256:)?([0-9a-f]{64})/gi, '/api/assets/$1')
+          .replace(/arcane:\/\/page\/([0-9a-f-]{36})/gi, '/page/$1');
+      }
+      if (Array.isArray(value)) return value.map(toRuntimeValue);
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+          .filter(([key]) => key !== 'version')
+          .map(([key, child]) => [key, toRuntimeValue(child)]));
+      }
+      return value;
+    };
+
+    let parsed: PartialBlock[] = [];
     try {
-      const candidate = JSON.parse(rawContent);
-      if (Array.isArray(candidate)) {
-        parsed = candidate as PartialBlock[];
+      for (const segment of splitMarkdownExtensions(bodyMarkdown)) {
+        if (segment.type === 'extension') {
+          const runtimeBlock = toRuntimeValue(segment.block) as Record<string, unknown>;
+          const runtimeProps = runtimeBlock.props && typeof runtimeBlock.props === 'object'
+            ? runtimeBlock.props as Record<string, unknown>
+            : {};
+          if (segment.extensionType === 'gallery' && Array.isArray(runtimeProps.images)) {
+            runtimeProps.images = JSON.stringify(runtimeProps.images);
+          }
+          if (segment.extensionType === 'artworkShowcase' && Array.isArray(runtimeProps.frameUrls)) {
+            runtimeProps.frameUrls = JSON.stringify(runtimeProps.frameUrls);
+          }
+          parsed.push(runtimeBlock as PartialBlock);
+        } else {
+          const pageCardPattern = /^\[([^\]]+)\]\(arcane:\/\/page\/([0-9a-f-]{36})\)\s*$/gim;
+          let offset = 0;
+          for (const match of segment.source.matchAll(pageCardPattern)) {
+            const index = match.index ?? 0;
+            const before = segment.source.slice(offset, index).trim();
+            if (before) parsed.push(...editor.tryParseMarkdownToBlocks(toRuntimeValue(before) as string) as PartialBlock[]);
+            const reference = referencedPages.get(match[2]);
+            parsed.push({
+              type: 'pageLink',
+              props: {
+                pageId: match[2],
+                title: reference?.title ?? match[1],
+                icon: reference?.icon ?? '',
+                url: '',
+              },
+            } as unknown as PartialBlock);
+            offset = index + match[0].length;
+          }
+          const after = segment.source.slice(offset).trim();
+          if (after) parsed.push(...editor.tryParseMarkdownToBlocks(toRuntimeValue(after) as string) as PartialBlock[]);
+        }
       }
     } catch {
-      parsed = DOCUMENT_FALLBACK;
+      parsed = editor.tryParseMarkdownToBlocks(bodyMarkdown) as PartialBlock[];
     }
 
-    const withoutRedundantLinks = removeRedundantYouTubeLinkBlocks(parsed.length ? parsed : DOCUMENT_FALLBACK);
-    const migrated = migrateLegacyImageBlocks(withoutRedundantLinks);
-    const payload = normalizeChildPageLinkContent(JSON.stringify(migrated.blocks), childPages, removeExisting);
     isApplyingRemoteContent.current = true;
-    editor.replaceBlocks(editor.document, JSON.parse(payload) as Parameters<typeof editor.replaceBlocks>[1]);
-    savedDocRef.current = payload;
+    editor.replaceBlocks(editor.document, parsed.length ? parsed : DOCUMENT_FALLBACK);
+    savedBodyRef.current = bodyMarkdown;
     queueMicrotask(() => {
       isApplyingRemoteContent.current = false;
     });
-    return migrated.changed || payload !== JSON.stringify(migrated.blocks);
-  }, [editor]);
+    return false;
+  }, [editor, referencedPages]);
 
   const readRecoveryDraft = useCallback((remote: PageRecord): RecoveryDraft | null => {
     try {
@@ -774,23 +631,20 @@ export function PageEditor({
       if (
         draft.pageId !== pageId ||
         typeof draft.title !== 'string' ||
-        typeof draft.contentJson !== 'string' ||
+        typeof draft.bodyMarkdown !== 'string' ||
         typeof draft.baseRevision !== 'number' ||
         typeof draft.savedAt !== 'number'
       ) {
         window.localStorage.removeItem(draftKey);
         return null;
       }
-      JSON.parse(draft.contentJson);
-      // Older image-edit attempts could leave a huge base64 draft in localStorage;
-      // those payloads cannot be sent reliably as a recovery PATCH.
-      if (draft.contentJson.includes('data:image/') || draft.contentJson.length > 4_500_000) {
+      if (draft.bodyMarkdown.includes('data:image/') || draft.bodyMarkdown.length > 4_500_000) {
         window.localStorage.removeItem(draftKey);
         return null;
       }
       // A draft from an older server revision cannot safely be restored over a
       // newer page. It is stale recovery state, not an unsaved current edit.
-      if (draft.baseRevision !== remote.revision || (draft.title === remote.title && draft.contentJson === remote.contentJson)) {
+      if (draft.baseRevision !== remote.revision || (draft.title === remote.title && draft.bodyMarkdown === remote.bodyMarkdown)) {
         window.localStorage.removeItem(draftKey);
         return null;
       }
@@ -805,7 +659,7 @@ export function PageEditor({
     setStatus('idle');
     setStatusMessage('');
     try {
-      const response = await fetch(`/api/pages/${pageId}`);
+      const response = await fetch(`/api/pages/${pageId}${readOnly ? '?published=true' : ''}`);
       if (!response.ok) {
         throw new Error(response.status === 404 ? 'Page not found' : 'Page could not be loaded');
       }
@@ -814,6 +668,7 @@ export function PageEditor({
       setPage(payload.page);
       setPageCollections(payload.collections ?? []);
       setHostCollection(payload.hostCollection ?? null);
+      setPublication(payload.publication ?? null);
       pendingRevision.current = payload.page.revision;
       editVersionRef.current = 0;
       saveQueuedRef.current = false;
@@ -826,21 +681,7 @@ export function PageEditor({
       setTitle(payload.page.title);
       titleRef.current = payload.page.title;
 
-      const migratedLegacyImages = applyInitialContent(payload.page.contentJson, autoChildPageTargets, Boolean(payload.hostCollection));
-      if (migratedLegacyImages && !readOnly) {
-        const migrationResponse = await fetch(`/api/pages/${pageId}`, {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ contentJson: savedDocRef.current, revision: payload.page.revision }),
-        });
-        if (migrationResponse.ok) {
-          const migrationPayload = await migrationResponse.json() as { page?: PageRecord };
-          if (migrationPayload.page) {
-            setPage(migrationPayload.page);
-            pendingRevision.current = migrationPayload.page.revision;
-          }
-        }
-      }
+      applyInitialContent(payload.page.bodyMarkdown);
 
       setConflictPage(null);
       setRecoveryDraft(readRecoveryDraft(payload.page));
@@ -858,13 +699,13 @@ export function PageEditor({
       setStatus('error');
       setStatusMessage(error instanceof Error ? error.message : 'Page could not be loaded');
     }
-  }, [applyInitialContent, autoChildPageTargets, pageId, readRecoveryDraft, readOnly]);
+  }, [applyInitialContent, pageId, readOnly, readRecoveryDraft]);
 
   const loadPageList = useCallback(async () => {
-    const response = await fetch('/api/pages');
+    const response = await fetch(`/api/pages${readOnly ? '?published=true' : ''}`);
     const payload = (await response.json()) as { pages: SidebarPage[] };
     setAllPages(payload.pages);
-  }, []);
+  }, [readOnly]);
 
   const loadAssets = useCallback(async () => {
     const response = await fetch('/api/assets');
@@ -888,7 +729,7 @@ export function PageEditor({
     }
 
     saveQueuedRef.current = false;
-    const documentJson = normalizeChildPageLinkContent(savedDocRef.current, hostCollection ? autoChildPageTargets : childPageLinkTargets, Boolean(hostCollection));
+    const bodyMarkdown = savedBodyRef.current;
     const titleToSave = titleRef.current.trim() || 'Untitled';
     const editorRevision = pendingRevision.current;
     const saveVersion = editVersionRef.current;
@@ -901,7 +742,7 @@ export function PageEditor({
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             title: titleToSave,
-            contentJson: documentJson,
+            bodyMarkdown,
             revision: editorRevision,
           }),
         });
@@ -957,7 +798,7 @@ export function PageEditor({
         }, 0);
       }
     }
-  }, [autoChildPageTargets, childPageLinkTargets, draftKey, hostCollection, pageId]);
+  }, [draftKey, pageId]);
 
   savePageRef.current = savePage;
 
@@ -974,7 +815,7 @@ export function PageEditor({
     window.localStorage.setItem(draftKey, JSON.stringify({
       pageId,
       title: titleRef.current,
-      contentJson: savedDocRef.current,
+      bodyMarkdown: savedBodyRef.current,
       baseRevision: pendingRevision.current,
       savedAt: Date.now(),
     } satisfies RecoveryDraft));
@@ -993,14 +834,14 @@ export function PageEditor({
     titleRef.current = conflictPage.title;
     setTitle(conflictPage.title);
     setPage(conflictPage);
-    applyInitialContent(conflictPage.contentJson, autoChildPageTargets, Boolean(hostCollection));
+    applyInitialContent(conflictPage.bodyMarkdown);
     setConflictPage(null);
     setRecoveryDraft(null);
     hasPendingContent.current = false;
     window.localStorage.removeItem(draftKey);
     setStatus('saved');
     setStatusMessage('Loaded the latest saved revision');
-  }, [applyInitialContent, autoChildPageTargets, conflictPage, draftKey, hostCollection]);
+  }, [applyInitialContent, conflictPage, draftKey]);
 
   const overwriteConflict = useCallback(async () => {
     if (!conflictPage) return;
@@ -1015,13 +856,13 @@ export function PageEditor({
     if (!recoveryDraft) return;
     titleRef.current = recoveryDraft.title;
     setTitle(recoveryDraft.title);
-    applyInitialContent(recoveryDraft.contentJson, autoChildPageTargets, Boolean(hostCollection));
+    applyInitialContent(recoveryDraft.bodyMarkdown);
     pendingRevision.current = page?.revision ?? recoveryDraft.baseRevision;
     setRecoveryDraft(null);
     setStatus('saving');
     setStatusMessage('Recovered draft ready to save');
     window.setTimeout(requestSave, 0);
-  }, [applyInitialContent, autoChildPageTargets, hostCollection, page?.revision, recoveryDraft, requestSave]);
+  }, [applyInitialContent, page?.revision, recoveryDraft, requestSave]);
 
   const discardLocalDraft = useCallback(() => {
     window.localStorage.removeItem(draftKey);
@@ -1030,7 +871,7 @@ export function PageEditor({
     setStatusMessage('Discarded browser recovery draft');
   }, [draftKey]);
 
-  const updateMetadata = useCallback(async (updates: { icon?: string | null; iconAssetId?: string | null; coverAssetId?: string | null; coverFocalX?: number; coverFocalY?: number; coverScale?: number; isArticle?: boolean; tags?: string[] }) => {
+  const updateMetadata = useCallback(async (updates: { icon?: string | null; iconAssetId?: string | null; coverAssetId?: string | null; coverFocalX?: number; coverFocalY?: number; coverScale?: number; kind?: PageKind; summary?: string; tags?: string[] }) => {
     if (!page || page.deletedAt) {
       return false;
     }
@@ -1244,17 +1085,15 @@ export function PageEditor({
       : { type: 'file', props: { url, name: asset.filename, caption: asset.filename } };
 
     if (blockId) {
-      try {
-        editor.updateBlock(blockId, block as Parameters<typeof editor.updateBlock>[1]);
-      } catch {
-        const cursor = editor.getTextCursorPosition().block;
+      const target = editor.getBlock(blockId);
+      if (target) {
         editor.insertBlocks(
           [block] as unknown as Parameters<typeof editor.insertBlocks>[0],
-          cursor,
+          target,
           'after',
         );
+        return;
       }
-      return;
     }
 
     const cursor = editor.getTextCursorPosition().block;
@@ -1308,7 +1147,7 @@ export function PageEditor({
         await uploadForIcon(file, taskId);
         return;
       }
-      await uploadForBody(file, taskId);
+      await uploadForBody(file, taskId, blockId);
     } catch (error) {
       setUploadTask(taskId, {
         status: 'error',
@@ -1322,7 +1161,7 @@ export function PageEditor({
     void uploadAndHandleTask(task.file, task.target, task.blockId);
   }, [uploadAndHandleTask]);
 
-  const useCommonsImage = useCallback(async (result: WikimediaCommonsImageResult, target: 'body' | 'cover') => {
+  const importCommonsImage = useCallback(async (result: WikimediaCommonsImageResult, target: 'body' | 'cover') => {
     const asset = await importAssetFromUrl(result.imageUrl);
     if (target === 'cover') {
       await updateMetadata({ coverAssetId: asset.id });
@@ -1450,10 +1289,54 @@ export function PageEditor({
     window.dispatchEvent(new Event('arcane-pages-changed'));
   };
 
+  const updatePublication = async (action: 'publish' | 'unpublish', visibility: 'public' | 'unlisted' = 'public') => {
+    if (action === 'publish' && hasPendingContent.current) await savePage();
+    const response = await fetch(`/api/pages/${pageId}/publication`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(action === 'unpublish' ? { action } : { action, visibility }),
+    });
+    const payload = await response.json().catch(() => ({})) as { publication?: PagePublication; error?: string };
+    if (!response.ok || !payload.publication) {
+      setStatus('error');
+      setStatusMessage(payload.error || 'Publication update failed');
+      return;
+    }
+    setPublication(payload.publication);
+    setStatus('saved');
+    setStatusMessage(action === 'unpublish' ? 'Unpublished' : visibility === 'unlisted' ? 'Published as unlisted' : 'Published');
+    window.dispatchEvent(new Event('arcane-pages-changed'));
+  };
+
+  useEffect(() => {
+    if (readOnly || !page || window.sessionStorage.getItem('arcane-focus-page-title') !== pageId) return;
+    window.sessionStorage.removeItem('arcane-focus-page-title');
+    window.requestAnimationFrame(() => {
+      const input = titleInputRef.current;
+      if (!input) return;
+      input.focus();
+      input.setSelectionRange(0, input.value.length);
+    });
+  }, [page, pageId, readOnly]);
+
   const onTitleInput = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     titleRef.current = event.target.value;
     setTitle(event.target.value);
     requestSave();
+  };
+
+  const onTitleKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      setIsEditing(true);
+      window.requestAnimationFrame(() => {
+        const firstBlock = editor.document[0];
+        if (firstBlock) editor.setTextCursorPosition(firstBlock, 'start');
+        editor.focus();
+      });
+    } else if (event.key === 'Escape') {
+      event.currentTarget.blur();
+    }
   };
 
   const pagesById = useMemo(
@@ -1646,55 +1529,77 @@ export function PageEditor({
     setImageUrlOpen(true);
   }, [editor]);
 
-  const getSlashMenuItems = useCallback(async (query: string): Promise<(DefaultReactSuggestionItem & { pageId?: string })[]> => {
-    const defaultItems = filterSuggestionItems(getDefaultReactSlashMenuItems(editor), query)
-      .filter((item) => (item as DefaultReactSuggestionItem & { key?: string }).key !== 'image');
+  const getSlashMenuItems = useCallback(async (query: string): Promise<SlashSuggestionItem[]> => {
     const normalized = query.trim().toLowerCase();
+    const defaultItems = getDefaultReactSlashMenuItems(editor)
+      .filter((item) => (item as DefaultReactSuggestionItem & { key?: string }).key !== 'image')
+      .map((item): SlashSuggestionItem => {
+        const metadata = slashCommandMetadata[item.title.toLowerCase()];
+        return {
+          ...item,
+          group: metadata?.group ?? item.group ?? 'Advanced',
+          aliases: metadata?.aliases ?? [],
+        };
+      });
     const customItems = getCustomSlashMenuItems({
       editor,
       referencedPages,
       insertBlock: (block) => insertOrUpdateBlockForSlashMenu(editor, block),
       importAssetFromUrl,
       uploadAssetRecord,
-    }, query);
-    const createChildItem = !normalized || 'new child page'.includes(normalized)
-      ? [{
-          title: 'New child page',
-          subtext: 'Create a nested page and insert its page card',
-          onItemClick: () => {
-            void createChildPageCard();
-          },
-          group: 'Pages',
-        }]
-      : [];
-    const timeItem = !normalized || 'time timestamp'.includes(normalized)
-      ? [{
-          title: 'Time timestamp',
-          subtext: 'Insert a clickable timestamp for the YouTube player',
-          onItemClick: openTimeComposer,
-          group: 'Media',
-        }]
-      : [];
-    const imageUrlItem = !normalized || 'gallery from url image'.includes(normalized)
-      ? [{
-          title: 'Gallery from URL',
-          subtext: 'Create a gallery block from an image URL',
-          onItemClick: openImageUrlPicker,
-          group: 'Media',
-        }]
-      : [];
-    const pages = pageSuggestions(query).map((item) => ({
-      title: item.title || 'Untitled',
-      subtext: 'Insert page card',
-      icon: <span aria-hidden="true">{item.icon || '📄'}</span>,
-      onItemClick: () => {
-        insertPageCard(item);
+    }, '').map((item): SlashSuggestionItem => ({ ...item, aliases: [item.title.toLowerCase().replace(/\s+/g, '')] }));
+    const utilityItems: SlashSuggestionItem[] = [
+      {
+        title: 'Image',
+        subtext: 'Upload an image from your computer',
+        aliases: ['img', 'photo', 'picture', 'upload'],
+        onItemClick: () => bodyUploadRef.current?.click(),
+        group: 'Media',
       },
-      pageId: item.id,
-      group: 'Pages',
-    }));
+      {
+        title: 'Gallery from URL',
+        subtext: 'Create a gallery from an image URL',
+        aliases: ['image url', 'photo url'],
+        onItemClick: openImageUrlPicker,
+        group: 'Media',
+      },
+      {
+        title: 'Timestamp',
+        subtext: 'Insert a timestamp for the YouTube player',
+        aliases: ['time', 'youtube time'],
+        onItemClick: openTimeComposer,
+        group: 'Media',
+      },
+      {
+        title: 'New child page',
+        subtext: 'Create a page inside this page',
+        aliases: ['page', 'subpage', 'nested page'],
+        onItemClick: () => { void createChildPageCard(); },
+        group: 'Pages',
+      },
+    ];
 
-    return [...defaultItems, ...customItems, ...timeItem, ...imageUrlItem, ...createChildItem, ...pages];
+    const pageQuery = /^(?:page|link)(?:\s+(.*))?$/.exec(normalized);
+    const pages: SlashSuggestionItem[] = pageQuery
+      ? pageSuggestions(pageQuery[1] ?? '').map((item) => ({
+          title: item.title || 'Untitled',
+          subtext: 'Link to page',
+          aliases: ['page', 'link'],
+          icon: <span aria-hidden="true">{item.icon || '📄'}</span>,
+          onItemClick: () => insertPageCard(item),
+          pageId: item.id,
+          group: 'Pages',
+        }))
+      : [];
+
+    const groupOrder = new Map([['Basic blocks', 0], ['Lists', 1], ['Media', 2], ['Pages', 3], ['Advanced', 4]]);
+    return [...defaultItems, ...customItems, ...utilityItems, ...pages]
+      .map((item, index) => ({ item, index, rank: slashMatchRank(item, normalized) }))
+      .filter(({ rank }) => Number.isFinite(rank))
+      .sort((left, right) => left.rank - right.rank
+        || (groupOrder.get(left.item.group ?? '') ?? 9) - (groupOrder.get(right.item.group ?? '') ?? 9)
+        || left.index - right.index)
+      .map(({ item }) => item);
   }, [createChildPageCard, editor, importAssetFromUrl, insertPageCard, openImageUrlPicker, openTimeComposer, pageSuggestions, referencedPages, uploadAssetRecord]);
 
   const insertMention = useCallback(
@@ -1738,33 +1643,12 @@ export function PageEditor({
     refreshLiveReferenceLabels();
   }, [editorReady, allPages, refreshLiveReferenceLabels]);
 
-  useEffect(() => {
-    if (!editorReady || !page || readOnly || isApplyingRemoteContent.current) {
-      return;
-    }
-
-    const normalizedJson = normalizeChildPageLinkContent(JSON.stringify(editor.document), hostCollection ? autoChildPageTargets : childPageLinkTargets, Boolean(hostCollection));
-    const normalized = JSON.parse(normalizedJson) as PartialBlock[];
-    if (normalizedJson === savedDocRef.current) {
-      return;
-    }
-
-    isApplyingRemoteContent.current = true;
-    editor.replaceBlocks(editor.document, normalized as Parameters<typeof editor.replaceBlocks>[1]);
-    savedDocRef.current = normalizedJson;
-    queueMicrotask(() => {
-      isApplyingRemoteContent.current = false;
-    });
-    requestSave();
-  }, [autoChildPageTargets, childPageLinkTargets, editor, editorReady, hostCollection, page, readOnly, requestSave]);
-
   useEditorChange(() => {
     if (readOnly || !editorReady || isApplyingRemoteContent.current || !isEditing) {
       return;
     }
 
-    const documentJson = normalizeChildPageLinkContent(JSON.stringify(editor.document), hostCollection ? autoChildPageTargets : childPageLinkTargets, Boolean(hostCollection));
-    savedDocRef.current = documentJson;
+    savedBodyRef.current = blocksToMarkdown(editor.document);
     requestSave();
   }, editor);
 
@@ -1878,6 +1762,23 @@ export function PageEditor({
     }
   }, [enterEditing, isEditing]);
 
+  const onEditorViewDrop = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
+    if (!isEditing) {
+      return;
+    }
+    const file = Array.from(event.dataTransfer.files)[0];
+    if (!file) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const pointTarget = document.elementFromPoint(event.clientX, event.clientY);
+    const blockId = pointTarget instanceof Element
+      ? pointTarget.closest<HTMLElement>('.bn-block-outer[data-id]')?.dataset.id
+      : undefined;
+    void uploadAndHandleTask(file, 'body', blockId);
+  }, [isEditing, uploadAndHandleTask]);
+
   const onEditorViewPaste = useCallback((event: ReactClipboardEvent<HTMLDivElement>) => {
     if (!isEditing) {
       return;
@@ -1968,12 +1869,8 @@ export function PageEditor({
       const grabbed = await editGrabberImageToAsset(imageHover.url, imagePrompt);
       rememberAsset(grabbed.asset as AssetRecord);
       const editedUrl = grabbed.url;
-      if (isWorkspacePagePathForId(window.location.pathname, pageId, allPages)) {
-        editor.updateBlock(imageHover.blockId, { props: { url: editedUrl } });
-        window.requestAnimationFrame(() => { void savePage(); });
-      } else {
-        await saveEditedImageToPage(pageId, imageHover.blockId, editedUrl);
-      }
+      editor.updateBlock(imageHover.blockId, { props: { url: editedUrl } });
+      window.requestAnimationFrame(() => { void savePage(); });
       setImagePrompt('');
       setImageHover(null);
       setStatus('saved');
@@ -1985,7 +1882,7 @@ export function PageEditor({
       setGeneratingImage(null);
       setImagePromptBusy(false);
     }
-  }, [allPages, editor, imageHover, imagePrompt, imagePromptBusy, pageId, rememberAsset, savePage]);
+  }, [editor, imageHover, imagePrompt, imagePromptBusy, pageId, rememberAsset, savePage]);
 
   const saveCaption = useCallback((event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -2043,7 +1940,7 @@ export function PageEditor({
         window.clearTimeout(loadingTimerRef.current);
         loadingTimerRef.current = null;
       }
-      applyInitialContent(initialPage.contentJson, autoChildPageTargets, false);
+      applyInitialContent(initialPage.bodyMarkdown);
       setEditorReady(true);
     }
     void loadPageRef.current();
@@ -2062,8 +1959,9 @@ export function PageEditor({
     };
 
     const onPagesChanged = () => {
-      void loadPageListRef.current();
-      void loadPageRef.current();
+      void loadPageListRef.current().then(() => {
+        window.requestAnimationFrame(() => void loadPageRef.current());
+      });
     };
 
     window.addEventListener('beforeunload', unload);
@@ -2230,6 +2128,7 @@ export function PageEditor({
             </div>
           </div>
 
+          {page.summary ? <p className="page-summary">{page.summary}</p> : null}
           {renderPageTags(false)}
 
           {hostCollection || pageCollections.length ? (
@@ -2288,18 +2187,27 @@ export function PageEditor({
               title={statusMessage || 'Saving'}
             />
           ) : null}
+          <span className="publication-status" role="status">
+            {publication?.visibility === 'public' || publication?.visibility === 'unlisted'
+              ? publication.sourceRevision === page.revision ? publication.visibility === 'public' ? 'Published' : 'Unlisted' : 'Unpublished changes'
+              : 'Private'}
+          </span>
           <details className="action-menu">
             <summary role="button" aria-label="Page actions">•••</summary>
             <div className="action-menu-panel">
               <button type="button" onClick={() => editor.undo()} disabled={isDeleted}>Undo</button>
               <button type="button" onClick={() => editor.redo()} disabled={isDeleted}>Redo</button>
+              <button type="button" onClick={() => window.open('/published', '_blank', 'noopener,noreferrer')}>View published workspace ↗</button>
               {coverAsset ? <button type="button" disabled={isDeleted} onClick={beginCoverReposition}>Reposition cover</button> : null}
               <button type="button" disabled={isDeleted} onClick={() => coverUploadRef.current?.click()}>{coverAsset ? 'Replace cover' : 'Add cover'}</button>
               <button type="button" disabled={isDeleted} onClick={() => setCoverUrlOpen(true)}>{coverAsset ? 'Replace cover from URL' : 'Add cover from URL'}</button>
               {coverAsset ? <button type="button" disabled={isDeleted} onClick={() => void updateMetadata({ coverAssetId: null })}>Remove cover</button> : null}
               <button type="button" disabled={isDeleted} onClick={() => bodyUploadRef.current?.click()}>Upload file</button>
               <button type="button" disabled={isDeleted || (!page.icon && !page.iconAssetId)} onClick={() => void updateMetadata({ icon: null, iconAssetId: null })}>Remove icon</button>
-              <button type="button" aria-pressed={page.isArticle} disabled={isDeleted} onClick={() => void updateMetadata({ isArticle: !page.isArticle })}>{page.isArticle ? 'Article: on' : 'Article: off'}</button>
+              <label className="page-kind-control">Content kind<select value={page.kind} disabled={isDeleted} onChange={(event) => void updateMetadata({ kind: event.target.value as PageKind })}><option value="page">Page</option><option value="note">Note</option><option value="article">Article</option><option value="project">Project</option><option value="fiction">Fiction</option></select></label>
+              <button type="button" disabled={isDeleted} onClick={() => void updatePublication('publish', 'public')}>{publication?.visibility === 'public' ? 'Update public page' : 'Publish publicly'}</button>
+              <button type="button" disabled={isDeleted} onClick={() => void updatePublication('publish', 'unlisted')}>{publication?.visibility === 'unlisted' ? 'Update unlisted page' : 'Publish as unlisted'}</button>
+              {publication?.visibility !== 'private' ? <button type="button" disabled={isDeleted} onClick={() => void updatePublication('unpublish')} className="danger-action">Unpublish</button> : null}
               <button type="button" onClick={duplicate} disabled={isDeleted}>Duplicate</button>
               <button type="button" onClick={trash} className="danger-action">{page.deletedAt ? 'Restore' : 'Move to trash'}</button>
             </div>
@@ -2385,8 +2293,21 @@ export function PageEditor({
                 <button ref={setIconTrigger} key={`icon-${page.icon ?? page.iconAssetId}`} type="button" className="page-icon" aria-label="Change page icon" aria-haspopup="dialog" aria-expanded={iconPickerOpen} disabled={isDeleted} onClick={() => { if (iconPickerOpen) { closeIconPicker('button'); return; } openIconPicker(); }}><PageIcon icon={page.icon} iconAssetId={page.iconAssetId} imageVariant="page-icon" /></button>
               </div>
             ) : null}
-            <textarea className="page-title" rows={1} value={title} onChange={onTitleInput} placeholder="Untitled" disabled={isDeleted} />
+            <textarea ref={titleInputRef} className="page-title" rows={1} value={title} onChange={onTitleInput} onKeyDown={onTitleKeyDown} placeholder="Untitled" disabled={isDeleted} />
           </div>
+          <textarea
+            key={`summary-${page.id}-${page.revision}`}
+            className="page-summary-input"
+            defaultValue={page.summary}
+            placeholder="Add a short summary for previews…"
+            maxLength={240}
+            disabled={isDeleted}
+            aria-label="Page summary"
+            onBlur={(event) => {
+              const summary = event.currentTarget.value.trim();
+              if (summary !== page.summary) void updateMetadata({ summary });
+            }}
+          />
           {renderPageTags(true)}
 
           {iconPickerOpen ? (
@@ -2461,7 +2382,7 @@ export function PageEditor({
                       }
                     }}
                   >
-                    <WikimediaCommonsSearch label="Search Wikimedia Commons" useLabel="Use cover" onUse={(result) => void useCommonsImage(result, 'cover')} />
+                    <WikimediaCommonsSearch label="Search Wikimedia Commons" useLabel="Use cover" onUse={(result) => void importCommonsImage(result, 'cover')} />
                   </ImageGrabberPanel>
                 </ImagePopupSection>
                 <ImagePopupSection title="Paste or upload" description="Paste a link, paste an image, or upload from disk." editorOnly>
@@ -2530,7 +2451,7 @@ export function PageEditor({
                     }
                   }}
                 >
-                  <WikimediaCommonsSearch label="Search Wikimedia Commons" useLabel="Insert image" onUse={(result) => void useCommonsImage(result, 'body')} />
+                  <WikimediaCommonsSearch label="Search Wikimedia Commons" useLabel="Insert image" onUse={(result) => void importCommonsImage(result, 'body')} />
                   <ImageGrabberUrlForm
                     label="Image URL"
                     inputId="editor-image-url"
@@ -2585,6 +2506,7 @@ export function PageEditor({
           onClickCapture={onEditorViewClick}
           onBlur={onEditorViewBlur}
           onKeyDown={onEditorViewKeyDown}
+          onDrop={onEditorViewDrop}
           onPaste={onEditorViewPaste}
           onMouseMove={onEditorMouseMove}
           onMouseLeave={() => { if (!captionEditor) setImageHover(null); }}
@@ -2650,6 +2572,7 @@ export function PageEditor({
           ) : null}
         </div>
 
+        {showDiscovery ? <HomeDiscovery pages={allPages} readOnly={readOnly} pageRouteBasePath={pageRouteBasePath} /> : null}
       </div>
     </section>
   );

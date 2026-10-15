@@ -116,9 +116,8 @@
     box-shadow: var(--elevation-sm);
   }
   .mobile-brand { justify-self: center; color: var(--text-primary); font-family: var(--font-display); font-weight: 700; text-decoration: none; }
-  .nav-toggle, .mobile-new, .mobile-preview-toggle { min-height: var(--space-8); padding: var(--space-1) var(--space-2); }
-  .mobile-new, .mobile-preview-toggle { color: var(--text-accent); font-size: var(--font-size-200); font-weight: 700; }
-  .mobile-preview-toggle[aria-pressed="true"] { color: var(--text-primary); background: var(--surface-page-muted); }
+  .nav-toggle, .mobile-new { min-height: var(--space-8); padding: var(--space-1) var(--space-2); }
+  .mobile-new { color: var(--text-accent); font-size: var(--font-size-200); font-weight: 700; }
   .sidebar-scrim {
     position: fixed;
     inset: var(--space-0);

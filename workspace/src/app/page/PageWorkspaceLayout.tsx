@@ -5,7 +5,6 @@ import { usePathname, useRouter } from 'next/navigation';
 import { cloneElement, isValidElement, useEffect, useState, type ReactElement } from 'react';
 import { PageEditorSkeleton } from '@/components/PageEditorSkeleton';
 import { WorkspaceSidebar } from '@/components/WorkspaceSidebar';
-import { usePublishedPreview } from '@/components/usePublishedPreview';
 import type { PageUrlPage } from '@/lib/pageUrls';
 import { buildWorkspacePagePathFromPages, getWorkspaceHomePath, resolveWorkspacePagePathname } from '@/lib/workspaceHome';
 
@@ -48,7 +47,6 @@ export function PageWorkspaceLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { previewPublished, effectiveReadOnly, canTogglePreview, setPreviewPublished } = usePublishedPreview(readOnly);
   const sidebarPages = initialSidebarPages ?? initialPages;
   const [pages, setPages] = useState<LayoutPage[]>(initialPages);
   const [loaded, setLoaded] = useState(initialPageId !== null || initialPages.length > 0);
@@ -91,9 +89,9 @@ export function PageWorkspaceLayout({
   const pageId = initialPageId ?? resolvedPageId;
   const isManagedPageRoute = pageRouteBasePath === '/page' && Boolean(pathname?.startsWith('/page'));
   const homePath = getWorkspaceHomePath(pages, pageRouteBasePath);
-  const workspaceModeKey = effectiveReadOnly ? 'published' : 'editor';
+  const workspaceModeKey = readOnly ? 'published' : 'editor';
   const renderedChildren = isValidElement(children)
-    ? cloneElement(children as ReactElement<{ readOnly?: boolean }>, { readOnly: effectiveReadOnly, key: workspaceModeKey })
+    ? cloneElement(children as ReactElement<{ readOnly?: boolean }>, { readOnly, key: workspaceModeKey })
     : children;
 
   return (
@@ -101,22 +99,20 @@ export function PageWorkspaceLayout({
       <WorkspaceSidebar
         currentPageId={pageId ?? undefined}
         initialPages={sidebarPages}
-        readOnly={effectiveReadOnly}
+        readOnly={readOnly}
         pageRouteBasePath={pageRouteBasePath}
         collectionHomePath={readOnly ? `${pageRouteBasePath.replace(/\/+$/, '')}/collections` || '/collections' : '/collections'}
         homePath={homePath}
-        previewPublished={previewPublished}
-        canTogglePreview={canTogglePreview}
-        onPreviewPublishedChange={setPreviewPublished}
-        onCreated={effectiveReadOnly ? undefined : (page) => {
+        onCreated={readOnly ? undefined : (page) => {
           if (page) {
+            window.sessionStorage.setItem('arcane-focus-page-title', page.id);
             router.push(buildWorkspacePagePathFromPages(page.id, [...pages, page], pageRouteBasePath));
           }
         }}
       />
       <main className="main-column page-main">
         {isManagedPageRoute ? (
-          !loaded ? <DelayedPageEditorSkeleton /> : pageId ? <PageEditor key={`${pageId}:${workspaceModeKey}`} pageId={pageId} initialPages={pages} initialNavigablePages={sidebarPages} readOnly={effectiveReadOnly} pageRouteBasePath={pageRouteBasePath} /> : renderedChildren
+          !loaded ? <DelayedPageEditorSkeleton /> : pageId ? <PageEditor key={`${pageId}:${workspaceModeKey}`} pageId={pageId} initialPages={pages} initialNavigablePages={sidebarPages} readOnly={readOnly} pageRouteBasePath={pageRouteBasePath} /> : renderedChildren
         ) : renderedChildren}
       </main>
     </div>

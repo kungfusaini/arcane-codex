@@ -1,7 +1,7 @@
 import { PageEditorRoute } from '@/app/page/PageEditorRoute';
 import { PageWorkspaceLayout } from '@/app/page/PageWorkspaceLayout';
 import { WorkspaceHome } from '@/components/WorkspaceHome';
-import { getPage, listCollectionsHostedByPage, listPageSummaries } from '@/lib/data/storage';
+import { getPage, getPublishedPage, listCollectionsHostedByPage, listPageSummaries, listPublishedPages } from '@/lib/data/storage';
 import { isPublishedAppSurface } from '@/lib/surface';
 import { findWorkspaceHomePage } from '@/lib/workspaceHome';
 
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 
 export default function HomePage() {
   const readOnly = isPublishedAppSurface();
-  const initialPages = listPageSummaries().map((page) => ({
+  const initialPages = (readOnly ? listPublishedPages(true) : listPageSummaries()).map((page) => ({
     id: page.id,
     parentId: page.parentId,
     sortKey: page.sortKey,
@@ -19,7 +19,7 @@ export default function HomePage() {
     iconAssetId: page.iconAssetId,
     revision: page.revision,
   }));
-  const initialSidebarPages = listPageSummaries(undefined, false).map((page) => ({
+  const initialSidebarPages = (readOnly ? listPublishedPages(false, undefined, false) : listPageSummaries(undefined, false)).map((page) => ({
     id: page.id,
     parentId: page.parentId,
     sortKey: page.sortKey,
@@ -35,11 +35,13 @@ export default function HomePage() {
     return <WorkspaceHome initialPages={initialSidebarPages} readOnly={readOnly} pageRouteBasePath="/" />;
   }
 
-  const initialPage = listCollectionsHostedByPage(homePage.id).length ? undefined : getPage(homePage.id) ?? undefined;
+  const initialPage = readOnly
+    ? getPublishedPage(homePage.id) ?? undefined
+    : listCollectionsHostedByPage(homePage.id).length ? undefined : getPage(homePage.id) ?? undefined;
 
   return (
     <PageWorkspaceLayout initialPageId={homePage.id} initialPages={initialPages} initialSidebarPages={initialSidebarPages} readOnly={readOnly} pageRouteBasePath="/">
-      <PageEditorRoute pageId={homePage.id} initialPage={initialPage} initialPages={initialPages} initialNavigablePages={initialSidebarPages} readOnly={readOnly} pageRouteBasePath="/" />
+      <PageEditorRoute pageId={homePage.id} initialPage={initialPage} initialPages={initialPages} initialNavigablePages={initialSidebarPages} readOnly={readOnly} pageRouteBasePath="/" showDiscovery />
     </PageWorkspaceLayout>
   );
 }

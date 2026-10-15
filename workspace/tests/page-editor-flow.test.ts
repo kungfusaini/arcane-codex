@@ -25,12 +25,12 @@ function withWorkspace<T>(callback: () => Promise<T>): Promise<T> {
   });
 }
 
-async function saveWithRecovery(pageId: string, revision: number, contentJson: string, title: string) {
+async function saveWithRecovery(pageId: string, revision: number, bodyMarkdown: string, title: string) {
   const first = await pageRoute.PATCH(
     new NextRequest(`http://localhost/api/pages/${pageId}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ revision, title, contentJson }),
+      body: JSON.stringify({ revision, title, bodyMarkdown }),
     }),
     { params: { id: pageId } },
   );
@@ -45,7 +45,7 @@ async function saveWithRecovery(pageId: string, revision: number, contentJson: s
       new NextRequest(`http://localhost/api/pages/${pageId}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ revision: latestPayload.page.revision, title, contentJson }),
+        body: JSON.stringify({ revision: latestPayload.page.revision, title, bodyMarkdown }),
       }),
       { params: { id: pageId } },
     );
@@ -67,7 +67,7 @@ describe('editor flow scenarios', () => {
         new NextRequest('http://localhost/api/pages', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ title: 'Flow page', contentJson: '[{"type":"paragraph","content":"Start"}]' }),
+          body: JSON.stringify({ title: 'Flow page', bodyMarkdown: 'Start\n' }),
         }),
       );
       const created = (await json(createRes)) as { page: { id: string; revision: number } };
@@ -81,7 +81,7 @@ describe('editor flow scenarios', () => {
           body: JSON.stringify({
             revision: staleRevision,
             title: 'Flow page',
-            contentJson: '[{"type":"paragraph","content":"Interim"}]',
+            bodyMarkdown: 'Interim\n',
           }),
         }),
         { params: { id: created.page.id } },
@@ -98,7 +98,7 @@ describe('editor flow scenarios', () => {
       const recovered = await saveWithRecovery(
         created.page.id,
         staleRevision,
-        '[{"type":"paragraph","content":"Recovered"}]',
+        'Recovered\n',
         'Flow page',
       );
       assert.equal(recovered.status, 200);
@@ -108,11 +108,11 @@ describe('editor flow scenarios', () => {
         { params: { id: created.page.id } },
       );
       const restartedPayload = (await json(afterRecovery)) as {
-        page: { contentJson: string; revision: number; title: string };
+        page: { bodyMarkdown: string; revision: number; title: string };
       };
 
       assert.equal(restartedPayload.page.title, 'Flow page');
-      assert.equal(restartedPayload.page.contentJson, '[{"type":"paragraph","content":"Recovered"}]');
+      assert.equal(restartedPayload.page.bodyMarkdown, 'Recovered\n');
       assert.equal(restartedPayload.page.revision, loaded.page.revision + 1);
     });
   });

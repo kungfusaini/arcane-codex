@@ -11,6 +11,7 @@ import {
   useState,
   type ChangeEvent,
   type DragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import { buildTree, type PageTreeNode } from '@/lib/pageTree';
 import { useDismissibleDetails } from '@/components/useDismissibleDetails';
@@ -147,9 +148,6 @@ export function WorkspaceSidebar({
   pageRouteBasePath = '/',
   homePath = '/',
   collectionHomePath = '/collections',
-  previewPublished = false,
-  canTogglePreview = false,
-  onPreviewPublishedChange,
   hiddenRootPageSlug = WORKSPACE_HOME_SLUG,
 }: {
   currentPageId?: string;
@@ -159,9 +157,6 @@ export function WorkspaceSidebar({
   pageRouteBasePath?: string;
   homePath?: string;
   collectionHomePath?: string;
-  previewPublished?: boolean;
-  canTogglePreview?: boolean;
-  onPreviewPublishedChange?: (nextPreviewPublished: boolean) => void;
   hiddenRootPageSlug?: string | null;
 }) {
   useDismissibleDetails('.tree-menu');
@@ -182,10 +177,15 @@ export function WorkspaceSidebar({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [railCollapsed, setRailCollapsed] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [commandQuery, setCommandQuery] = useState('');
+  const [commandIndex, setCommandIndex] = useState(0);
   const sidebarRef = useRef<HTMLElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const navToggleRef = useRef<HTMLButtonElement | null>(null);
   const focusSearchOnOpenRef = useRef(false);
+  const commandInputRef = useRef<HTMLInputElement | null>(null);
+  const renameCancelledRef = useRef(false);
   const sidebarExpansionStorageKey = useMemo(() => getSidebarExpandedPagesStorageKey(pageRouteBasePath), [pageRouteBasePath]);
 
   const persistExpandedNodes = useCallback((nextExpandedNodes: Set<string>) => {
@@ -322,6 +322,14 @@ export function WorkspaceSidebar({
       if (event.defaultPrevented) {
         return;
       }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'p') {
+        event.preventDefault();
+        setCommandQuery('');
+        setCommandIndex(0);
+        setCommandOpen(true);
+        window.requestAnimationFrame(() => commandInputRef.current?.focus());
+        return;
+      }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         if (isMobile && !drawerOpen) {
@@ -340,7 +348,9 @@ export function WorkspaceSidebar({
         return;
       }
 
-      if (drawerOpen) {
+      if (commandOpen) {
+        setCommandOpen(false);
+      } else if (drawerOpen) {
         setDrawerOpen(false);
         navToggleRef.current?.focus();
       } else if (document.activeElement === searchRef.current && query) {
@@ -350,7 +360,7 @@ export function WorkspaceSidebar({
 
     window.addEventListener('keydown', onShortcut);
     return () => window.removeEventListener('keydown', onShortcut);
-  }, [drawerOpen, isMobile, query, railCollapsed, setDesktopRailCollapsed]);
+  }, [commandOpen, drawerOpen, isMobile, query, railCollapsed, setDesktopRailCollapsed]);
 
   const childrenByParent = useMemo(() => {
     const map = new Map<string | null, SidebarPage[]>();
@@ -389,6 +399,23 @@ export function WorkspaceSidebar({
   }, [hiddenRootPageSlug, pages, query]);
 
   const tree = useMemo(() => addRevisionToTree(baseTree, pageById), [baseTree, pageById]);
+  const commandPages = useMemo(() => {
+    const normalized = commandQuery.trim().toLowerCase();
+    return pages
+      .filter((page) => !normalized || page.title.toLowerCase().includes(normalized))
+      .sort((left, right) => {
+        const leftStarts = left.title.toLowerCase().startsWith(normalized) ? 0 : 1;
+        const rightStarts = right.title.toLowerCase().startsWith(normalized) ? 0 : 1;
+        return leftStarts - rightStarts || left.title.localeCompare(right.title, undefined, { sensitivity: 'base' });
+      })
+      .slice(0, 10);
+  }, [commandQuery, pages]);
+  const commandHasCreate = !readOnly && (!commandQuery.trim() || 'new page'.includes(commandQuery.trim().toLowerCase()));
+  const commandCount = commandPages.length + (commandHasCreate ? 1 : 0);
+
+  useEffect(() => {
+    setCommandIndex((current) => Math.max(0, Math.min(current, Math.max(0, commandCount - 1))));
+  }, [commandCount]);
 
   const reorderSiblings = async (moves: ReorderMove[]) => {
     const response = await fetch('/api/pages/reorder', {
@@ -578,6 +605,18 @@ export function WorkspaceSidebar({
     }
   };
 
+  const executeCommand = (index: number) => {
+    if (commandHasCreate && index === 0) {
+      setCommandOpen(false);
+      void onCreatePage(null);
+      return;
+    }
+    const page = commandPages[index - (commandHasCreate ? 1 : 0)];
+    if (!page) return;
+    setCommandOpen(false);
+    window.location.href = buildWorkspacePagePathFromPages(page.id, pages, pageRouteBasePath);
+  };
+
   const restoreTrashPage = async (pageId: string) => {
     const response = await fetch(`/api/pages/${pageId}/restore`, { method: 'POST' });
     if (!response.ok) {
@@ -604,6 +643,12 @@ export function WorkspaceSidebar({
     }
     await response.json();
     await fetchPages();
+  };
+
+  const beginRename = (page: SidebarPage) => {
+    renameCancelledRef.current = false;
+    setEditingId(page.id);
+    setEditingTitle(page.title || 'Untitled');
   };
 
   const renamePage = async (pageId: string) => {
@@ -638,6 +683,42 @@ export function WorkspaceSidebar({
       return;
     }
     setStatus('Rename failed');
+  };
+
+  const onTreeLinkKeyDown = (event: ReactKeyboardEvent<HTMLAnchorElement>, item: SidebarTreeNode, isCollapsed: boolean) => {
+    const links = Array.from(event.currentTarget.closest('.sidebar-pages')?.querySelectorAll<HTMLAnchorElement>('.tree-item .text-link') ?? []);
+    const currentIndex = links.indexOf(event.currentTarget);
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      links[currentIndex + (event.key === 'ArrowDown' ? 1 : -1)]?.focus();
+      return;
+    }
+    if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      links[event.key === 'Home' ? 0 : links.length - 1]?.focus();
+      return;
+    }
+    if (event.key === 'ArrowRight' && item.children.length) {
+      event.preventDefault();
+      if (isCollapsed) {
+        persistExpandedNodes(new Set(expandedNodes).add(item.id));
+      } else {
+        const firstChildId = item.children[0]?.id;
+        links.find((link) => link.dataset.pageId === firstChildId)?.focus();
+      }
+      return;
+    }
+    if (event.key === 'ArrowLeft') {
+      if (item.children.length && !isCollapsed) {
+        event.preventDefault();
+        const next = new Set(expandedNodes);
+        next.delete(item.id);
+        persistExpandedNodes(next);
+      } else if (item.parentId) {
+        event.preventDefault();
+        links.find((link) => link.dataset.pageId === item.parentId)?.focus();
+      }
+    }
   };
 
   const renderRows = (items: SidebarTreeNode[], depth = 0) => {
@@ -749,11 +830,18 @@ export function WorkspaceSidebar({
                     value={editingTitle}
                     className="tree-inline-input"
                     onChange={(event) => setEditingTitle(event.target.value)}
-                    onBlur={() => renamePage(item.id)}
+                    onBlur={() => {
+                      if (renameCancelledRef.current) {
+                        renameCancelledRef.current = false;
+                        return;
+                      }
+                      void renamePage(item.id);
+                    }}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') {
-                        void renamePage(item.id);
+                        event.currentTarget.blur();
                       } else if (event.key === 'Escape') {
+                        renameCancelledRef.current = true;
                         setEditingId(null);
                       }
                     }}
@@ -765,6 +853,8 @@ export function WorkspaceSidebar({
                     href={buildWorkspacePagePathFromPages(item.id, pages, pageRouteBasePath)}
                     className={isCurrent ? 'text-link active' : 'text-link'}
                     title={fullPage.title || 'Untitled'}
+                    data-page-id={item.id}
+                    onKeyDown={(event) => onTreeLinkKeyDown(event, item, isCollapsed)}
                   >
                     {fullPage.title || 'Untitled'}
                   </Link>
@@ -773,13 +863,14 @@ export function WorkspaceSidebar({
               </div>
 
               {readOnly ? null : (
+                <>
+                <button type="button" className="tree-quick-add" aria-label={`New page inside ${item.title}`} title="Add a page inside" onClick={() => void onCreatePage(item.id)}>+</button>
                 <details className="tree-menu">
                   <summary aria-label={`Actions for ${item.title}`}>•••</summary>
-                  <div className="tree-actions">
-                    <button type="button" className="mini-btn" onClick={() => {
-                      setEditingId(item.id);
-                      setEditingTitle(fullPage.title || 'Untitled');
-                    }}>
+                  <div className="tree-actions" onClick={(event) => {
+                    if ((event.target as HTMLElement).closest('button')) event.currentTarget.closest('details')?.removeAttribute('open');
+                  }}>
+                    <button type="button" className="mini-btn" onClick={() => beginRename(fullPage)}>
                       Rename
                     </button>
                     <button type="button" className="mini-btn" onClick={() => moveWithinSibling(item.id, 'up')}>
@@ -820,6 +911,7 @@ export function WorkspaceSidebar({
                     </label>
                   </div>
                 </details>
+                </>
               )}
             </div>
 
@@ -854,11 +946,7 @@ export function WorkspaceSidebar({
           <span aria-hidden="true">☰</span>
         </button>
         <Link href={homePath} className="mobile-brand">Arcane Codex</Link>
-        {canTogglePreview ? (
-          <button type="button" className="mobile-preview-toggle" aria-pressed={previewPublished} onClick={() => onPreviewPublishedChange?.(!previewPublished)}>
-            {previewPublished ? 'Editor' : 'Preview'}
-          </button>
-        ) : readOnly || !onCreated ? null : <button type="button" className="mobile-new" onClick={() => onCreatePage(null)}>New</button>}
+        {readOnly || !onCreated ? null : <button type="button" className="mobile-new" onClick={() => onCreatePage(null)}>New</button>}
       </header>
       <button
         type="button"
@@ -884,18 +972,6 @@ export function WorkspaceSidebar({
           <button type="button" className="sidebar-collapse" aria-label="Collapse sidebar" onClick={() => setDesktopRailCollapsed(true)}>‹</button>
           <button type="button" className="sidebar-close" aria-label="Close navigation" onClick={() => setDrawerOpen(false)}>×</button>
         </div>
-
-        {canTogglePreview ? (
-          <section className={`preview-mode-control ${previewPublished ? 'active' : ''}`} aria-label="Published preview mode">
-            <div>
-              <strong>{previewPublished ? 'Published preview' : 'Editor mode'}</strong>
-              <span>{previewPublished ? 'Read-only view on this URL.' : 'Preview the read-only surface locally.'}</span>
-            </div>
-            <button type="button" className={previewPublished ? 'primary-btn' : 'quiet-btn'} aria-pressed={previewPublished} onClick={() => onPreviewPublishedChange?.(!previewPublished)}>
-              {previewPublished ? 'Back to editor' : 'Preview published'}
-            </button>
-          </section>
-        ) : null}
 
         {!readOnly && health && health.status !== 'ok' ? (
           <section className={`health-notice ${health.status}`} role={health.status === 'error' ? 'alert' : 'status'}>
@@ -967,6 +1043,58 @@ export function WorkspaceSidebar({
 
         {status && pages.length ? <p className="help status-note" role="status">{status}</p> : null}
       </aside>
+
+      {commandOpen ? (
+        <div className="command-palette-backdrop" role="presentation" onMouseDown={() => setCommandOpen(false)}>
+          <section className="command-palette" role="dialog" aria-modal="true" aria-label="Quick find" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="command-palette-search">
+              <span aria-hidden="true">⌕</span>
+              <input
+                ref={commandInputRef}
+                value={commandQuery}
+                onChange={(event) => { setCommandQuery(event.target.value); setCommandIndex(0); }}
+                onKeyDown={(event) => {
+                  if (event.key === 'ArrowDown') {
+                    event.preventDefault();
+                    setCommandIndex((current) => commandCount ? (current + 1) % commandCount : 0);
+                  } else if (event.key === 'ArrowUp') {
+                    event.preventDefault();
+                    setCommandIndex((current) => commandCount ? (current - 1 + commandCount) % commandCount : 0);
+                  } else if (event.key === 'Enter' && commandCount) {
+                    event.preventDefault();
+                    executeCommand(commandIndex);
+                  } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    setCommandOpen(false);
+                  }
+                }}
+                placeholder="Search pages or run a command…"
+                aria-label="Search workspace"
+                autoFocus
+              />
+              <kbd>Esc</kbd>
+            </div>
+            <div className="command-palette-results" role="listbox" aria-label="Quick find results">
+              {commandHasCreate ? (
+                <button type="button" role="option" aria-selected={commandIndex === 0} className="command-palette-item" onMouseEnter={() => setCommandIndex(0)} onClick={() => executeCommand(0)}>
+                  <span className="command-palette-icon" aria-hidden="true">＋</span><span><strong>New page</strong><small>Create a top-level page</small></span>
+                </button>
+              ) : null}
+              {commandPages.map((page, index) => {
+                const resultIndex = index + (commandHasCreate ? 1 : 0);
+                return (
+                  <button key={page.id} type="button" role="option" aria-selected={commandIndex === resultIndex} className="command-palette-item" onMouseEnter={() => setCommandIndex(resultIndex)} onClick={() => executeCommand(resultIndex)}>
+                    <PageIcon icon={page.icon} iconAssetId={page.iconAssetId} />
+                    <span><strong>{page.title || 'Untitled'}</strong><small>Open page</small></span>
+                  </button>
+                );
+              })}
+              {!commandCount ? <p className="command-palette-empty">No pages found</p> : null}
+            </div>
+            <footer><span>↑↓ Navigate</span><span>↵ Open</span><span><kbd>⌘P</kbd> Quick find</span></footer>
+          </section>
+        </div>
+      ) : null}
     </>
   );
 }

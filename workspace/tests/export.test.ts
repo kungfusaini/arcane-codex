@@ -11,7 +11,7 @@ import {
 } from '../src/lib/data/storage';
 import { buildWorkspaceExport, exportWorkspaceZip } from '../src/lib/data/export';
 import { ensureWorkspaceDirs } from '../src/lib/data/workspace';
-import { buildPagePathFromPages } from '../src/lib/pageUrls';
+import { blocksToMarkdown } from '../src/lib/documents/markdown';
 
 function entryText(entries: ReturnType<typeof buildWorkspaceExport>['entries'], name: string): string {
   const entry = entries.find((candidate) => candidate.path === name);
@@ -31,20 +31,21 @@ describe('workspace export', () => {
 
       const target = createPage({ title: 'Target page' }, workspace);
       const missingId = '11111111-1111-4111-8111-111111111111';
-      const contentJson = JSON.stringify([
+      const bodyMarkdown = blocksToMarkdown([
         {
           type: 'paragraph',
           content: [
             { type: 'text', text: 'See ', styles: {} },
-            { type: 'link', href: buildPagePathFromPages(target.id, [target]), content: [{ type: 'text', text: 'Target page', styles: {} }] },
+            { type: 'link', href: `arcane://page/${target.id}`, content: [{ type: 'text', text: 'Target page', styles: {} }] },
             { type: 'text', text: ' and ', styles: {} },
-            { type: 'link', href: `/page/${missingId}`, content: [{ type: 'text', text: 'lost page', styles: {} }] },
+            { type: 'link', href: `arcane://page/${missingId}`, content: [{ type: 'text', text: 'lost page', styles: {} }] },
           ],
         },
         { type: 'gallery', props: { images: JSON.stringify([{ url: `/api/assets/${asset.id}`, caption: 'Cover image', name: 'Cover image.png' }]), columns: 3, mode: 'single', captionMode: 'individual', groupCaption: '', width: 100 } },
+        { type: 'artworkShowcase', props: { canvasUrl: `/api/assets/${asset.id}`, canvasAlt: 'Final artwork', frameUrls: JSON.stringify([{ url: 'http://127.0.0.1:8000/api/frames/1' }]) } },
         { type: 'futureWidget', content: [{ type: 'text', text: 'Readable fallback', styles: {} }] },
       ]);
-      const source = createPage({ title: 'Source / Notes', coverAssetId: asset.id, coverFocalX: 20, coverFocalY: 80, coverScale: 150, tags: ['research', 'draft'], contentJson }, workspace);
+      const source = createPage({ title: 'Source / Notes', coverAssetId: asset.id, coverFocalX: 20, coverFocalY: 80, coverScale: 150, tags: ['research', 'draft'], bodyMarkdown }, workspace);
 
       const collection = createCollection({
         name: 'Projects & plans',
@@ -67,13 +68,14 @@ describe('workspace export', () => {
       const markdown = entryText(first.entries, sourceEntry.path);
       assert.match(markdown, new RegExp(`\\(\\./${path.posix.basename(targetEntry.path).replaceAll('.', '\\.')}\\)`));
       assert.match(markdown, /\.\.\/assets\//);
-      assert.match(markdown, /lost page _\(missing page:/);
+      assert.match(markdown, new RegExp(`lost page\\]\\(arcane://page/${missingId}`));
       assert.match(markdown, /Readable fallback/);
       assert.match(markdown, /cover_focal_x: 20/);
       assert.match(markdown, /cover_focal_y: 80/);
       assert.match(markdown, /cover_scale: 150/);
       assert.match(markdown, /tags: \["research","draft"\]/);
-      assert.match(markdown, /Unsupported Arcane Codex block: futureWidget/);
+      assert.match(markdown, /arcane:begin futureWidget/);
+      assert.doesNotMatch(markdown, /127\.0\.0\.1|\/api\/frames/);
 
       const collectionEntry = first.manifest.collections[0];
       const csv = entryText(first.entries, collectionEntry.path);
@@ -87,6 +89,7 @@ describe('workspace export', () => {
       assert.match(collectionIndex, /\.\.\/pages\//);
       assert.ok(first.manifest.warnings.some((warning) => warning.includes(missingId)));
       assert.ok(first.manifest.warnings.some((warning) => warning.includes('futureWidget')));
+      assert.ok(first.manifest.warnings.some((warning) => warning.includes('non-portable local extension URL')));
 
       const zipOne = await exportWorkspaceZip(workspace);
       const zipTwo = await exportWorkspaceZip(workspace);

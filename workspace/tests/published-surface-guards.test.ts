@@ -40,7 +40,7 @@ describe('published surface guards', () => {
         ['settings patch', () => settingsRoute.PATCH(new NextRequest('http://localhost/api/settings', {
           method: 'PATCH',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ publishedMode: true }),
+          body: JSON.stringify({ workspaceName: 'Blocked update' }),
         }))],
         ['create page', () => pagesRoute.POST(new NextRequest('http://localhost/api/pages', {
           method: 'POST',

@@ -38,9 +38,9 @@ type CollectionSchema = {
 type CollectionRecord = {
   id: string;
   name: string;
-  hostPageId: string | null;
-  schemaJson: string;
-  viewsJson: string;
+  embedPageId: string | null;
+  schema: CollectionSchema;
+  view: CollectionViews;
 };
 
 type PageForSelector = {
@@ -63,7 +63,7 @@ type HostPage = PageForSelector & {
 type CollectionItem = {
   collectionId: string;
   pageId: string;
-  propertiesJson: string;
+  properties: Record<string, unknown>;
   sortKey: number;
   page: {
     id: string;
@@ -113,7 +113,7 @@ type ResponsePayload = {
     }
   >;
   schema?: CollectionSchema;
-  views?: string;
+  views?: CollectionViews;
 };
 
 const PROPERTY_TYPES: Array<{ value: CollectionPropertyType; label: string }> = [
@@ -214,109 +214,6 @@ function formatScoreStars(value: unknown): string {
   }
   const filled = Math.max(0, Math.min(5, Math.round(numeric)));
   return `${'★'.repeat(filled)}${'☆'.repeat(5 - filled)}`;
-}
-
-function parseSchema(value: string): CollectionSchema {
-  try {
-    const parsed = JSON.parse(value) as { properties?: unknown };
-    if (Array.isArray(parsed?.properties)) {
-      return {
-        properties: parsed.properties
-          .map((property) => {
-            if (!property || typeof property !== 'object') {
-              return null;
-            }
-            const raw = property as {
-              id?: unknown;
-              name?: unknown;
-              type?: unknown;
-              options?: unknown;
-              optionColors?: unknown;
-            };
-            if (typeof raw.id !== 'string' || typeof raw.name !== 'string') {
-              return null;
-            }
-            const type =
-              raw.type === 'text' ||
-              raw.type === 'number' ||
-              raw.type === 'select' ||
-              raw.type === 'multi-select' ||
-              raw.type === 'checkbox' ||
-              raw.type === 'date' ||
-              raw.type === 'url'
-                ? (raw.type as CollectionPropertyType)
-                : 'text';
-            const options = type === 'select' || type === 'multi-select' ?
-              Array.from(
-                new Set(
-                  Array.isArray(raw.options)
-                    ? raw.options.map((option) => (typeof option === 'string' ? option.trim() : '')).filter(Boolean)
-                    : [],
-                ),
-              )
-              : undefined;
-
-            return {
-              id: raw.id,
-              name: raw.name || 'Property',
-              type,
-              options,
-              optionColors: options ? normalizeOptionColors(raw.optionColors, options) : undefined,
-            } as CollectionProperty;
-          })
-          .filter(Boolean) as CollectionProperty[],
-      };
-    }
-  } catch {
-    // ignore parse error
-  }
-  return { properties: [] };
-}
-
-function parseViews(value: string): CollectionViews {
-  try {
-    const parsed = JSON.parse(value) as CollectionViews;
-    if (parsed && typeof parsed === 'object') {
-      return {
-        mode: parsed.mode === 'gallery' ? 'gallery' : 'table',
-        sort:
-          parsed.sort &&
-          typeof parsed.sort.propertyId === 'string' &&
-          (parsed.sort.direction === 'asc' || parsed.sort.direction === 'desc')
-            ? {
-                propertyId: parsed.sort.propertyId,
-                direction: parsed.sort.direction,
-              }
-            : undefined,
-        filter:
-          parsed.filter && typeof parsed.filter.propertyId === 'string' && typeof parsed.filter.query === 'string'
-            ? {
-                propertyId: parsed.filter.propertyId,
-                query: parsed.filter.query,
-              }
-            : undefined,
-      };
-    }
-  } catch {
-    // ignore parse error
-  }
-  return { mode: 'table' };
-}
-
-function parseProperties(raw: string): Record<string, unknown> {
-  try {
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object') {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    // ignore parse failure
-  }
-  return {};
-}
-
-function stringifyProperties(values: Record<string, unknown>): string {
-  return JSON.stringify(values);
 }
 
 function normalizeUrl(value: string): string {
@@ -437,8 +334,7 @@ function filterItems(items: CollectionItem[], propertyId: string, query: string)
   }
 
   return items.filter((item) => {
-    const values = parseProperties(item.propertiesJson);
-    const value = values[propertyId];
+    const value = item.properties[propertyId];
 
     if (Array.isArray(value)) {
       return value
@@ -472,8 +368,8 @@ function sortItems(items: CollectionItem[], schema: CollectionSchema, sortBy: st
       return direction === 'asc' ? a.sortKey - b.sortKey : b.sortKey - a.sortKey;
     }
 
-    const aRaw = parseProperties(a.propertiesJson)[property.id];
-    const bRaw = parseProperties(b.propertiesJson)[property.id];
+    const aRaw = a.properties[property.id];
+    const bRaw = b.properties[property.id];
 
     return compareValues(property.type, aRaw, bRaw, direction);
   });
@@ -754,8 +650,8 @@ function renderFocusedPropertyValue(property: CollectionProperty, value: unknown
 }
 
 function getPayloadState(payload?: ResponsePayload | null) {
-  const parsedSchema = payload?.schema ?? (payload ? parseSchema(payload.collection.schemaJson) : { properties: [] });
-  const parsedViews = payload ? parseViews(payload.views ?? payload.collection.viewsJson) : { mode: 'table' as const };
+  const parsedSchema = payload?.schema ?? payload?.collection.schema ?? { properties: [] };
+  const parsedViews = payload?.views ?? payload?.collection.view ?? { mode: 'table' as const };
   return {
     collection: payload?.collection ?? null,
     schema: parsedSchema,
@@ -803,15 +699,15 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
   const loadCollection = useCallback(async () => {
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/collections/${collectionId}`);
+      const response = await fetch(`/api/collections/${collectionId}${readOnly ? '?published=true' : ''}`);
       if (!response.ok) {
         setStatus('Unable to load collection');
         return;
       }
 
       const payload = (await response.json()) as ResponsePayload;
-      const parsedSchema = payload.schema ?? parseSchema(payload.collection.schemaJson);
-      const parsedViews = parseViews(payload.views ?? payload.collection.viewsJson);
+      const parsedSchema = payload.schema ?? payload.collection.schema;
+      const parsedViews = payload.views ?? payload.collection.view;
       const shouldSeedBooksSchema = isBooksCollectionName(payload.collection.name) && parsedSchema.properties.length === 0;
 
       if (shouldSeedBooksSchema && !readOnly) {
@@ -1253,18 +1149,16 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
     }
 
     const current = items.find((item) => item.pageId === pageId);
-    const previousProperties = current?.propertiesJson ?? '{}';
-    const parsed = parseProperties(previousProperties);
+    const parsed = { ...(current?.properties ?? {}) };
     const hadPreviousValue = Object.hasOwn(parsed, propertyId);
     const previousValue = parsed[propertyId];
     parsed[propertyId] = nextValue;
-    const nextProperties = stringifyProperties(parsed);
     const cellKey = `${pageId}:${propertyId}`;
     const requestVersion = (cellRequestVersions.current[cellKey] ?? 0) + 1;
     cellRequestVersions.current[cellKey] = requestVersion;
 
     setCellStates((previous) => ({ ...previous, [cellKey]: 'saving' }));
-    setItems((previous) => previous.map((item) => item.pageId === pageId ? { ...item, propertiesJson: nextProperties } : item));
+    setItems((previous) => previous.map((item) => item.pageId === pageId ? { ...item, properties: parsed } : item));
 
     try {
       const response = await fetch(`/api/collections/${collection.id}/items`, {
@@ -1291,7 +1185,7 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
         if (item.pageId !== pageId) {
           return item;
         }
-        const currentProperties = parseProperties(item.propertiesJson);
+        const currentProperties = { ...item.properties };
         if (JSON.stringify(currentProperties[propertyId]) !== JSON.stringify(nextValue)) {
           return item;
         }
@@ -1300,7 +1194,7 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
         } else {
           delete currentProperties[propertyId];
         }
-        return { ...item, propertiesJson: stringifyProperties(currentProperties) };
+        return { ...item, properties: currentProperties };
       }));
       setCellStates((previous) => ({ ...previous, [cellKey]: 'error' }));
       setStatusTemporarily('Could not update property');
@@ -1314,8 +1208,7 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
       return filtered;
     }
     return filtered.filter((item) => {
-      const values = parseProperties(item.propertiesJson);
-      return item.page.title.toLowerCase().includes(query) || Object.values(values).some((value) => {
+      return item.page.title.toLowerCase().includes(query) || Object.values(item.properties).some((value) => {
         const text = Array.isArray(value) ? value.join(' ') : String(value ?? '');
         return text.toLowerCase().includes(query);
       });
@@ -1361,7 +1254,7 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
 
   return (
     <div className={`collection-workspace ${hostPage ? 'has-host-page' : ''} ${isBooksCollection ? 'is-books-collection' : ''} ${embedded ? 'is-embedded' : ''}`}>
-      {hostPage?.coverAssetId ? (
+      {!embedded && hostPage?.coverAssetId ? (
         <div className="collection-host-cover">
           <Image
             src={`/api/assets/${hostPage.coverAssetId}`}
@@ -1461,7 +1354,7 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
               {schema.properties.length ? (
                 <div className="collection-focus-properties">
                   {(() => {
-                    const values = parseProperties(focusedItem.propertiesJson);
+                    const values = focusedItem.properties;
                     return schema.properties.map((property) => (
                       <div key={property.id} className="collection-focus-property" data-tone={getPropertyTone(property)}>
                         <span className="collection-focus-label"><span className="property-icon" aria-hidden="true">{PROPERTY_ICONS[property.type]}</span> {getDisplayPropertyName(property, isBooksCollection)}</span>
@@ -1484,7 +1377,7 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
             {ordered.map((item, itemIndex) => {
               const image = getFirstImageUrl(item.page);
               const coverStyle = getCollectionCoverStyle(item.page);
-              const values = parseProperties(item.propertiesJson);
+              const values = item.properties;
               const staggerIndex = Math.min(itemIndex, MAX_COLLECTION_STAGGER_INDEX);
               return (
                 <article
@@ -1520,7 +1413,7 @@ export function CollectionEditor({ collectionId, embedded = false, focusPageId, 
             <table className="collection-table">
               <thead><tr><th className="collection-title-column"><span className="property-icon" aria-hidden="true">Aa</span> Name</th>{tableProperties.map((property) => <th key={property.id} className={`collection-property-column collection-property-${property.type} collection-property-${slugifyPropertyName(property.name)}`} data-tone={getPropertyTone(property)}><span className="property-icon" aria-hidden="true">{PROPERTY_ICONS[property.type]}</span> {getDisplayPropertyName(property, isBooksCollection)}</th>)}{showRowActions ? <th className="collection-actions-column"><span className="visually-hidden">Actions</span></th> : null}</tr></thead>
               <tbody>{ordered.map((item, itemIndex) => {
-                const properties = parseProperties(item.propertiesJson);
+                const properties = item.properties;
                 return <tr
                   key={item.pageId}
                   className="collection-row"

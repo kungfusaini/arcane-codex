@@ -3,16 +3,15 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { WorkspaceSidebar } from '@/components/WorkspaceSidebar';
-import { usePublishedPreview } from '@/components/usePublishedPreview';
 import { getWorkspaceHomePathFromBase } from '@/lib/workspaceHome';
 
 type CollectionPropertyType = 'text' | 'number' | 'select' | 'multi-select' | 'checkbox' | 'date' | 'url';
 
 type CollectionSummary = {
   id: string;
-  hostPageId: string | null;
+  embedPageId: string | null;
   name: string;
-  schemaJson: string;
+  schema: { properties: { id: string; name: string; type: string }[] };
   createdAt: number;
   updatedAt: number;
 };
@@ -97,22 +96,6 @@ function draftPropertiesToSchema(properties: DraftProperty[]): { properties: { i
   };
 }
 
-function safeParseSchema(schemaJson: string): { properties: { id: string; name: string; type: string }[] } {
-  try {
-    const parsed = JSON.parse(schemaJson) as {
-      properties?: unknown;
-    };
-    if (Array.isArray(parsed?.properties)) {
-      return {
-        properties: parsed.properties as { id: string; name: string; type: string }[],
-      };
-    }
-  } catch {
-    // ignore malformed JSON
-  }
-  return { properties: [] };
-}
-
 export function CollectionsIndex({
   initialPages = [],
   readOnly = false,
@@ -124,7 +107,6 @@ export function CollectionsIndex({
   collectionRouteBasePath?: string;
   pageRouteBasePath?: string;
 }) {
-  const { previewPublished, effectiveReadOnly, canTogglePreview, setPreviewPublished } = usePublishedPreview(readOnly);
   const [collections, setCollections] = useState<CollectionSummary[]>([]);
   const [isLoading, setLoading] = useState(true);
   const [name, setName] = useState('');
@@ -135,7 +117,7 @@ export function CollectionsIndex({
   const loadCollections = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/collections');
+      const response = await fetch(`/api/collections${readOnly ? '?published=true' : ''}`);
       const payload = (await response.json()) as { collections: CollectionSummary[] };
       setCollections(payload.collections);
       setStatus('');
@@ -144,7 +126,7 @@ export function CollectionsIndex({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [readOnly]);
 
   useEffect(() => {
     void loadCollections();
@@ -169,7 +151,7 @@ export function CollectionsIndex({
   const onCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmed = name.trim();
-    if (effectiveReadOnly || !trimmed) {
+    if (readOnly || !trimmed) {
       return;
     }
 
@@ -201,11 +183,10 @@ export function CollectionsIndex({
         .slice()
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .map((collection) => {
-          const parsed = safeParseSchema(collection.schemaJson);
           return {
             ...collection,
-            propertyCount: parsed.properties.length,
-            propertyPreview: parsed.properties.slice(0, 3).map((property) => property.name).join(', '),
+            propertyCount: collection.schema.properties.length,
+            propertyPreview: collection.schema.properties.slice(0, 3).map((property) => property.name).join(', '),
           };
         }),
     [collections],
@@ -216,14 +197,11 @@ export function CollectionsIndex({
       <WorkspaceSidebar
         currentPageId={undefined}
         initialPages={initialPages}
-        readOnly={effectiveReadOnly}
+        readOnly={readOnly}
         pageRouteBasePath={pageRouteBasePath}
         collectionHomePath={collectionRouteBasePath}
         homePath={getWorkspaceHomePathFromBase(pageRouteBasePath)}
-        previewPublished={previewPublished}
-        canTogglePreview={canTogglePreview}
-        onPreviewPublishedChange={setPreviewPublished}
-        onCreated={effectiveReadOnly ? undefined : () => {
+        onCreated={readOnly ? undefined : () => {
           loadCollections().catch(() => {
             setStatus('Unable to refresh collections');
           });
@@ -245,7 +223,7 @@ export function CollectionsIndex({
               <p className="eyebrow">Structured knowledge</p>
               <h1>Collections</h1>
             </div>
-            {effectiveReadOnly ? null : (
+            {readOnly ? null : (
               <details className="create-collection-menu">
                 <summary role="button" aria-label="New collection">New collection</summary>
                 <form onSubmit={onCreate} className="collections-create-form">
@@ -322,7 +300,7 @@ export function CollectionsIndex({
                       <small>
                         {collection.propertyCount} propert{collection.propertyCount === 1 ? 'y' : 'ies'}
                         {collection.propertyPreview ? ` · ${collection.propertyPreview}` : ''}
-                        {collection.hostPageId ? ' · linked' : ' · standalone'}
+                        {collection.embedPageId ? ' · embedded' : ' · independent'}
                       </small>
                     </span>
                     <span aria-hidden="true">→</span>

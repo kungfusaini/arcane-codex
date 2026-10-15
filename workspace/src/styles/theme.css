@@ -23,6 +23,7 @@
   /* Typography */
   --font-base: 'Arcane ProFont', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --font-display: var(--font-base);
+  --font-prose: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-base);
   --font-brand-mono: var(--font-base);
   --font-brand-display: 'Arcane Eagle', var(--font-display);
@@ -40,6 +41,9 @@
   --font-size-page-title: var(--font-size-h1);
   --font-size-h1-compact: var(--font-size-700);
   --font-size-page-title-compact: var(--font-size-h1-compact);
+  --font-size-prose: var(--font-size-400);
+  --line-height-prose: 1.6;
+  --space-prose-block: var(--space-4);
 
   /* 8px rhythm + small optical steps */
   --space-0: 0px;
@@ -89,7 +93,7 @@
   /* Layout and measures */
   --rail-expanded-width: 285.6px;
   --rail-width: var(--rail-expanded-width);
-  --reading-width: 652.8px;
+  --reading-width: 748px;
   --measure-content-sm: 374px;
   --measure-empty: 442px;
   --measure-popover-sm: 272px;

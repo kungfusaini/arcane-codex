@@ -76,6 +76,6 @@ export function toPrivatePath(pathname: string): string {
   return normalized;
 }
 
-export function toWorkspacePath(pathname: string, publishedMode: boolean): string {
-  return publishedMode ? toPublishedPath(pathname) : toPrivatePath(pathname);
+export function toWorkspacePath(pathname: string, publishedSurface: boolean): string {
+  return publishedSurface ? toPublishedPath(pathname) : toPrivatePath(pathname);
 }

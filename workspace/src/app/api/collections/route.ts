@@ -3,9 +3,10 @@ import {
   createCollection,
   deleteCollection,
   listCollections,
+  listPublishedCollections,
   updateCollection,
 } from '@/lib/data/storage';
-import { rejectPublishedMutation } from '@/lib/surface';
+import { isPublishedAppSurface, rejectPublishedMutation } from '@/lib/surface';
 import {
   CollectionProperty,
   CollectionViews,
@@ -115,8 +116,9 @@ function parseCollectionViews(payload: unknown): CollectionViews {
   };
 }
 
-export async function GET() {
-  const collections = listCollections();
+export async function GET(request: NextRequest) {
+  const published = isPublishedAppSurface() || new URL(request.url).searchParams.get('published') === 'true';
+  const collections = published ? listPublishedCollections() : listCollections();
   return NextResponse.json({ collections });
 }
 
@@ -125,7 +127,7 @@ export async function POST(request: NextRequest) {
   if (blocked) return blocked;
   const payload = (await request.json().catch(() => ({}))) as {
     name?: unknown;
-    hostPageId?: unknown;
+    embedPageId?: unknown;
     schema?: unknown;
     views?: unknown;
   };
@@ -135,12 +137,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Name is required' }, { status: 400 });
   }
 
-  const hostPageId = payload.hostPageId === null ? null : typeof payload.hostPageId === 'string' ? payload.hostPageId : undefined;
+  const embedPageId = payload.embedPageId === null ? null : typeof payload.embedPageId === 'string' ? payload.embedPageId : undefined;
 
   try {
     const collection = createCollection({
       name,
-      hostPageId,
+      embedPageId,
       schema: parseCollectionSchema(payload.schema),
       views: parseCollectionViews(payload.views),
     });
@@ -157,7 +159,7 @@ export async function PATCH(request: NextRequest) {
   const payload = (await request.json().catch(() => ({}))) as {
     id?: string;
     name?: unknown;
-    hostPageId?: unknown;
+    embedPageId?: unknown;
     schema?: unknown;
     views?: unknown;
     deleteId?: string;
@@ -175,7 +177,7 @@ export async function PATCH(request: NextRequest) {
 
   const updates: {
     name?: string;
-    hostPageId?: string | null;
+    embedPageId?: string | null;
     schema?: CollectionSchema;
     views?: CollectionViews;
   } = {};
@@ -184,8 +186,8 @@ export async function PATCH(request: NextRequest) {
     updates.name = payload.name.trim();
   }
 
-  if (Object.hasOwn(payload, 'hostPageId')) {
-    updates.hostPageId = payload.hostPageId === null ? null : typeof payload.hostPageId === 'string' ? payload.hostPageId : null;
+  if (Object.hasOwn(payload, 'embedPageId')) {
+    updates.embedPageId = payload.embedPageId === null ? null : typeof payload.embedPageId === 'string' ? payload.embedPageId : null;
   }
 
   if (Object.hasOwn(payload, 'schema')) {

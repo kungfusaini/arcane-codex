@@ -41,6 +41,13 @@ function buildReactBlockSpec(config: any, implementation: any): () => BlockSpec<
   return createReactBlockSpec(config, implementation) as () => BlockSpec<any, any, any>;
 }
 
+function updateExistingBlock(editor: BlockNoteEditor<any>, blockId: string, props: Record<string, unknown>): boolean {
+  const current = editor.getBlock(blockId) as { props?: Record<string, unknown> } | undefined;
+  if (!current) return false;
+  editor.updateBlock(blockId, { props: { ...current.props, ...props } } as never);
+  return true;
+}
+
 function getUrlTitle(value: string): string {
   try {
     return new URL(value).hostname.replace(/^www\./, '');
@@ -281,7 +288,7 @@ function YouTubeBlock({
     event.preventDefault();
     const normalized = url.trim();
     if (!getYouTubeVideoId(normalized)) return;
-    editor.updateBlock(block.id, { props: { url: normalized } } as never);
+    updateExistingBlock(editor, block.id, { url: normalized });
   };
 
   return (
@@ -363,7 +370,7 @@ function GalleryBlock({
   }));
 
   const updateBlock = (props: Record<string, unknown>) => {
-    editor.updateBlock(block.id, { props: { ...block.props, ...props } } as never);
+    updateExistingBlock(editor, block.id, props);
   };
 
   const move = (direction: -1 | 1) => {
@@ -495,7 +502,7 @@ export function GalleryWidgetEditorShell({
   }
 
   const updateBlock = (props: Record<string, unknown>) => {
-    editor.updateBlock(block.id, { props: { ...block.props, ...props } } as never);
+    updateExistingBlock(editor, block.id, props);
   };
 
   const updateImages = (nextImages: GalleryImage[]) => updateBlock({ images: JSON.stringify(nextImages), mode, imageSize, groupCaption });
@@ -725,8 +732,6 @@ function ArtworkShowcaseBlock({
   const canvasUrl = typeof block.props.canvasUrl === 'string' ? block.props.canvasUrl.trim() : '';
   const canvasAlt = typeof block.props.canvasAlt === 'string' && block.props.canvasAlt.trim() ? block.props.canvasAlt.trim() : title;
   const prompt = typeof block.props.prompt === 'string' ? block.props.prompt.trim() : '';
-  const initialIdea = typeof block.props.initialIdea === 'string' ? block.props.initialIdea.trim() : '';
-  const finalPrompt = typeof block.props.finalPrompt === 'string' ? block.props.finalPrompt.trim() : '';
   const turnComments = typeof block.props.turnComments === 'string' ? block.props.turnComments : '';
   const frameUrls = readArtworkFrames(block.props.frameUrls).map((frame) => frame.url);
   const speedValue = Number(block.props.speed);
@@ -735,10 +740,9 @@ function ArtworkShowcaseBlock({
   const strokeTotalValue = Number(block.props.strokeTotal);
   const strokeTotal = Number.isFinite(strokeTotalValue) ? Math.max(0, Math.floor(strokeTotalValue)) : 0;
   const strokeCurrent = Number.isFinite(strokeCurrentValue) ? Math.min(Math.max(0, Math.floor(strokeCurrentValue)), Math.max(0, strokeTotal - 1)) : 0;
-  const currentStrokeLabel = strokeTotal > 0 ? `${strokeCurrent + 1} / ${strokeTotal}` : '0 / 0';
 
   const updateBlock = (props: Record<string, unknown>) => {
-    editor.updateBlock(block.id, { props: { ...block.props, ...props } } as never);
+    updateExistingBlock(editor, block.id, props);
   };
 
   const frameCount = frameUrls.length;

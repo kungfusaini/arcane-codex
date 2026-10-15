@@ -2,19 +2,19 @@ import type { Metadata } from 'next';
 import { notFound, permanentRedirect, redirect } from 'next/navigation';
 import { PageEditorRoute } from '@/app/page/PageEditorRoute';
 import { PageWorkspaceLayout } from '@/app/page/PageWorkspaceLayout';
-import { getPage, listCollectionsHostedByPage, listPageSummaries, resolvePageRoutePath } from '@/lib/data/storage';
+import { getPublishedPage, listPublishedPages, resolvePublishedPageRoutePath } from '@/lib/data/storage';
 import { isPublishedAppSurface } from '@/lib/surface';
 import { toPublicPath, toPublishedPath } from '@/lib/workspaceMode';
 
 export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({ params }: { params: { pagePath?: string[] } }): Promise<Metadata> {
-  const resolution = resolvePageRoutePath(params.pagePath ?? []);
+  const resolution = resolvePublishedPageRoutePath(params.pagePath ?? []);
   if (!resolution) {
     return { title: 'Page not found' };
   }
 
-  const page = getPage(resolution.pageId);
+  const page = getPublishedPage(resolution.pageId);
   if (!page) {
     return { title: 'Page not found' };
   }
@@ -30,7 +30,7 @@ export async function generateMetadata({ params }: { params: { pagePath?: string
 }
 
 export default function PublishedPageRoute({ params }: { params: { pagePath?: string[] } }) {
-  const resolution = resolvePageRoutePath(params.pagePath ?? []);
+  const resolution = resolvePublishedPageRoutePath(params.pagePath ?? []);
   if (!resolution) {
     notFound();
   }
@@ -41,8 +41,8 @@ export default function PublishedPageRoute({ params }: { params: { pagePath?: st
     permanentRedirect(toPublishedPath(resolution.canonicalPath));
   }
 
-  const initialPage = listCollectionsHostedByPage(resolution.pageId).length ? undefined : getPage(resolution.pageId) ?? undefined;
-  const initialPages = listPageSummaries().map((page) => ({
+  const initialPage = getPublishedPage(resolution.pageId) ?? undefined;
+  const initialPages = listPublishedPages(true).map((page) => ({
     id: page.id,
     parentId: page.parentId,
     sortKey: page.sortKey,
@@ -52,7 +52,7 @@ export default function PublishedPageRoute({ params }: { params: { pagePath?: st
     iconAssetId: page.iconAssetId,
     revision: page.revision,
   }));
-  const initialSidebarPages = listPageSummaries(undefined, false).map((page) => ({
+  const initialSidebarPages = listPublishedPages(false, undefined, false).map((page) => ({
     id: page.id,
     parentId: page.parentId,
     sortKey: page.sortKey,

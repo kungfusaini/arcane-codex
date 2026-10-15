@@ -13,7 +13,11 @@ ${XDG_DATA_HOME:-~/.local/share}/arcane-codex/
 └── trash/
 ```
 
-Set `XDG_DATA_HOME` before starting the app to choose another XDG data root. Tests and isolated deployments can set `ARCANE_DATA_DIR` to override the data root for the whole workspace.
+Set `XDG_DATA_HOME` before starting the app to choose another XDG data root. Set `ARCANE_WORKSPACE_DIR` when you want an exact workspace directory containing `workspace.sqlite` and `assets/`. Tests can pass an isolated parent data directory internally. `ARCANE_DATA_DIR` remains a deprecated parent-root override and still appends `arcane-codex/`.
+
+## Page documents
+
+Page bodies are stored as canonical Arcane Markdown in SQLite. Standard content uses ordinary Markdown; rich blocks use readable Markdown fallbacks plus versioned `arcane-data` extensions. BlockNote is the editing interface, not the persisted document format. Internal page and asset references use stable `arcane://` identifiers and are rewritten to relative paths during export.
 
 ## Export
 

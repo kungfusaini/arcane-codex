@@ -15,6 +15,7 @@ import {
   type PageSummaryRecord,
 } from '../src/lib/data/storage';
 import type { CollectionRecord, PageRecord } from '../src/lib/data/types';
+import { blocksToMarkdown } from '../src/lib/documents/markdown';
 
 const DEFAULT_HUGO_ROOT = path.join(os.homedir(), 'matrix/web/aether/services/arcanecodex');
 
@@ -367,18 +368,18 @@ function pageByParentAndTitle(pages: PageSummaryRecord[], parentId: string | nul
   return pages.find((page) => page.parentId === parentId && page.title.trim().toLowerCase() === title.trim().toLowerCase());
 }
 
-function findOrCreatePage(title: string, parentId: string | null, contentJson: string, isArticle: boolean, apply: boolean, dataDir?: string): PageRecord | PageSummaryRecord {
+function findOrCreatePage(title: string, parentId: string | null, bodyMarkdown: string, kind: 'page' | 'article', apply: boolean, dataDir?: string): PageRecord | PageSummaryRecord {
   const existing = pageByParentAndTitle(listPages(dataDir), parentId, title);
   if (existing) {
     if (apply) {
-      return updatePage(existing.id, { revision: existing.revision, contentJson, isArticle }, dataDir);
+      return updatePage(existing.id, { revision: existing.revision, bodyMarkdown, kind }, dataDir);
     }
     return existing;
   }
   if (!apply) {
-    return { id: `dry-${parentId ?? 'root'}-${title}`, parentId, sortKey: 0, title, slug: title, icon: null, iconAssetId: null, coverAssetId: null, coverFocalX: 50, coverFocalY: 50, coverScale: 100, isArticle, tags: [], revision: 0, createdAt: Date.now(), updatedAt: Date.now(), deletedAt: null };
+    return { id: `dry-${parentId ?? 'root'}-${title}`, parentId, sortKey: 0, title, slug: title, icon: null, iconAssetId: null, coverAssetId: null, coverFocalX: 50, coverFocalY: 50, coverScale: 100, kind, summary: '', tags: [], revision: 0, createdAt: Date.now(), updatedAt: Date.now(), deletedAt: null };
   }
-  return createPage({ title, parentId, contentJson, isArticle }, dataDir);
+  return createPage({ title, parentId, bodyMarkdown, kind }, dataDir);
 }
 
 function ensurePath(pathParts: string[], apply: boolean, dataDir?: string): string | null {
@@ -393,7 +394,7 @@ function ensurePath(pathParts: string[], apply: boolean, dataDir?: string): stri
       parentId = `dry-${parentId ?? 'root'}-${part}`;
       continue;
     }
-    parentId = createPage({ title: part, parentId, isArticle: false, contentJson: '[]' }, dataDir).id;
+    parentId = createPage({ title: part, parentId, kind: 'page', bodyMarkdown: '' }, dataDir).id;
   }
   return parentId;
 }
@@ -405,7 +406,7 @@ function findOrCreateCollection(name: 'Books' | 'Cinema', apply: boolean, dataDi
     : collections.find((collection) => collection.name.toLowerCase() === 'cinema');
   if (existing) return existing;
   if (!apply) {
-    return { id: `dry-collection-${name}`, hostPageId: null, name, schemaJson: '{"properties":[]}', viewsJson: '{"mode":"table"}', createdAt: Date.now(), updatedAt: Date.now() };
+    return { id: `dry-collection-${name}`, embedPageId: null, name, schema: { properties: [] }, view: { mode: 'table' }, createdAt: Date.now(), updatedAt: Date.now() };
   }
   return createCollection({
     name,
@@ -485,20 +486,20 @@ function main(): void {
     }
 
     const assetMap = buildAssetMap(body, hugoRoot, apply, dataDir);
-    const contentJson = JSON.stringify(markdownToBlocks(body, assetMap));
+    const bodyMarkdown = blocksToMarkdown(markdownToBlocks(body, assetMap));
     let page: PageRecord | PageSummaryRecord;
     let destinationLabel: string;
 
     if (target.destination.kind === 'page') {
       const parentId = ensurePath(target.destination.path, apply, dataDir);
-      page = findOrCreatePage(target.destination.title, parentId, contentJson, true, apply, dataDir);
+      page = findOrCreatePage(target.destination.title, parentId, bodyMarkdown, 'article', apply, dataDir);
       destinationLabel = [...target.destination.path, target.destination.title].join(' / ');
     } else {
       const collection = findOrCreateCollection(target.destination.collection, apply, dataDir);
       const existing = findCollectionPage(collection, target.destination.title, dataDir);
       page = existing
-        ? (apply ? updatePage(existing.id, { revision: existing.revision, contentJson, isArticle: true }, dataDir) : existing)
-        : findOrCreatePage(target.destination.title, null, contentJson, true, apply, dataDir);
+        ? (apply ? updatePage(existing.id, { revision: existing.revision, bodyMarkdown, kind: 'article' }, dataDir) : existing)
+        : findOrCreatePage(target.destination.title, null, bodyMarkdown, 'article', apply, dataDir);
       if (apply && !existing) {
         createCollectionItem({ collectionId: collection.id, pageId: page.id, properties: collectionProperties(target, frontmatter) }, dataDir);
       }

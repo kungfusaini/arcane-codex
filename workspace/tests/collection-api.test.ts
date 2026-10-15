@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { NextRequest } from 'next/server';
 
+import * as collectionViewsRoute from '../src/app/api/collection-views/route';
 import * as collectionsRoute from '../src/app/api/collections/route';
 import * as collectionRoute from '../src/app/api/collections/[id]/route';
 import * as collectionItemsRoute from '../src/app/api/collections/[id]/items/route';
@@ -77,10 +78,26 @@ describe('collections HTTP API', () => {
         }),
       );
       const collectionPayload = (await callJson(createCollection)) as {
-        collection: { id: string; schemaJson: string; viewsJson: string };
+        collection: { id: string };
       };
       assert.equal(createCollection.status, 201);
       const collectionId = collectionPayload.collection.id;
+
+      const createView = await collectionViewsRoute.POST(new NextRequest('http://localhost/api/collection-views', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ collectionId, name: 'Gallery', settings: { mode: 'gallery' } }),
+      }));
+      assert.equal(createView.status, 201);
+      const viewId = ((await callJson(createView)) as { view: { id: string } }).view.id;
+      const embedView = await collectionViewsRoute.POST(new NextRequest('http://localhost/api/collection-views', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'embed', pageId: createdPages.page.id, viewId }),
+      }));
+      assert.equal(embedView.status, 201);
+      const views = await collectionViewsRoute.GET(new NextRequest(`http://localhost/api/collection-views?collectionId=${collectionId}`));
+      assert.equal(((await callJson(views)) as { views: unknown[] }).views.length, 2);
 
       const addA = await collectionItemsRoute.POST(
         new NextRequest(`http://localhost/api/collections/${collectionId}/items`, {
@@ -126,7 +143,7 @@ describe('collections HTTP API', () => {
         { params: { id: collectionId } },
       );
       const filteredPayload = (await callJson(filtered)) as {
-        items: Array<{ propertiesJson: string }>;
+        items: Array<{ properties: Record<string, unknown> }>;
         availablePages: Array<{ id: string }>;
       };
       assert.equal(filteredPayload.items.length, 1);
@@ -191,8 +208,8 @@ describe('collections HTTP API', () => {
       );
       assert.equal(rename.status, 200);
 
-      const renamed = await rename.json() as { collection: { viewsJson: string } };
-      assert.equal(JSON.parse(renamed.collection.viewsJson).mode, 'gallery');
+      const renamed = await rename.json() as { collection: { view: { mode: string } } };
+      assert.equal(renamed.collection.view.mode, 'gallery');
 
       const schemaUpdate = await collectionRoute.PATCH(
         new NextRequest(`http://localhost/api/collections/${collectionId}`, {
@@ -207,23 +224,23 @@ describe('collections HTTP API', () => {
         { params: { id: collectionId } },
       );
       assert.equal(schemaUpdate.status, 200);
-      const schemaPayload = await schemaUpdate.json() as { collection: { schemaJson: string } };
-      assert.deepEqual(JSON.parse(schemaPayload.collection.schemaJson).properties[0].options, ['Todo', 'Done', 'Blocked']);
+      const schemaPayload = await schemaUpdate.json() as { collection: { schema: { properties: Array<{ options?: string[] }> } } };
+      assert.deepEqual(schemaPayload.collection.schema.properties[0].options, ['Todo', 'Done', 'Blocked']);
     });
   });
 
-  it('rejects an invalid collection host page with a client error', async () => {
+  it('rejects an invalid collection embed page with a client error', async () => {
     await withWorkspace(async () => {
       const response = await collectionsRoute.POST(
         new NextRequest('http://localhost/api/collections', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ name: 'Broken host', hostPageId: '11111111-1111-4111-8111-111111111111' }),
+          body: JSON.stringify({ name: 'Broken embed', embedPageId: '11111111-1111-4111-8111-111111111111' }),
         }),
       );
       assert.equal(response.status, 400);
       const payload = await callJson(response);
-      assert.match(String(payload.error), /host page not found/i);
+      assert.match(String(payload.error), /embed page not found/i);
     });
   });
 });

@@ -20,6 +20,7 @@ artifacts/
 # Node
 node_modules/
 .next/
+.next-local/
 coverage/
 test-results/
 playwright-report/

@@ -32,22 +32,22 @@ function withWorkspace<T>(callback: () => T | Promise<T>): T | Promise<T> {
 }
 
 describe('settings API', () => {
-  it('reads and updates published mode', async () => {
+  it('reads and updates the workspace name', async () => {
     await withWorkspace(async () => {
       const initialRes = await settingsRoute.GET();
-      const initial = (await initialRes.json()) as { settings: { publishedMode: boolean } };
-      assert.equal(initial.settings.publishedMode, false);
+      const initial = (await initialRes.json()) as { settings: { workspaceName: string } };
+      assert.equal(initial.settings.workspaceName, 'Arcane Codex');
 
       const patchRes = await settingsRoute.PATCH(
         new NextRequest('http://localhost/api/settings', {
           method: 'PATCH',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ publishedMode: true }),
+          body: JSON.stringify({ workspaceName: 'Codex' }),
         }),
       );
       assert.equal(patchRes.status, 200);
-      const patched = (await patchRes.json()) as { settings: { publishedMode: boolean } };
-      assert.equal(patched.settings.publishedMode, true);
+      const patched = (await patchRes.json()) as { settings: { workspaceName: string } };
+      assert.equal(patched.settings.workspaceName, 'Codex');
     });
   });
 });

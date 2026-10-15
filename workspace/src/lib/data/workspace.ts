@@ -15,8 +15,14 @@ function getXdgDataHome(): string {
 export const WORKSPACE_DIRNAME = 'arcane-codex';
 
 export function getWorkspaceBaseDir(overrideDir?: string): string {
-  const base = overrideDir ?? process.env.ARCANE_DATA_DIR ?? getXdgDataHome();
-  return path.join(path.resolve(base), WORKSPACE_DIRNAME);
+  if (overrideDir) {
+    return path.join(path.resolve(overrideDir), WORKSPACE_DIRNAME);
+  }
+  if (process.env.ARCANE_WORKSPACE_DIR) {
+    return path.resolve(process.env.ARCANE_WORKSPACE_DIR);
+  }
+  const dataRoot = process.env.ARCANE_DATA_DIR ?? getXdgDataHome();
+  return path.join(path.resolve(dataRoot), WORKSPACE_DIRNAME);
 }
 
 export function getWorkspaceAssetsDir(overrideDir?: string): string {

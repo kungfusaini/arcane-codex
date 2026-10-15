@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'standalone',
+  distDir: process.env.ARCANE_NEXT_DIST_DIR || '.next',
   experimental: {
     typedRoutes: false,
   },

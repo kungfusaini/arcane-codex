@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { WorkspaceSidebar } from '@/components/WorkspaceSidebar';
-import { usePublishedPreview } from '@/components/usePublishedPreview';
 import { PageIcon } from '@/components/PageIcon';
 import { buildWorkspacePagePathFromPages, getWorkspaceHomePath, getWorkspaceTopLevelPages } from '@/lib/workspaceHome';
 
@@ -27,7 +26,6 @@ export function WorkspaceHome({
   readOnly?: boolean;
   pageRouteBasePath?: string;
 }) {
-  const { previewPublished, effectiveReadOnly, canTogglePreview, setPreviewPublished } = usePublishedPreview(readOnly);
   const [pages, setPages] = useState<PageSummary[]>(initialPages);
   const [loading, setLoading] = useState(initialPages.length === 0);
   const [error, setError] = useState('');
@@ -63,7 +61,7 @@ export function WorkspaceHome({
   }, [initialPages]);
 
   const createFirstPage = async () => {
-    if (effectiveReadOnly) {
+    if (readOnly) {
       return;
     }
     try {
@@ -76,6 +74,7 @@ export function WorkspaceHome({
       if (!response.ok || !payload.page) {
         throw new Error(payload.error || 'Page could not be created.');
       }
+      window.sessionStorage.setItem('arcane-focus-page-title', payload.page.id);
       window.location.href = buildWorkspacePagePathFromPages(payload.page.id, [...pages, payload.page], pageRouteBasePath);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Page could not be created.');
@@ -90,14 +89,16 @@ export function WorkspaceHome({
       <WorkspaceSidebar
         currentPageId={undefined}
         initialPages={initialPages}
-        readOnly={effectiveReadOnly}
+        readOnly={readOnly}
         pageRouteBasePath={pageRouteBasePath}
         collectionHomePath={readOnly ? `${pageRouteBasePath.replace(/\/+$/, '')}/collections` || '/collections' : '/collections'}
         homePath={homePath}
-        previewPublished={previewPublished}
-        canTogglePreview={canTogglePreview}
-        onPreviewPublishedChange={setPreviewPublished}
-        onCreated={effectiveReadOnly ? undefined : async () => {
+        onCreated={readOnly ? undefined : async (page) => {
+          if (page) {
+            window.sessionStorage.setItem('arcane-focus-page-title', page.id);
+            window.location.href = buildWorkspacePagePathFromPages(page.id, [...pages, page], pageRouteBasePath);
+            return;
+          }
           await refreshPages();
         }}
       />
@@ -114,10 +115,10 @@ export function WorkspaceHome({
             <>
               <header className="home-header">
                 <div>
-                  <p className="eyebrow">{effectiveReadOnly ? 'Published workspace' : 'Private workspace'}</p>
-                  <h1>{effectiveReadOnly ? 'Browse pages' : 'Continue writing'}</h1>
+                  <p className="eyebrow">{readOnly ? 'Published workspace' : 'Private workspace'}</p>
+                  <h1>{readOnly ? 'Browse pages' : 'Continue writing'}</h1>
                 </div>
-                {effectiveReadOnly ? null : <button type="button" className="primary-btn" onClick={createFirstPage}>New page</button>}
+                {readOnly ? null : <button type="button" className="primary-btn" onClick={createFirstPage}>New page</button>}
               </header>
               <div className="home-page-links" aria-label="Top-level pages">
                 {topLevelPages.length ? topLevelPages.map((page) => (
@@ -129,7 +130,7 @@ export function WorkspaceHome({
                 )) : <p className="help">No top-level pages yet.</p>}
               </div>
             </>
-          ) : effectiveReadOnly ? (
+          ) : readOnly ? (
             <div className="home-empty">
               <span className="empty-mark" aria-hidden="true">✦</span>
               <h1>Nothing published yet</h1>

@@ -22,6 +22,18 @@ describe('theme title scale', () => {
     assert.match(theme, /--font-size-page-title-compact:\s*var\(--font-size-h1-compact\);/);
   });
 
+  it('keeps long-form prose at a readable size and rhythm', () => {
+    const theme = read('src/styles/theme.css');
+    const editor = read('src/components/page-editor.css');
+
+    assert.match(theme, /--font-prose:\s*'IBM Plex Sans',/);
+    assert.match(theme, /--font-size-prose:\s*var\(--font-size-400\);/);
+    assert.match(theme, /--line-height-prose:\s*1\.6;/);
+    assert.match(theme, /--space-prose-block:\s*var\(--space-4\);/);
+    assert.match(editor, /\.editor-view \.bn-editor\s*\{[^}]*font-family:\s*var\(--font-prose\);[^}]*font-size:\s*var\(--font-size-prose\);[^}]*line-height:\s*var\(--line-height-prose\);/s);
+    assert.match(editor, /data-content-type='paragraph'[^}]*margin-block-start:\s*var\(--space-prose-block\);/s);
+  });
+
   it('uses page-title tokens for editable and document page title rules', () => {
     const css = [
       read('src/styles/workspace.css'),
@@ -38,7 +50,7 @@ describe('theme title scale', () => {
 
     const fontSizes = declarations
       .map((block) => block.match(/font-size:\s*([^;]+);/)?.[1]?.trim())
-      .filter(Boolean);
+      .filter((value): value is string => Boolean(value));
 
     assert.ok(fontSizes.length > 0, 'expected page title rules to declare font-size');
     for (const value of fontSizes) {

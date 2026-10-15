@@ -11,12 +11,11 @@ export async function PATCH(request: NextRequest) {
   if (blocked) return blocked;
   const payload = await request.json().catch(() => ({}));
   const workspaceName = typeof payload.workspaceName === 'string' ? payload.workspaceName : undefined;
-  const publishedMode = typeof payload.publishedMode === 'boolean' ? payload.publishedMode : undefined;
 
-  if (workspaceName === undefined && publishedMode === undefined) {
+  if (workspaceName === undefined) {
     return NextResponse.json({ error: 'No settings provided.' }, { status: 400 });
   }
 
-  const settings = updateSettings(undefined, { workspaceName, publishedMode });
+  const settings = updateSettings(undefined, { workspaceName });
   return NextResponse.json({ settings });
 }

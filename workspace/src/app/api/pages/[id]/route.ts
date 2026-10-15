@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { duplicatePage, getAsset, getPage, listCollectionItems, listCollectionsForPage, listCollectionsHostedByPage, readBacklinks, trashPage, updatePage } from '@/lib/data/storage';
+import { duplicatePage, getAsset, getPage, getPagePublication, getPublishedPage, listCollectionsForPage, listCollectionsHostedByPage, listPublishedCollectionsForPage, listPublishedCollectionsHostedByPage, readBacklinks, trashPage, updatePage } from '@/lib/data/storage';
 import { RevisionConflictError } from '@/lib/data/types';
-import { rejectPublishedMutation } from '@/lib/surface';
+import { isPublishedAppSurface, rejectPublishedMutation } from '@/lib/surface';
 
 type PageUpdatePayload = {
   revision?: number;
@@ -12,11 +12,12 @@ type PageUpdatePayload = {
   coverFocalX?: number;
   coverFocalY?: number;
   coverScale?: number;
-  isArticle?: boolean;
+  kind?: 'page' | 'note' | 'article' | 'project' | 'fiction';
+  summary?: string;
   tags?: string[];
   parentId?: string | null;
   sortKey?: number;
-  contentJson?: string;
+  bodyMarkdown?: string;
 };
 
 function clampFocal(value: unknown): number | undefined {
@@ -55,40 +56,17 @@ function parseTags(value: unknown): string[] | null | undefined {
   return [...new Set(value.map((tag) => tag.trim()).filter(Boolean))].slice(0, 20);
 }
 
-function removePageLinkBlocksForIds(contentJson: string, pageIds: Set<string>): string {
-  if (!pageIds.size) return contentJson;
-  try {
-    const parsed = JSON.parse(contentJson) as unknown;
-    if (!Array.isArray(parsed)) return contentJson;
-
-    const walk = (blocks: unknown[]): unknown[] => blocks.flatMap((block) => {
-      if (!block || typeof block !== 'object') return [block];
-      const record = block as Record<string, unknown>;
-      const props = record.props && typeof record.props === 'object' ? record.props as Record<string, unknown> : null;
-      const pageId = typeof props?.pageId === 'string' ? props.pageId.trim() : '';
-      if (record.type === 'pageLink' && pageId && pageIds.has(pageId)) return [];
-      if (Array.isArray(record.children)) return [{ ...record, children: walk(record.children) }];
-      return [record];
-    });
-
-    return JSON.stringify(walk(parsed));
-  } catch {
-    return contentJson;
-  }
-}
-
-export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
-  const page = getPage(params.id);
+export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+  const published = isPublishedAppSurface() || new URL(request.url).searchParams.get('published') === 'true';
+  const page = published ? getPublishedPage(params.id) : getPage(params.id);
   if (!page) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
-  const backlinks = readBacklinks(params.id);
-  const collections = listCollectionsForPage(params.id);
-  const hostCollection = listCollectionsHostedByPage(params.id)[0] ?? null;
-  const hostItemPageIds = hostCollection ? new Set(listCollectionItems(hostCollection.id).map((item) => item.pageId)) : null;
-  const responsePage = hostItemPageIds ? { ...page, contentJson: removePageLinkBlocksForIds(page.contentJson, hostItemPageIds) } : page;
-  return NextResponse.json({ page: responsePage, backlinks, collections, hostCollection });
+  const backlinks = published ? [] : readBacklinks(params.id);
+  const collections = published ? listPublishedCollectionsForPage(params.id) : listCollectionsForPage(params.id);
+  const hostCollection = (published ? listPublishedCollectionsHostedByPage(params.id) : listCollectionsHostedByPage(params.id))[0] ?? null;
+  return NextResponse.json({ page, publication: getPagePublication(params.id), backlinks, collections, hostCollection });
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
@@ -115,17 +93,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   if (Object.hasOwn(payload, 'coverScale') && clampCoverScale(payload.coverScale) === undefined) {
     return NextResponse.json({ error: 'coverScale must be a finite number between 100 and 200.' }, { status: 400 });
   }
-  if (typeof payload.contentJson === 'string') {
-    if (Buffer.byteLength(payload.contentJson, 'utf8') > 5 * 1024 * 1024) {
-      return NextResponse.json({ error: 'Page content is too large to save.' }, { status: 413 });
-    }
-    try {
-      if (!Array.isArray(JSON.parse(payload.contentJson))) {
-        return NextResponse.json({ error: 'Page content must be a JSON block array.' }, { status: 400 });
-      }
-    } catch {
-      return NextResponse.json({ error: 'Page content contains invalid JSON.' }, { status: 400 });
-    }
+  if (typeof payload.bodyMarkdown === 'string' && Buffer.byteLength(payload.bodyMarkdown, 'utf8') > 5 * 1024 * 1024) {
+    return NextResponse.json({ error: 'Page content is too large to save.' }, { status: 413 });
   }
   const tags = Object.hasOwn(payload, 'tags') ? parseTags(payload.tags) : undefined;
   if (tags === null) {
@@ -178,8 +147,12 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     if (Object.hasOwn(payload, 'coverScale')) {
       updates.coverScale = clampCoverScale(payload.coverScale);
     }
-    if (Object.hasOwn(payload, 'isArticle')) {
-      updates.isArticle = payload.isArticle === true;
+    if (payload.kind !== undefined) {
+      if (!['page', 'note', 'article', 'project', 'fiction'].includes(payload.kind)) return NextResponse.json({ error: 'Invalid page kind' }, { status: 400 });
+      updates.kind = payload.kind;
+    }
+    if (payload.summary !== undefined) {
+      updates.summary = String(payload.summary).trim().slice(0, 240);
     }
     if (tags !== undefined) {
       updates.tags = tags;
@@ -190,8 +163,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     if (Object.hasOwn(payload, 'sortKey') && typeof payload.sortKey === 'number') {
       updates.sortKey = payload.sortKey;
     }
-    if (Object.hasOwn(payload, 'contentJson') && typeof payload.contentJson === 'string') {
-      updates.contentJson = payload.contentJson;
+    if (Object.hasOwn(payload, 'bodyMarkdown') && typeof payload.bodyMarkdown === 'string') {
+      updates.bodyMarkdown = payload.bodyMarkdown;
     }
 
     const page = updatePage(params.id, updates);

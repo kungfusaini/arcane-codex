@@ -29,7 +29,7 @@ describe('workspace recovery checks', () => {
       const page = createPage({ title: 'Damaged draft' }, workspace);
 
       const db = createStorageConnection(workspace);
-      db.prepare('UPDATE pages SET content_json = ? WHERE id = ?').run('{broken', page.id);
+      db.prepare('UPDATE pages SET body_markdown = ? WHERE id = ?').run('<!-- arcane:begin gallery -->\nbroken', page.id);
       db.close();
 
       const storedAsset = path.join(getWorkspaceAssetsDir(workspace), `${asset.id}.txt`);
@@ -41,7 +41,7 @@ describe('workspace recovery checks', () => {
       assert.equal(health.status, 'degraded');
       assert.ok(health.issues.some((issue) => issue.includes('Asset file is missing')));
       assert.ok(health.issues.some((issue) => issue.includes('Unregistered file')));
-      assert.ok(health.issues.some((issue) => issue.includes('invalid content JSON')));
+      assert.ok(health.issues.some((issue) => issue.includes('invalid Markdown content')));
       assert.ok(health.recovery.length >= 2);
     } finally {
       rmSync(workspace, { recursive: true, force: true });

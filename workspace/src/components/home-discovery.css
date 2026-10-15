@@ -1,0 +1,190 @@
+.home-discovery {
+  width: min(var(--measure-collection-wide), calc(100vw - var(--rail-width) - var(--space-8)));
+  max-width: calc(100vw - var(--rail-width) - var(--space-8));
+  margin-block-start: var(--space-16);
+  margin-inline-start: calc((100% - min(var(--measure-collection-wide), calc(100vw - var(--rail-width) - var(--space-8)))) / 2);
+  display: grid;
+  gap: var(--space-16);
+}
+
+.discovery-section {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.discovery-section > header {
+  max-width: var(--reading-width);
+  display: grid;
+  gap: var(--space-1);
+}
+
+.discovery-section > header h2,
+.discovery-shelf h3 {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.discovery-section > header h2 {
+  font-size: var(--font-size-600);
+}
+
+.discovery-section > header > p:last-child {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.discovery-grid {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.discovery-project-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.discovery-project-grid .discovery-card.is-featured {
+  grid-column: span 2;
+}
+
+.discovery-article-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.discovery-shelves {
+  gap: var(--space-8);
+}
+
+.discovery-shelf {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.discovery-shelf-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.discovery-card {
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--card-radius);
+  background: var(--surface-page);
+  box-shadow: inset 0 0 0 var(--space-px) var(--divider-subtle);
+}
+
+.discovery-card-link {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  color: inherit;
+  text-decoration: none;
+}
+
+.discovery-card-media {
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--surface-page-muted);
+  color: var(--text-muted);
+  font-size: var(--font-size-800);
+}
+
+.discovery-card-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform var(--motion-base) var(--ease-out);
+}
+
+.discovery-card-copy {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  padding: var(--space-4);
+}
+
+.discovery-card-copy h3 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-primary);
+  font-size: var(--font-size-300);
+}
+
+.discovery-card-copy p {
+  margin: 0;
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-muted);
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.discovery-card-copy > span {
+  align-self: end;
+  color: var(--text-accent);
+  font-size: var(--font-size-200);
+}
+
+.page-preview-placeholder {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(145deg, var(--surface-page-muted), var(--surface-page));
+}
+
+.page-preview-kind {
+  display: block;
+  margin-bottom: var(--space-1);
+  color: var(--text-muted) !important;
+  font-size: var(--font-size-100) !important;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.page-preview-action {
+  display: inline-block;
+  margin-top: auto;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .discovery-card-link:hover .discovery-card-media img {
+    transform: scale(1.025);
+  }
+  .discovery-card-link:hover h3 {
+    color: var(--text-accent);
+  }
+}
+
+@media (max-width: 64rem) {
+  .home-discovery {
+    width: min(var(--measure-collection-wide), calc(100vw - var(--space-8)));
+    max-width: calc(100vw - var(--space-8));
+    margin-inline-start: calc((100% - min(var(--measure-collection-wide), calc(100vw - var(--space-8)))) / 2);
+  }
+  .discovery-shelf-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 45rem) {
+  .home-discovery {
+    width: 100%;
+    max-width: 100%;
+    margin-block-start: var(--space-10);
+    margin-inline-start: 0;
+    gap: var(--space-12);
+  }
+  .discovery-project-grid,
+  .discovery-article-grid,
+  .discovery-shelf-grid {
+    grid-template-columns: 1fr;
+  }
+  .discovery-project-grid .discovery-card.is-featured {
+    grid-column: auto;
+  }
+}

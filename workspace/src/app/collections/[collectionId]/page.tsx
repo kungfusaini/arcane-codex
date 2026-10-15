@@ -1,6 +1,7 @@
+import { notFound } from 'next/navigation';
 import { CollectionWorkspace } from '@/components/CollectionWorkspace';
 import { getCollectionDetailPayload } from '@/lib/data/collectionPayload';
-import { listPageSummaries } from '@/lib/data/storage';
+import { isCollectionPublished, listPageSummaries, listPublishedPages } from '@/lib/data/storage';
 import { isPublishedAppSurface } from '@/lib/surface';
 
 export const dynamic = 'force-dynamic';
@@ -10,7 +11,9 @@ type RouteParams = {
 };
 
 export default function CollectionRoute({ params }: { params: RouteParams }) {
-  const initialPages = listPageSummaries(undefined, false).map((page) => ({
+  const published = isPublishedAppSurface();
+  if (published && !isCollectionPublished(params.collectionId)) notFound();
+  const initialPages = (published ? listPublishedPages(false, undefined, false) : listPageSummaries(undefined, false)).map((page) => ({
     id: page.id,
     parentId: page.parentId,
     sortKey: page.sortKey,
@@ -20,9 +23,9 @@ export default function CollectionRoute({ params }: { params: RouteParams }) {
     iconAssetId: page.iconAssetId,
     revision: page.revision,
   }));
-  const initialCollectionPayload = getCollectionDetailPayload(params.collectionId);
+  const initialCollectionPayload = getCollectionDetailPayload(params.collectionId, { published });
 
-  if (isPublishedAppSurface()) {
+  if (published) {
     return <CollectionWorkspace collectionId={params.collectionId} initialPages={initialPages} initialCollectionPayload={initialCollectionPayload} readOnly pageRouteBasePath="/" collectionHomePath="/collections" homePath="/" />;
   }
 
