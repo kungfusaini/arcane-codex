@@ -1,8 +1,9 @@
 # Arcane Codex data model audit
 
-**Status:** Page and collection cutovers implemented through SQLite schema version 12
+**Status:** Unified runtime implemented through SQLite schema version 14
 **Scope:** The local-first Notion-style workspace in `workspace/`
-**Primary goal:** Make an Arcane Codex page a durable, understandable, Markdown-centered document while retaining structured collections, assets, links, revisions, and a rich editor.
+**Primary goal:** Make an Arcane Codex page a durable, understandable, Markdown-centered document while retaining structured collections, assets, links, revisions, publication snapshots, discovery metadata, and a rich editor.
+**Document role:** Sections describing the target and migration preserve the architectural reasoning that led to the cutover. The current-state and finding sections identify what schema v14 resolved and what remains open.
 
 ## Executive decision
 
@@ -28,8 +29,11 @@ BlockNote is therefore an editor dependency, not the storage format.
 
 - Schema 11 completed the one-time page-body cutover to canonical Markdown and removed `content_json`.
 - Schema 12 made collections independent resources, normalized property definitions and item values, and introduced reusable collection views plus page/view embeds.
+- Schema 13 separated editable drafts from explicit `private | unlisted | public` publication records and immutable published snapshots.
+- Schema 14 replaced the article boolean with controlled page kinds (`page | note | article | project | fiction`) and added explicit summaries to drafts, snapshots, previews, and exports.
 - Collection presentation no longer owns collection data: deleting an embedding page removes only its embed relationship.
-- The normal runtime reads and writes only the normalized schema. Pre-cutover backups remain the rollback mechanism.
+- Discovery reads page kinds, summaries, explicit covers, collection membership, and publication state without moving or duplicating canonical pages.
+- The normal runtime reads and writes only the unified schema. Pre-cutover backups remain the rollback mechanism.
 
 ## The most important rules
 
@@ -68,104 +72,66 @@ The page tree and document body are stored separately. Child navigation and coll
 
 ### 1.2 Body format
 
-The server only establishes that `content_json` is a JSON array. It does not establish:
+`body_markdown` is the only persisted page body. `src/lib/documents/markdown.ts` owns Arcane Markdown version 1 normalization, validation, extension boundaries, reference extraction, plain-text extraction, and the one-time BlockNote conversion helpers. Standard content remains ordinary Markdown. Rich blocks use readable Markdown fallbacks plus deterministic `arcane-data` payloads.
 
-- a document format version;
-- required block fields;
-- known block types;
-- valid custom block properties;
-- valid asset references;
-- valid page references;
-- migration provenance.
+BlockNote block objects exist only in editor memory. The runtime does not read or write a second canonical body format.
 
-Default BlockNote block structures and Arcane custom block structures are persisted directly. Current custom blocks are:
+Current rich extensions include:
 
-- `pageLink`;
-- `youtube`;
-- `gallery`;
-- `artworkShowcase`.
-
-Some values are JSON encoded a second time inside block props:
-
-- `gallery.props.images` is a JSON string;
-- `artworkShowcase.props.frameUrls` is a JSON string.
+- `pageLink`, persisted as stable `arcane://page/<uuid>` Markdown links;
+- `youtube`, with a readable external-link fallback;
+- `gallery`, with ordinary image fallbacks;
+- `artworkShowcase`, with image and prompt fallbacks;
+- unknown blocks, preserved as versioned extension payloads rather than silently discarded.
 
 ### 1.3 Collections
 
-Collections currently consist of:
+Collections are independent resources:
 
-- `collections`, with JSON schema and view configuration;
-- `collection_items`, joining pages to collections with JSON property values;
-- an optional `host_page_id` on each collection.
+- `collections` stores identity and display metadata;
+- `collection_properties` stores normalized property definitions;
+- `collection_items` joins canonical pages to collections;
+- `collection_values` stores normalized typed values;
+- `collection_views` stores reusable table/gallery views;
+- `page_collection_views` embeds a view into one or more pages;
+- `published_page_collection_views` snapshots public embeds independently from draft edits.
 
-Treating collection rows as pages is a strong choice. It means collection entries can have full authored bodies and stable links.
+Collection rows remain ordinary canonical pages, so they retain full authored bodies, stable routes, publication state, and reusable membership.
 
 ### 1.4 Assets
 
-Assets are content-addressed by SHA-256 and stored outside SQLite. Covers and icons have foreign keys. References inside page bodies are only URL strings such as `/api/assets/<hash>`, so the database cannot enforce those references or safely determine whether an asset is unused.
+Assets are content-addressed by SHA-256 and stored outside SQLite. Covers and icons have foreign keys. Body references use canonical `arcane://asset/sha256:<hash>` identifiers and are extracted from Markdown for health checks and export. A normalized `page_asset_refs` index is still absent, so referential queries and unused-asset analysis are derived rather than enforced by foreign keys.
 
 ### 1.5 Links and routes
 
-Page identity is stable, but visible routes are hierarchy-derived slug paths. Old paths are retained in `page_path_aliases`. Backlinks are derived into `page_links` by walking `content_json`.
+Page identity is stable, while visible routes remain hierarchy-derived slug paths. Old paths are retained in `page_path_aliases`. Authored internal links use stable page IDs and `page_links` is derived from canonical Markdown. Child navigation and collection presentation are rendered outside authored bodies.
 
 ### 1.6 Export
 
-`src/lib/data/export.ts` creates a deterministic ZIP with flat page files, assets, collection Markdown indexes, CSV files, and a manifest.
+`src/lib/data/export.ts` creates deterministic workspace or published ZIPs containing hierarchy-shaped Markdown, YAML frontmatter, relative page and asset links, content-addressed assets, collection CSV files, a manifest, and warnings. The published mode includes only explicit public snapshots and their referenced data.
 
-The export is readable but not a canonical interchange format:
-
-- page files are flat rather than hierarchy-shaped;
-- hierarchy is represented by opaque `parent_id` frontmatter;
-- backlinks are appended as though they were authored body content;
-- unsupported blocks are placed in JSON comments;
-- collection schema/view fidelity is split between CSV and manifest behavior;
-- BlockNote-to-Markdown conversion is custom and incomplete.
-
-The Hugo importer is a one-off migration utility. A general Arcane workspace importer is intentionally out of scope.
+Rich extensions retain readable standard-Markdown fallbacks plus optional Arcane metadata. The Hugo importer remains a one-off migration utility; reconstructing a workspace from exported Markdown is intentionally out of scope.
 
 ---
 
 ## 2. Observed workspace shape
 
-A read-only structural scan of the populated database at `/home/sumeet/matrix/data/arcane-codex-notion/workspace.sqlite` found:
+A read-only structural check of the populated schema-v14 database at `/home/sumeet/matrix/data/arcane-codex-notion/workspace.sqlite` found:
 
 - 88 page rows, of which 55 are active and 33 trashed;
+- 88 publication rows, all currently private and without public snapshots;
 - 95 assets;
-- 3 hosted collections and 29 collection memberships;
-- 30 backlink index rows;
-- 76 path aliases;
-- approximately 260 KB of page JSON;
-- largest page body approximately 34 KB;
-- no malformed page JSON;
-- 448 persisted block IDs across active and deleted pages;
-- 15 JSON-encoded custom property values.
+- 4 independent collections and 31 collection memberships;
+- 4 reusable collection views and 3 page/view embeds;
+- no SQLite quick-check or foreign-key issues reported by `/api/health`.
 
-Active documents include paragraphs, headings, quotes, lists, code blocks, a table, galleries, page links, YouTube, and an artwork showcase. The current Markdown exporter does not explicitly support tables, YouTube blocks, or artwork showcases.
+Active documents include paragraphs, headings, quotes, lists, code blocks, tables, galleries, page links, YouTube, and an artwork showcase. Known rich blocks have readable Markdown fallbacks and deterministic extension payloads.
 
-Of 29 active `pageLink` blocks:
+The original pre-cutover scan also recorded 448 BlockNote IDs and 15 double-encoded custom values. Those figures remain useful migration evidence but no longer describe canonical schema-v14 storage.
 
-- 19 point to direct child pages and appear to be hierarchy-derived cards;
-- 10 point elsewhere and appear to be authored references.
+### Data directory contract
 
-That distinction cannot be reliably reconstructed from the stored block itself. It is the clearest example of authored and derived content being mixed.
-
-This scan is evidence about the current workspace, not a schema guarantee. A migration must still handle unknown and malformed records defensively.
-
-### Data directory ambiguity
-
-There are currently two database paths under the configured area:
-
-- `/home/sumeet/matrix/data/arcane-codex-notion/workspace.sqlite` — populated;
-- `/home/sumeet/matrix/data/arcane-codex-notion/arcane-codex/workspace.sqlite` — empty.
-
-`getWorkspaceBaseDir()` always appends `arcane-codex` to `ARCANE_DATA_DIR`, while the root `.env.local` describes `ARCANE_DATA_DIR` as the workspace itself. The workspace `.env.local` describes it as a parent data root. This contract must be made unambiguous before migration so the wrong database cannot be migrated or newly initialized.
-
-Recommended environment contract:
-
-- `ARCANE_WORKSPACE_DIR`: exact directory containing `workspace.sqlite` and `assets/`;
-- `XDG_DATA_HOME`: parent data directory used only when the exact override is absent.
-
-Deprecate `ARCANE_DATA_DIR` with a startup warning and an explicit compatibility rule.
+The ambiguity found during the audit is resolved. `ARCANE_WORKSPACE_DIR` is the exact directory containing `workspace.sqlite`, `assets/`, and `trash/`. `XDG_DATA_HOME` remains the default parent-root mechanism when the exact override is absent. `ARCANE_DATA_DIR` is retained only as a deprecated compatibility path.
 
 ---
 
@@ -205,101 +171,77 @@ The ownership benefit of files can be achieved with a complete, deterministic, p
 
 ## 4. Critical findings
 
-### P0 — canonical body has no format contract
+### Resolved in schema v11 — canonical body contract
 
-`content_json` is an unversioned vendor/editor structure. BlockNote upgrades or custom prop changes can reinterpret old content with no document migration boundary.
+Canonical page bodies now live in `body_markdown`. Arcane Markdown version 1 is normalized and validated through `src/lib/documents/markdown.ts`; BlockNote JSON is no longer persisted.
 
-**Required change:** Introduce `body_markdown`, `body_format`, and `body_format_version`. Parse and validate through a central document module.
+### Resolved in schema v11 — export portability
 
-### P0 — export portability is incomplete
+Workspace and published exports use standard Markdown, relative links and assets, deterministic files, readable rich-block fallbacks, and explicit warnings. A general workspace importer remains intentionally out of scope.
 
-“Export to Markdown” should produce documents that remain useful in generic Markdown readers and static-site tools. Arcane-only blocks must not turn the export into opaque application data.
+### Resolved in schema v11 — authored versus derived content
 
-**Required change:** Use standard Markdown wherever possible, rewrite page and asset references to relative paths, and give every rich extension a complete human-readable fallback. A general workspace importer is not required.
+Child navigation and collection rows are rendered outside the canonical body. Manually authored internal links remain part of Markdown and derived indexes can be rebuilt from source.
 
-### P0 — authored and derived content are mixed
+### Partially resolved — validation ownership
 
-`ensureChildPageLinkBlocks()` inserts child cards into the body. The API also removes some generated collection item links on reads. The same stored body can therefore be transformed according to external hierarchy and collection state.
+Create, update, migration, health, and export paths share Markdown helpers and storage-boundary validation. The current document module is deliberately small rather than the full typed AST and extension registry proposed below. New rich block types must still be reviewed across persistence, rendering, reference extraction, plain text, migration, and export.
 
-Consequences:
+### Resolved in schema v11 — structured extension payloads
 
-- moving a child mutates the conceptual content of two parent pages;
-- generated cards can become indistinguishable from deliberately inserted cards;
-- API reads may not return stored source verbatim;
-- backlinks include navigation relationships that are not authored references;
-- exports can include generated navigation as article prose.
+Canonical extension payloads use deterministic structured JSON inside versioned `arcane-data` fences. Legacy stringified gallery and artwork values were normalized during migration.
 
-**Required change:** Render child navigation and collection rows as derived page components outside the canonical body. A manually authored page link remains ordinary authored Markdown.
+### Resolved in schema v11 — stable internal links
 
-### P0 — validation is fragmented
+Canonical authored page links preserve UUID identity through `arcane://page/<uuid>`. Rendering and export resolve the current route or relative file path, so page moves do not destroy identity.
 
-PATCH checks JSON shape and size; POST does not apply the same body checks. Scripts call storage functions directly and can bypass HTTP validation. Health checks only test JSON syntax.
+### Open P1 — body asset references lack a relational index
 
-**Required change:** Parse, validate, normalize, and size-check documents in a domain function called by every create, update, editor, and migration path.
+Body asset IDs are extracted from canonical Markdown for validation, health checks, and export, but there is no normalized `page_asset_refs` table. Referential queries and unused-asset analysis are therefore derived rather than protected by foreign keys.
 
-### P1 — custom block data is double encoded
+**Possible change:** derive `page_asset_refs` transactionally if queryability, garbage collection, or stronger integrity enforcement becomes necessary.
 
-JSON strings inside JSON remove type safety and create multiple failure layers.
+### Resolved for current blocks — Markdown fallbacks
 
-**Required change:** Custom extension nodes must use structured values in the AST. Their Markdown encoding must be deterministic and versioned.
+Tables, YouTube, galleries, artwork showcases, files, media, images, page links, and unknown blocks all retain readable output. The remaining architectural risk is enforcement: registering a future editor block does not yet make persistence behavior impossible to omit.
 
-### P1 — internal links are not uniformly identity-based
+### Resolved in schema v12 — independent collections
 
-Custom page cards use page UUIDs, but ordinary links can store route paths. Backlink extraction only reliably recognizes explicit IDs and a narrow legacy `/page/<uuid>` form. Renames and moves therefore have different semantics depending on how the link was authored.
-
-**Required change:** Canonical source should preserve page identity. Rendering/export can resolve the current route or relative file path.
-
-### P1 — body asset references have no referential index
-
-The application can validate icon and cover assets, but not assets embedded in page content. It cannot reliably identify unused files or all missing references.
-
-**Required change:** derive `page_asset_refs` from canonical Markdown in the same transaction as a page save.
-
-### P1 — Markdown support is incomplete
-
-The current exporter lacks first-class handling for at least the table, YouTube, and artwork block types present in the populated workspace. It also has no parse/serialize property tests.
-
-**Required change:** Every registered editor block must declare parse, serialize, render, reference extraction, plain-text extraction, and migration behavior.
-
-### P1 — collections are owned by one host page
-
-`collections.host_page_id` uses `ON DELETE CASCADE`. Deleting the presentation page can delete the structured collection itself. A collection can only have one host even though a Notion-like collection may have multiple linked views.
-
-**Required change:** collections are independent; pages embed collection views by collection/view ID. Deleting an embed or page must not delete collection data.
+Collections, properties, values, views, and page embeds are independent resources. Deleting a presentation page removes the embed relationship rather than collection data, and one view can be embedded by multiple pages.
 
 ### Resolved in schema v13 — publication state
 
-Per-page visibility and immutable published snapshots are stored separately, and the former global `publishedMode` setting has been removed. Draft saves cannot change published output. Schema v14 replaces `isArticle` with controlled page kinds and adds explicit summaries to pages and publication snapshots.
+Per-page visibility and immutable published snapshots are stored separately, and the former global `publishedMode` setting has been removed. Draft saves cannot change published output.
 
-### P2 — JSON metadata limits query integrity
+### Resolved in schema v14 — discovery metadata
 
-`tags_json`, collection `schema_json`, `views_json`, and item `properties_json` are convenient but cannot be protected by ordinary foreign keys or indexed naturally.
+The article boolean was replaced by controlled page kinds, and explicit summaries were added to drafts, publication snapshots, previews, duplication, and export. Discovery can promote canonical pages without changing their hierarchy.
 
-Not every JSON field needs normalization. Tags and collection definitions are important enough to normalize. View layout configuration may remain JSON because it is presentation state.
+### Partially resolved — JSON metadata integrity
 
-### P2 — floating sort keys are fragile
+Collection property definitions and values are normalized. Tags remain in `tags_json`, while view presentation configuration may remain JSON because it is not identity-bearing domain data. Normalize tags only if topic-level querying and integrity justify the added model.
 
-REAL sort keys and decimal-concatenated timestamps are difficult to reason about and can converge under repeated insertion.
+### Open P2 — floating sort keys
 
-**Required change:** use integer sibling positions with transactional renumbering for this local workspace. A fractional indexing string is only justified if multi-writer sync is introduced.
+REAL sort keys and decimal insertion values can converge under repeated insertion.
 
-### P2 — trash semantics are underspecified
+**Possible change:** use integer sibling positions with transactional renumbering for this single-writer workspace, or a deliberate fractional-indexing string if synchronization becomes a real requirement.
 
-`trashPage()` marks only one page. The schema permits active children of trashed parents, although the sampled workspace currently has none.
+### Open P2 — trash semantics
 
-**Required change:** define subtree trash/restore behavior and enforce it transactionally.
+`trashPage()` marks one page and the schema can represent active descendants of trashed parents.
 
-### P2 — duplication is not complete
+**Required decision:** define subtree trash and restore semantics, then enforce them transactionally.
 
-Schema v14 ensures `duplicatePage()` copies kind and summary alongside tags, body, icon, and cover.
+### Resolved in schema v14 — duplication metadata
 
-**Required change:** centralize page cloning policy and test every field deliberately.
+`duplicatePage()` copies kind and summary alongside tags, body, icon, and cover. Future page fields should be added through a centralized clone policy and regression test.
 
-### P2 — search only searches title
+### Open P2 — full-text search
 
-The body format has no FTS index, despite pages being primarily textual documents.
+Search remains title-oriented despite pages being primarily textual documents.
 
-**Required change:** maintain an FTS5 index from title, Markdown plain text, and selected structured metadata.
+**Possible change:** maintain an FTS5 index from title, Markdown plain text, summary, tags, and selected structured metadata.
 
 ---
 
@@ -1003,7 +945,9 @@ These should be decided before implementation, but they do not block the archite
 
 ---
 
-## 15. Recommended implementation order
+## 15. Original cutover order
+
+The core page, collection, publication, and discovery cutovers followed this sequence through schema v14. This list is retained as migration history; the unresolved items in section 4 now govern further data-model work.
 
 1. Resolve the exact workspace directory contract and make a verified backup.
 2. Capture current-data invariants and sanitized fixtures for every observed block.
@@ -1024,18 +968,25 @@ These should be decided before implementation, but they do not block the archite
 
 ## Final assessment
 
-The existing database is a sound local-first foundation, but `content_json` currently makes the editor implementation the page format. That is the wrong dependency direction for a durable personal knowledge system.
-
-The target should be:
+Schema v14 has reached the intended foundation:
 
 ```text
-SQLite workspace structure + canonical Markdown page bodies + typed extension grammar
+SQLite workspace structure
++ canonical Markdown page bodies
++ independent structured collections
++ explicit publication snapshots
++ controlled discovery metadata
 ```
 
-—not:
+The editor is no longer the storage format, collection presentation no longer owns collection data, and public output no longer changes implicitly with draft edits. The next data-model decisions should be driven by real product needs rather than another wholesale rewrite.
 
-```text
-SQLite + opaque editor JSON + best-effort Markdown export
-```
+The most consequential open questions are now narrower:
 
-This preserves the strengths already present—transactions, stable identities, assets, revisions, collections, aliases—while making each page understandable, portable, testable, and much closer to the way a Markdown document is naturally organized.
+- whether topics/tags need a normalized first-class model for discovery;
+- how curated homepage sections and manual ordering should be represented;
+- whether body asset references need a relational index;
+- what subtree trash/restore semantics should be;
+- whether full-text search is valuable enough to justify FTS5;
+- whether current floating sort keys should be replaced before synchronization is contemplated.
+
+Homepage work should consume these domain concepts through reusable read models. It should not introduce homepage-only ownership, duplicate pages, or make hierarchy responsible for promotion.
