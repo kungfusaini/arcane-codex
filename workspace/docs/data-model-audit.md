@@ -4,6 +4,7 @@
 **Scope:** The local-first Notion-style workspace in `workspace/`
 **Primary goal:** Make an Arcane Codex page a durable, understandable, Markdown-centered document while retaining structured collections, assets, links, revisions, publication snapshots, discovery metadata, and a rich editor.
 **Document role:** Sections describing the target and migration preserve the architectural reasoning that led to the cutover. The current-state and finding sections identify what schema v14 resolved and what remains open.
+**Accepted content ontology:** See [`content-model.md`](content-model.md) for the Space, Entry, Note, and Work classes plus independent Projects, collections, and Artifacts.
 
 ## Executive decision
 
