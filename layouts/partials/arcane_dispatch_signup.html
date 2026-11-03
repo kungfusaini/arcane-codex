@@ -178,6 +178,12 @@
         modal.classList.remove('is-open');
       }
 
+      function trackSignup() {
+        if (typeof window.plausible === 'function') {
+          window.plausible('Dispatch Signup');
+        }
+      }
+
       close.addEventListener('click', hideModal);
       modal.addEventListener('click', function (event) {
         if (event.target === modal) hideModal();
@@ -201,6 +207,7 @@
         }).then(function (response) {
           return response.json().catch(function () { return {}; }).then(function (body) {
             if (!response.ok) throw new Error(body.error || 'Something went wrong. Please try again.');
+            trackSignup();
             form.reset();
             showModal('You\u2019re on the early list.', 'Thanks — Arcane Dispatch will wake when the Codex is ready.');
           });
